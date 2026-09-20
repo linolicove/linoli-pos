@@ -49,7 +49,8 @@ import {
   Filter,
   History,
   ShieldAlert,
-  ChevronDown
+  ChevronDown,
+  Menu
 } from 'lucide-react';
 
 const ROLE_PERMISSIONS = {
@@ -223,6 +224,8 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginPinInput, setLoginPinInput] = useState('');
   const [loginError, setLoginError] = useState('');
+
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState('pos');
   const [reportSubTab, setReportSubTab] = useState('Daily Overview');
@@ -1346,8 +1349,35 @@ export default function App() {
         </div>
       )}
 
-      {/* SIDEBAR NAVIGATION */}
-      <aside className="w-64 bg-[#060813] border-r border-zinc-800/80 flex flex-col justify-between shrink-0 z-20 overflow-y-auto">
+      {}
+      {/* Backdrop overlay when sidebar is open */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 transition-opacity"
+        />
+      )}
+
+      {/* Floating edge tab to open sidebar on touch if closed */}
+      {!sidebarOpen && (
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          className="fixed left-0 top-1/2 -translate-y-1/2 z-30 flex items-center gap-1.5 bg-[#ff5500] hover:bg-orange-600 text-white py-3.5 px-2.5 rounded-r-2xl shadow-xl shadow-orange-600/40 text-xs font-black tracking-wider transition-transform active:scale-95 group"
+          title="Touch to open menu"
+        >
+          <Menu className="h-4 w-4" />
+          <span className="hidden sm:inline text-[10px] tracking-widest uppercase [writing-mode:vertical-rl] rotate-180">
+            TOUCH MENU
+          </span>
+        </button>
+      )}
+
+      {}
+      {/* SIDEBAR NAVIGATION (HIDDEN UNTIL TOUCHED / TOGGLED) */}
+      <aside className={`fixed inset-y-0 left-0 w-72 bg-[#060813] border-r border-zinc-800/80 flex flex-col justify-between z-50 overflow-y-auto transform transition-transform duration-300 ease-in-out shadow-2xl ${
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
         <div>
           <div className="p-5 pb-4 flex items-center justify-between border-b border-zinc-900">
             <div className="flex items-center gap-3">
@@ -1363,6 +1393,15 @@ export default function App() {
                 </p>
               </div>
             </div>
+
+            {/* Close button inside sidebar */}
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              title="Close Menu"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
 
           <nav className="p-3 space-y-1">
@@ -1382,7 +1421,10 @@ export default function App() {
                 <button
                   key={item.id}
                   disabled={!allowed}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setSidebarOpen(false);
+                  }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
                     !allowed
                       ? 'opacity-30 cursor-not-allowed text-zinc-600'
@@ -1426,7 +1468,10 @@ export default function App() {
                 <button
                   key={item.id}
                   disabled={!allowed}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setSidebarOpen(false);
+                  }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
                     !allowed
                       ? 'opacity-30 cursor-not-allowed text-zinc-600'
@@ -1486,12 +1531,23 @@ export default function App() {
         </div>
       </aside>
 
+      {}
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 text-slate-900">
         {/* Top Header */}
-        <header className="h-14 px-6 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 shadow-sm z-10">
-          <div className="flex items-center gap-4">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider font-mono">
+        <header className="h-14 px-4 sm:px-6 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 shadow-sm z-10">
+          <div className="flex items-center gap-3">
+            {/* Touch Menu Toggle Button */}
+            <button
+              onClick={() => setSidebarOpen(prev => !prev)}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-200 transition-all active:scale-95"
+              title="Open Navigation Menu"
+            >
+              <Menu className="h-4 w-4 text-[#ff5500]" />
+              <span className="font-extrabold">Menu</span>
+            </button>
+
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider font-mono hidden sm:inline">
               TERMINAL: {settings.terminalId}
             </span>
             <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-xs font-semibold">
