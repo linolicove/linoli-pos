@@ -1,0 +1,3772 @@
+import React, { useState, useMemo } from 'react';
+import {
+  Monitor,
+  Flame,
+  Wine,
+  Receipt,
+  Grid,
+  Package,
+  BookOpen,
+  DollarSign,
+  BarChart3,
+  ClipboardList,
+  Trash2,
+  Users,
+  Settings,
+  Search,
+  Plus,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  Printer,
+  ChevronRight,
+  Send,
+  X,
+  CreditCard,
+  Banknote,
+  LogOut,
+  ArrowUpRight,
+  Calendar,
+  Lock,
+  KeyRound,
+  ShieldCheck,
+  Percent,
+  TrendingUp,
+  RefreshCw,
+  Eye,
+  Sliders,
+  Check,
+  Layers,
+  FileSpreadsheet,
+  Coffee,
+  Coins
+} from 'lucide-react';
+
+const ROLE_PERMISSIONS = {
+  Administrator: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'cancelled', 'staff', 'settings'],
+  Manager: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'cancelled'],
+  Cashier: ['pos', 'billing', 'tables', 'shifts', 'reports'],
+  'Kitchen Chef': ['kds', 'recipes', 'stock'],
+  Bartender: ['bar', 'recipes', 'stock'],
+  'Floor Server': ['pos', 'tables', 'billing']
+};
+
+const INITIAL_STAFF = [
+  { id: 'usr_admin', name: 'System Administrator', role: 'Administrator', pin: '1234', avatar: 'SA', email: 'admin@linolicove.me' },
+  { id: 'usr_cashier', name: 'Marco Rossi', role: 'Cashier', pin: '1111', avatar: 'MR', email: 'marco@linolicove.me' },
+  { id: 'usr_chef', name: 'Alexandros Thorne', role: 'Kitchen Chef', pin: '2222', avatar: 'AT', email: 'chef@linolicove.me' },
+  { id: 'usr_bar', name: 'Chloe Dubois', role: 'Bartender', pin: '3333', avatar: 'CD', email: 'bar@linolicove.me' },
+  { id: 'usr_server', name: 'Niroshan Perera', role: 'Floor Server', pin: '5555', avatar: 'NP', email: 'server@linolicove.me' }
+];
+
+const INITIAL_RAW_INVENTORY = [
+  { id: 'ing_rice', name: 'Basmati Rice', category: 'Dry Goods', stock: 24500, unit: 'g', cost: 0.25, threshold: 5000 },
+  { id: 'ing_seafood_mix', name: 'Prawns & Calamari Mix', category: 'Seafood', stock: 7200, unit: 'g', cost: 1.80, threshold: 1500 },
+  { id: 'ing_eggs', name: 'Farm Fresh Eggs', category: 'Dairy & Eggs', stock: 118, unit: 'pcs', cost: 35.00, threshold: 30 },
+  { id: 'ing_espresso_beans', name: 'Roasted Arabica Beans', category: 'Beverages', stock: 4320, unit: 'g', cost: 4.50, threshold: 1000 },
+  { id: 'ing_milk', name: 'Fresh Whole Milk', category: 'Dairy & Eggs', stock: 11800, unit: 'ml', cost: 0.30, threshold: 2500 },
+  { id: 'ing_beef_patty', name: 'Prime Angus Beef Patty', category: 'Meat', stock: 32, unit: 'pcs', cost: 450.00, threshold: 10 },
+  { id: 'ing_burger_bun', name: 'Brioche Bun', category: 'Bakery', stock: 38, unit: 'pcs', cost: 65.00, threshold: 12 },
+  { id: 'ing_cheddar', name: 'Aged Cheddar Cheese', category: 'Dairy & Eggs', stock: 2100, unit: 'g', cost: 1.20, threshold: 400 },
+  { id: 'ing_chicken', name: 'Chicken Breast Fillet', category: 'Poultry', stock: 8500, unit: 'g', cost: 1.10, threshold: 2000 },
+  { id: 'ing_syrup_spiced', name: 'Demerara Cocktail Syrup', category: 'Bar Supplies', stock: 1750, unit: 'ml', cost: 0.80, threshold: 300 }
+];
+
+const INITIAL_MENU_ITEMS = [
+  {
+    id: 'dish_seafood_rice',
+    name: 'SEAFOOD FRIED RICE',
+    department: 'Kitchen',
+    category: 'Rice & Noodles',
+    price: 2250.00,
+    prepTime: '15m',
+    imageUrl: 'https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=400&q=80',
+    description: 'Wok-tossed basmati rice with tiger prawns, fresh calamari, egg & scallions.',
+    recipe: [
+      { ingredientId: 'ing_rice', amount: 250 },
+      { ingredientId: 'ing_seafood_mix', amount: 150 },
+      { ingredientId: 'ing_eggs', amount: 1 }
+    ]
+  },
+  {
+    id: 'drink_espresso',
+    name: 'Espresso',
+    department: 'Bar',
+    category: 'Hot Coffee',
+    price: 600.00,
+    prepTime: '3m',
+    imageUrl: 'https://images.unsplash.com/photo-1510591509098-f4fdc6d0ff04?auto=format&fit=crop&w=400&q=80',
+    description: 'Double shot of single-origin dark roasted arabica coffee.',
+    recipe: [
+      { ingredientId: 'ing_espresso_beans', amount: 18 }
+    ]
+  },
+  {
+    id: 'dish_classic_burger',
+    name: 'Angus Truffle Burger',
+    department: 'Kitchen',
+    category: 'Mains & Grills',
+    price: 2450.00,
+    prepTime: '12m',
+    imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=400&q=80',
+    description: 'Flame-grilled prime beef patty, aged cheddar, caramelized onion on brioche.',
+    recipe: [
+      { ingredientId: 'ing_beef_patty', amount: 1 },
+      { ingredientId: 'ing_burger_bun', amount: 1 },
+      { ingredientId: 'ing_cheddar', amount: 30 }
+    ]
+  },
+  {
+    id: 'drink_cappuccino',
+    name: 'Café Cappuccino',
+    department: 'Bar',
+    category: 'Hot Coffee',
+    price: 850.00,
+    prepTime: '5m',
+    imageUrl: 'https://images.unsplash.com/photo-1534778101976-62847782c213?auto=format&fit=crop&w=400&q=80',
+    description: 'Silky microfoam over fresh espresso double shot.',
+    recipe: [
+      { ingredientId: 'ing_espresso_beans', amount: 18 },
+      { ingredientId: 'ing_milk', amount: 180 }
+    ]
+  }
+];
+
+const INITIAL_FLOOR_TABLES = [
+  { id: 'T-01', name: 'Table 1', zone: 'Indoor Main Hall', capacity: 2, status: 'VACANT', currentOrderRef: null },
+  { id: 'T-02', name: 'Table 2', zone: 'Indoor Main Hall', capacity: 4, status: 'OCCUPIED', currentOrderRef: 'ORD-1001' },
+  { id: 'T-03', name: 'Table 3', zone: 'Deck Lounge', capacity: 4, status: 'VACANT', currentOrderRef: null },
+  { id: 'T-04', name: 'Table 4', zone: 'Deck Lounge', capacity: 6, status: 'RESERVED', currentOrderRef: null },
+  { id: 'BAR-01', name: 'Bar Seat 01', zone: 'Cocktail Counter', capacity: 1, status: 'VACANT', currentOrderRef: null },
+  { id: 'BAR-02', name: 'Bar Seat 02', zone: 'Cocktail Counter', capacity: 1, status: 'VACANT', currentOrderRef: null },
+  { id: 'VIP-01', name: 'VIP Cabana 1', zone: 'Private Ocean View', capacity: 8, status: 'VACANT', currentOrderRef: null }
+];
+
+export default function App() {
+  // Navigation & User
+  const [activeTab, setActiveTab] = useState('reports');
+  const [reportSubTab, setReportSubTab] = useState('Daily Overview');
+  const [currentUser, setCurrentUser] = useState(INITIAL_STAFF[0]);
+  const [staffList, setStaffList] = useState(INITIAL_STAFF);
+
+  // System Configuration State
+  const [settings, setSettings] = useState({
+    restaurantName: 'Linoli Cove',
+    tagline: 'RESTAURANT & BAR',
+    terminalId: 'LINOLI-MAIN-01',
+    currency: 'Rs.',
+    serviceChargeRate: 10,
+    taxRate: 8,
+    receiptHeader: 'Linoli Cove Beach Resort & Dining\nBeach Road, Mirissa\nTel: +94 41 225 9988',
+    receiptFooter: 'Thank you for your visit!\nPlease come again.'
+  });
+
+  // Core Data Collections
+  const [inventory, setInventory] = useState(INITIAL_RAW_INVENTORY);
+  const [menuItems, setMenuItems] = useState(INITIAL_MENU_ITEMS);
+  const [floorTables, setFloorTables] = useState(INITIAL_FLOOR_TABLES);
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [menuSearchQuery, setMenuSearchQuery] = useState('');
+
+  // POS Order Staging
+  const [orderMode, setOrderMode] = useState('DINING');
+  const [selectedTable, setSelectedTable] = useState(INITIAL_FLOOR_TABLES[1]);
+  const [takeawayInfo, setTakeawayInfo] = useState({ name: 'Walk-in Guest', phone: '', token: 'TK-102' });
+  const [guestCount, setGuestCount] = useState(2);
+  const [cart, setCart] = useState([]);
+  const [editingOrderId, setEditingOrderId] = useState(null);
+
+  // Surcharges on Current Cart
+  const [serviceChargeActive, setServiceChargeActive] = useState(true);
+  const [taxActive, setTaxActive] = useState(false);
+  const [discountPercent, setDiscountPercent] = useState(0);
+
+  // Live Orders in Kitchen / Floor
+  const [activeOrders, setActiveOrders] = useState([
+    {
+      orderId: 'ORD-1001',
+      mode: 'DINING',
+      tableId: 'T-02',
+      tableName: 'Table 2',
+      zone: 'Indoor Main Hall',
+      guestCount: 2,
+      server: 'Marco Rossi',
+      sentAt: '12:45 PM',
+      status: 'PREPARING',
+      serviceChargeActive: true,
+      taxActive: false,
+      discountPercent: 0,
+      items: [
+        { ...INITIAL_MENU_ITEMS[0], cartItemId: 'c_init_1', qty: 1, notes: 'Less spicy please' },
+        { ...INITIAL_MENU_ITEMS[1], cartItemId: 'c_init_2', qty: 1, notes: 'Sugar on the side' }
+      ]
+    }
+  ]);
+
+  // Settled Transactions History
+  const [transactions, setTransactions] = useState([
+    {
+      invoiceNo: 'INV-8801',
+      orderRef: 'ORD-0998',
+      date: '09/19/2026 13:10:45',
+      table: 'Table 2',
+      mode: 'DINING',
+      cashier: 'System Administrator',
+      items: [
+        { name: 'SEAFOOD FRIED RICE', department: 'Kitchen', qty: 1, price: 2250.00 },
+        { name: 'Espresso', department: 'Bar', qty: 1, price: 600.00 }
+      ],
+      subtotal: 2850.00,
+      serviceCharge: 285.00,
+      tax: 0.00,
+      discount: 0.00,
+      total: 3135.00,
+      paymentMethod: 'CASH',
+      cogs: 620.00
+    }
+  ]);
+
+  // Cancelled Tickets / Voids Audit Log
+  const [cancelledTickets, setCancelledTickets] = useState([
+    {
+      id: 'VOID-301',
+      timestamp: '09/19/2026 11:20 AM',
+      itemName: 'Angus Truffle Burger',
+      qty: 1,
+      table: 'Table 1',
+      reason: 'Customer cancelled prior to prep',
+      authorizedBy: 'System Administrator'
+    }
+  ]);
+
+  // Cashier Shifts & Drawer Balancing State
+  const [currentShift, setCurrentShift] = useState({
+    shiftId: 'SHIFT-20260919-01',
+    openedAt: '09:00 AM',
+    openedBy: 'Marco Rossi',
+    startingFloat: 15000.00,
+    status: 'OPEN',
+    payouts: [
+      { id: 'po_1', time: '11:15 AM', amount: 1200.00, reason: 'Fresh Lime & Mint Market Purchase', staff: 'Marco Rossi' }
+    ]
+  });
+
+  const [shiftHistory, setShiftHistory] = useState([]);
+  const [denominations, setDenominations] = useState({
+    5000: 0,
+    1000: 0,
+    500: 0,
+    100: 0,
+    50: 0,
+    20: 0
+  });
+  const [payoutForm, setPayoutForm] = useState({ amount: '', reason: '' });
+
+  // Dialog & Modal Triggers
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [targetStaffForSwitch, setTargetStaffForSwitch] = useState(null);
+  const [pinError, setPinError] = useState('');
+
+  const [addStaffModalOpen, setAddStaffModalOpen] = useState(false);
+  const [newStaffForm, setNewStaffForm] = useState({
+    name: '',
+    role: 'Cashier',
+    pin: '',
+    email: ''
+  });
+
+  const [addItemModalOpen, setAddItemModalOpen] = useState(false);
+  const [newDishForm, setNewDishForm] = useState({
+    name: '',
+    department: 'Kitchen',
+    category: 'Mains & Grills',
+    price: '',
+    prepTime: '10m',
+    description: '',
+    imageUrl: '',
+    recipeIngredients: []
+  });
+
+  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
+  const [settlingOrder, setSettlingOrder] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [cashTendered, setCashTendered] = useState('');
+
+  const [printModalConfig, setPrintModalConfig] = useState(null);
+  const [allocationModalOpen, setAllocationModalOpen] = useState(false);
+  const [addTableModalOpen, setAddTableModalOpen] = useState(false);
+  const [newTableForm, setNewTableForm] = useState({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
+  const [voidModalOpen, setVoidModalOpen] = useState(false);
+  const [voidPayload, setVoidPayload] = useState({ item: null, reason: '' });
+
+  // New Inventory & Stock Intake Modals State
+  const [addInventoryModalOpen, setAddInventoryModalOpen] = useState(false);
+  const [newInventoryForm, setNewInventoryForm] = useState({
+    name: '',
+    category: 'Dry Goods',
+    stock: '',
+    unit: 'g',
+    cost: '',
+    threshold: ''
+  });
+
+  const [receiveStockModalOpen, setReceiveStockModalOpen] = useState(false);
+  const [receiveStockForm, setReceiveStockForm] = useState({
+    ingredientId: '',
+    quantity: '',
+    supplier: '',
+    invoiceRef: '',
+    newCost: ''
+  });
+
+  // Dedicated Recipe Configurator Modal State
+  const [recipeConfigModalOpen, setRecipeConfigModalOpen] = useState(false);
+  const [editingDishForRecipe, setEditingDishForRecipe] = useState(null);
+  const [currentRecipeIngredients, setCurrentRecipeIngredients] = useState([]);
+  const [tempIngredientSelect, setTempIngredientSelect] = useState({ ingredientId: '', amount: '' });
+
+  const inventoryMap = useMemo(() => {
+    const map = {};
+    inventory.forEach(item => {
+      map[item.id] = item;
+    });
+    return map;
+  }, [inventory]);
+
+  const calculateDishAvailability = (recipe) => {
+    if (!recipe || !Array.isArray(recipe) || recipe.length === 0) {
+      return { cogs: 0, portions: 999, isSoldOut: false };
+    }
+    let cogs = 0;
+    let minPortions = Infinity;
+
+    recipe.forEach(r => {
+      const ing = inventoryMap[r.ingredientId];
+      if (ing) {
+        cogs += (ing.cost * r.amount);
+        const available = r.amount > 0 ? Math.floor(ing.stock / r.amount) : 0;
+        if (available < minPortions) minPortions = available;
+      } else {
+        minPortions = 0;
+      }
+    });
+
+    if (minPortions === Infinity) minPortions = 0;
+    return {
+      cogs,
+      portions: minPortions,
+      isSoldOut: minPortions <= 0
+    };
+  };
+
+  const cartSubtotal = cart.reduce((acc, item) => acc + item.price * item.qty, 0);
+  const cartDiscountAmount = (cartSubtotal * discountPercent) / 100;
+  const taxableBasis = Math.max(0, cartSubtotal - cartDiscountAmount);
+  const cartServiceCharge = serviceChargeActive ? (taxableBasis * settings.serviceChargeRate) / 100 : 0;
+  const cartTax = taxActive ? (taxableBasis * settings.taxRate) / 100 : 0;
+  const cartGrandTotal = taxableBasis + cartServiceCharge + cartTax;
+
+  const calculateOrderFinancials = (order) => {
+    if (!order || !order.items) return { subtotal: 0, discount: 0, service: 0, tax: 0, total: 0 };
+    const subtotal = order.items.reduce((sum, item) => sum + item.price * item.qty, 0);
+    const discount = (subtotal * (order.discountPercent || 0)) / 100;
+    const basis = Math.max(0, subtotal - discount);
+    const service = order.serviceChargeActive ? (basis * settings.serviceChargeRate) / 100 : 0;
+    const tax = order.taxActive ? (basis * settings.taxRate) / 100 : 0;
+    const total = basis + service + tax;
+    return { subtotal, discount, service, tax, total };
+  };
+
+  const shiftCashMetrics = useMemo(() => {
+    const shiftCashTransactions = transactions.filter(t => t.paymentMethod === 'CASH');
+    const totalCashSales = shiftCashTransactions.reduce((acc, t) => acc + t.total, 0);
+    const totalCardSales = transactions.filter(t => t.paymentMethod === 'CARD').reduce((acc, t) => acc + t.total, 0);
+    const totalPayouts = currentShift.payouts.reduce((acc, p) => acc + p.amount, 0);
+
+    const countedCash = Object.entries(denominations).reduce(
+      (sum, [denom, count]) => sum + (Number(denom) * (Number(count) || 0)),
+      0
+    );
+
+    const expectedCashInDrawer = currentShift.startingFloat + totalCashSales - totalPayouts;
+    const variance = countedCash - expectedCashInDrawer;
+
+    return {
+      totalCashSales,
+      totalCardSales,
+      totalPayouts,
+      countedCash,
+      expectedCashInDrawer,
+      variance
+    };
+  }, [transactions, currentShift, denominations]);
+
+  const hasAccess = (tabKey) => {
+    const allowed = ROLE_PERMISSIONS[currentUser.role] || [];
+    return allowed.includes(tabKey);
+  };
+
+  const handleSwitchUserWithPin = (e) => {
+    e.preventDefault();
+    if (!targetStaffForSwitch) return;
+    if (targetStaffForSwitch.pin === pinInput.trim()) {
+      setCurrentUser(targetStaffForSwitch);
+      setPinModalOpen(false);
+      setPinInput('');
+      setTargetStaffForSwitch(null);
+      setPinError('');
+      // Redirect if current tab is not allowed for new role
+      const allowed = ROLE_PERMISSIONS[targetStaffForSwitch.role] || [];
+      if (!allowed.includes(activeTab)) {
+        setActiveTab(allowed[0] || 'pos');
+      }
+    } else {
+      setPinError('Invalid 4-digit security PIN.');
+    }
+  };
+
+  const handleAddToCart = (dish) => {
+    const { isSoldOut } = calculateDishAvailability(dish.recipe);
+    if (isSoldOut) return;
+
+    setCart(prev => {
+      const existing = prev.find(i => i.id === dish.id);
+      if (existing) {
+        return prev.map(i => i.id === dish.id ? { ...i, qty: i.qty + 1 } : i);
+      }
+      return [
+        ...prev,
+        {
+          ...dish,
+          cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+          qty: 1,
+          notes: ''
+        }
+      ];
+    });
+  };
+
+  const handleSendOrder = () => {
+    if (cart.length === 0) return;
+
+    const newOrderId = editingOrderId || `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const orderPayload = {
+      orderId: newOrderId,
+      mode: orderMode,
+      tableId: orderMode === 'DINING' ? selectedTable.id : null,
+      tableName: orderMode === 'DINING' ? selectedTable.name : takeawayInfo.token,
+      zone: orderMode === 'DINING' ? selectedTable.zone : 'Takeaway Express',
+      guestCount: orderMode === 'DINING' ? guestCount : 1,
+      customerName: orderMode === 'TAKEAWAY' ? takeawayInfo.name : undefined,
+      phone: orderMode === 'TAKEAWAY' ? takeawayInfo.phone : undefined,
+      token: orderMode === 'TAKEAWAY' ? takeawayInfo.token : undefined,
+      server: currentUser.name,
+      sentAt: nowTime,
+      status: 'PREPARING',
+      serviceChargeActive,
+      taxActive,
+      discountPercent,
+      items: [...cart]
+    };
+
+    setActiveOrders(prev => {
+      const exists = prev.some(o => o.orderId === newOrderId);
+      if (exists) {
+        return prev.map(o => o.orderId === newOrderId ? orderPayload : o);
+      }
+      return [orderPayload, ...prev];
+    });
+
+    // Mark Table as OCCUPIED
+    if (orderMode === 'DINING') {
+      setFloorTables(prev => prev.map(t => t.id === selectedTable.id ? { ...t, status: 'OCCUPIED', currentOrderRef: newOrderId } : t));
+    }
+
+    const kitchenItems = cart.filter(i => i.department === 'Kitchen');
+    const barItems = cart.filter(i => i.department === 'Bar');
+
+    setPrintModalConfig({
+      type: 'MULTI_DISPATCH',
+      data: {
+        order: orderPayload,
+        kitchenItems,
+        barItems,
+        subtotal: cartSubtotal,
+        discount: cartDiscountAmount,
+        service: cartServiceCharge,
+        tax: cartTax,
+        total: cartGrandTotal
+      }
+    });
+
+    setCart([]);
+    setEditingOrderId(null);
+  };
+
+  const handleCompleteSettlement = () => {
+    const targetOrder = settlingOrder || {
+      orderId: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+      mode: orderMode,
+      tableName: orderMode === 'DINING' ? selectedTable.name : takeawayInfo.token,
+      tableId: orderMode === 'DINING' ? selectedTable.id : null,
+      items: cart,
+      serviceChargeActive,
+      taxActive,
+      discountPercent
+    };
+
+    if (!targetOrder.items || targetOrder.items.length === 0) return;
+
+    const { subtotal, discount, service, tax, total } = calculateOrderFinancials(targetOrder);
+
+    // Deplete Inventory Based on Recipe BOM
+    const deductions = {};
+    let orderRawCost = 0;
+
+    targetOrder.items.forEach(cartItem => {
+      const dish = menuItems.find(m => m.id === cartItem.id) || cartItem;
+      if (dish.recipe && Array.isArray(dish.recipe)) {
+        dish.recipe.forEach(r => {
+          const needed = r.amount * cartItem.qty;
+          deductions[r.ingredientId] = (deductions[r.ingredientId] || 0) + needed;
+          const ing = inventoryMap[r.ingredientId];
+          if (ing) orderRawCost += (ing.cost * needed);
+        });
+      }
+    });
+
+    setInventory(prev => prev.map(item => {
+      if (deductions[item.id]) {
+        return {
+          ...item,
+          stock: Math.max(0, Number((item.stock - deductions[item.id]).toFixed(2)))
+        };
+      }
+      return item;
+    }));
+
+    const newInvoice = {
+      invoiceNo: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+      orderRef: targetOrder.orderId,
+      date: new Date().toLocaleString(),
+      table: targetOrder.tableName,
+      mode: targetOrder.mode,
+      cashier: currentUser.name,
+      items: targetOrder.items.map(i => ({
+        name: i.name,
+        department: i.department,
+        qty: i.qty,
+        price: i.price
+      })),
+      subtotal,
+      serviceCharge: service,
+      tax,
+      discount,
+      total,
+      paymentMethod,
+      cogs: orderRawCost,
+      cashTendered: paymentMethod === 'CASH' ? (parseFloat(cashTendered) || total) : undefined,
+      changeDue: paymentMethod === 'CASH' ? Math.max(0, (parseFloat(cashTendered) || total) - total) : 0
+    };
+
+    setTransactions(prev => [newInvoice, ...prev]);
+    setActiveOrders(prev => prev.filter(o => o.orderId !== targetOrder.orderId));
+
+    // Release table
+    if (targetOrder.tableId) {
+      setFloorTables(prev => prev.map(t => t.id === targetOrder.tableId ? { ...t, status: 'VACANT', currentOrderRef: null } : t));
+    }
+
+    setPrintModalConfig({
+      type: 'FINAL_BILL',
+      data: newInvoice
+    });
+
+    if (editingOrderId === targetOrder.orderId) {
+      setCart([]);
+      setEditingOrderId(null);
+    }
+    setSettlingOrder(null);
+    setCheckoutModalOpen(false);
+    setCashTendered('');
+  };
+
+  const handleConfirmVoid = (e) => {
+    e.preventDefault();
+    if (!voidPayload.item || !voidPayload.reason.trim()) return;
+
+    const newVoid = {
+      id: `VOID-${Math.floor(100 + Math.random() * 900)}`,
+      timestamp: new Date().toLocaleString(),
+      itemName: voidPayload.item.name,
+      qty: voidPayload.item.qty || 1,
+      table: selectedTable.name,
+      reason: voidPayload.reason.trim(),
+      authorizedBy: currentUser.name
+    };
+
+    setCancelledTickets(prev => [newVoid, ...prev]);
+    setCart(prev => prev.filter(i => i.cartItemId !== voidPayload.item.cartItemId));
+    setVoidModalOpen(false);
+    setVoidPayload({ item: null, reason: '' });
+  };
+
+  const handleCreateNewItem = (e) => {
+    e.preventDefault();
+    if (!newDishForm.name.trim() || !newDishForm.price) return;
+
+    const newItemId = `dish_${Date.now()}`;
+    const dishItem = {
+      id: newItemId,
+      name: newDishForm.name.trim(),
+      department: newDishForm.department,
+      category: newDishForm.category || 'Mains & Grills',
+      price: parseFloat(newDishForm.price) || 0,
+      prepTime: newDishForm.prepTime || '10m',
+      description: newDishForm.description || '',
+      imageUrl: newDishForm.imageUrl.trim() || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80',
+      recipe: [...newDishForm.recipeIngredients]
+    };
+
+    setMenuItems(prev => [dishItem, ...prev]);
+    setAddItemModalOpen(false);
+    setNewDishForm({
+      name: '',
+      department: 'Kitchen',
+      category: 'Mains & Grills',
+      price: '',
+      prepTime: '10m',
+      description: '',
+      imageUrl: '',
+      recipeIngredients: []
+    });
+  };
+
+  const handleCreateInventoryItem = (e) => {
+    e.preventDefault();
+    if (!newInventoryForm.name.trim() || !newInventoryForm.cost) return;
+
+    const newItem = {
+      id: `ing_${Date.now()}`,
+      name: newInventoryForm.name.trim(),
+      category: newInventoryForm.category,
+      stock: parseFloat(newInventoryForm.stock) || 0,
+      unit: newInventoryForm.unit,
+      cost: parseFloat(newInventoryForm.cost) || 0,
+      threshold: parseFloat(newInventoryForm.threshold) || 10
+    };
+
+    setInventory(prev => [newItem, ...prev]);
+    setAddInventoryModalOpen(false);
+    setNewInventoryForm({
+      name: '',
+      category: 'Dry Goods',
+      stock: '',
+      unit: 'g',
+      cost: '',
+      threshold: ''
+    });
+  };
+
+  const handleReceiveStock = (e) => {
+    e.preventDefault();
+    if (!receiveStockForm.ingredientId || !receiveStockForm.quantity) return;
+
+    const qtyToAdd = parseFloat(receiveStockForm.quantity);
+    if (isNaN(qtyToAdd) || qtyToAdd <= 0) return;
+
+    setInventory(prev => prev.map(item => {
+      if (item.id === receiveStockForm.ingredientId) {
+        const updatedCost = receiveStockForm.newCost ? parseFloat(receiveStockForm.newCost) : item.cost;
+        return {
+          ...item,
+          stock: Number((item.stock + qtyToAdd).toFixed(2)),
+          cost: updatedCost
+        };
+      }
+      return item;
+    }));
+
+    setReceiveStockModalOpen(false);
+    setReceiveStockForm({
+      ingredientId: '',
+      quantity: '',
+      supplier: '',
+      invoiceRef: '',
+      newCost: ''
+    });
+  };
+
+  const handleOpenRecipeConfig = (dish) => {
+    setEditingDishForRecipe(dish);
+    setCurrentRecipeIngredients(dish.recipe ? [...dish.recipe] : []);
+    setTempIngredientSelect({ ingredientId: inventory[0]?.id || '', amount: '' });
+    setRecipeConfigModalOpen(true);
+  };
+
+  const handleSaveRecipeConfig = () => {
+    if (!editingDishForRecipe) return;
+
+    setMenuItems(prev => prev.map(dish => {
+      if (dish.id === editingDishForRecipe.id) {
+        return {
+          ...dish,
+          recipe: [...currentRecipeIngredients]
+        };
+      }
+      return dish;
+    }));
+
+    setRecipeConfigModalOpen(false);
+    setEditingDishForRecipe(null);
+  };
+
+  const handleCreateStaff = (e) => {
+    e.preventDefault();
+    if (!newStaffForm.name || !newStaffForm.pin) return;
+    const initials = newStaffForm.name.split(' ').map(p => p[0]).join('').substring(0, 2).toUpperCase();
+    const newStaff = {
+      id: `usr_${Date.now()}`,
+      name: newStaffForm.name.trim(),
+      role: newStaffForm.role,
+      pin: newStaffForm.pin.trim(),
+      avatar: initials || 'ST',
+      email: newStaffForm.email.trim() || `${newStaffForm.name.toLowerCase().replace(/\s+/g, '')}@linolicove.me`
+    };
+    setStaffList(prev => [...prev, newStaff]);
+    setAddStaffModalOpen(false);
+    setNewStaffForm({ name: '', role: 'Cashier', pin: '', email: '' });
+  };
+
+  const handleCloseShift = () => {
+    const closedShift = {
+      ...currentShift,
+      closedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      closedBy: currentUser.name,
+      status: 'CLOSED',
+      metrics: { ...shiftCashMetrics }
+    };
+
+    setShiftHistory(prev => [closedShift, ...prev]);
+    setPrintModalConfig({
+      type: 'Z_REPORT',
+      data: closedShift
+    });
+
+    // Open next fresh shift
+    setCurrentShift({
+      shiftId: `SHIFT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(10 + Math.random() * 90)}`,
+      openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      openedBy: currentUser.name,
+      startingFloat: 15000.00,
+      status: 'OPEN',
+      payouts: []
+    });
+
+    setDenominations({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
+  };
+
+  const salesMetrics = useMemo(() => {
+    let grossRevenue = 0;
+    let itemSubtotal = 0;
+    let serviceCharge = 0;
+    let taxes = 0;
+    let discounts = 0;
+    let kitchenRevenue = 0;
+    let kitchenItemsCount = 0;
+    let barRevenue = 0;
+    let barItemsCount = 0;
+    const paymentMethods = {};
+    const itemSalesMap = {};
+
+    transactions.forEach(t => {
+      grossRevenue += t.total;
+      itemSubtotal += t.subtotal;
+      serviceCharge += t.serviceCharge;
+      taxes += t.tax;
+      discounts += t.discount;
+
+      paymentMethods[t.paymentMethod] = (paymentMethods[t.paymentMethod] || { count: 0, total: 0 });
+      paymentMethods[t.paymentMethod].count += 1;
+      paymentMethods[t.paymentMethod].total += t.total;
+
+      t.items.forEach(item => {
+        const isKitchen = item.department === 'Kitchen';
+        if (isKitchen) {
+          kitchenRevenue += (item.price * item.qty);
+          kitchenItemsCount += item.qty;
+        } else {
+          barRevenue += (item.price * item.qty);
+          barItemsCount += item.qty;
+        }
+
+        if (!itemSalesMap[item.name]) {
+          itemSalesMap[item.name] = {
+            name: item.name,
+            department: item.department || (isKitchen ? 'Kitchen' : 'Bar'),
+            sold: 0,
+            revenue: 0
+          };
+        }
+        itemSalesMap[item.name].sold += item.qty;
+        itemSalesMap[item.name].revenue += (item.price * item.qty);
+      });
+    });
+
+    const topItems = Object.values(itemSalesMap).sort((a, b) => b.sold - a.sold);
+
+    return {
+      grossRevenue,
+      itemSubtotal,
+      serviceCharge,
+      taxes,
+      discounts,
+      kitchenRevenue,
+      kitchenItemsCount,
+      barRevenue,
+      barItemsCount,
+      paymentMethods,
+      topItems,
+      paidBillsCount: transactions.length
+    };
+  }, [transactions]);
+
+  const categoriesList = useMemo(() => {
+    const cats = new Set(['All']);
+    menuItems.forEach(m => cats.add(m.category));
+    return Array.from(cats);
+  }, [menuItems]);
+
+  return (
+    <div className="flex h-screen w-full bg-[#0b0f19] text-zinc-100 font-sans select-none overflow-hidden antialiased">
+
+      {/* ========================================================= */}
+      {/* 1. LEFT SIDEBAR (Dynamic Linoli Cove Navigation)          */}
+      {/* ========================================================= */}
+      <aside className="w-64 bg-[#060813] border-r border-zinc-800/80 flex flex-col justify-between shrink-0 z-20 overflow-y-auto">
+        <div>
+          {/* Logo Header */}
+          <div className="p-5 pb-4 flex items-center justify-between border-b border-zinc-900">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-[#ff5500] text-white font-black text-xl flex items-center justify-center shadow-lg shadow-orange-600/30">
+                LC
+              </div>
+              <div>
+                <h1 className="text-base font-extrabold tracking-tight text-white leading-none">
+                  {settings.restaurantName}
+                </h1>
+                <p className="text-[10px] font-bold tracking-widest text-[#ff5500] uppercase mt-1">
+                  {settings.tagline}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Links with Role Filtering */}
+          <nav className="p-3 space-y-1">
+            {[
+              { id: 'pos', name: 'POS Terminal', icon: Monitor, badge: cart.reduce((a, b) => a + b.qty, 0) },
+              { id: 'kds', name: 'Kitchen Display', icon: Flame },
+              { id: 'bar', name: 'Bar Display', icon: Wine },
+              { id: 'billing', name: 'Billing & Settlement', icon: Receipt, badge: activeOrders.length },
+              { id: 'tables', name: 'Table Management', icon: Grid },
+              { id: 'stock', name: 'Stock & Inventory', icon: Package, alert: inventory.some(i => i.stock <= i.threshold) },
+              { id: 'recipes', name: 'Recipes & Portions', icon: BookOpen },
+              { id: 'shifts', name: 'Cashier Shifts', icon: DollarSign },
+              { id: 'reports', name: 'Sales Reports', icon: BarChart3 }
+            ].map(item => {
+              const allowed = hasAccess(item.id);
+              return (
+                <button
+                  key={item.id}
+                  disabled={!allowed}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
+                    !allowed
+                      ? 'opacity-30 cursor-not-allowed text-zinc-600'
+                      : activeTab === item.id
+                      ? 'bg-[#ff5500] text-white font-bold shadow-lg shadow-orange-600/20'
+                      : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.name}</span>
+                  </div>
+                  {item.badge > 0 && (
+                    <span className={`px-2 py-0.5 text-[10px] rounded-full font-bold ${
+                      activeTab === item.id ? 'bg-white text-zinc-900' : 'bg-orange-500/20 text-[#ff5500]'
+                    }`}>
+                      {item.badge}
+                    </span>
+                  )}
+                  {item.alert && (
+                    <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                  )}
+                </button>
+              );
+            })}
+
+            {/* ADMINISTRATION SECTION */}
+            <div className="pt-4 pb-1.5 px-3">
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                ADMINISTRATION
+              </span>
+            </div>
+
+            {[
+              { id: 'menu_admin', name: 'Menu Management', icon: ClipboardList, badgeText: '+Add' },
+              { id: 'cancelled', name: 'Cancelled Tickets', icon: Trash2 },
+              { id: 'staff', name: 'Staff Management', icon: Users },
+              { id: 'settings', name: 'System Settings', icon: Settings }
+            ].map(item => {
+              const allowed = hasAccess(item.id);
+              return (
+                <button
+                  key={item.id}
+                  disabled={!allowed}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
+                    !allowed
+                      ? 'opacity-30 cursor-not-allowed text-zinc-600'
+                      : activeTab === item.id
+                      ? 'bg-[#ff5500] text-white font-bold shadow-lg shadow-orange-600/20'
+                      : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.name}</span>
+                  </div>
+                  {item.badgeText && allowed && (
+                    <span className="text-[10px] bg-orange-500/20 text-[#ff5500] px-1.5 py-0.2 rounded font-bold">
+                      {item.badgeText}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* User Footer with Fast PIN Switch Modal */}
+        <div className="p-3 border-t border-zinc-900 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="h-9 w-9 rounded-full bg-zinc-800 text-orange-400 font-black text-xs flex items-center justify-center border border-zinc-700">
+              {currentUser.avatar}
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white leading-tight">{currentUser.name}</p>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-zinc-400">{currentUser.role}</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setTargetStaffForSwitch(staffList.find(s => s.id !== currentUser.id) || staffList[0]);
+              setPinModalOpen(true);
+            }}
+            title="Fast PIN Role Switch"
+            className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+          >
+            <KeyRound className="h-4 w-4" />
+          </button>
+        </div>
+      </aside>
+
+      {/* ========================================================= */}
+      {/* 2. MAIN CONTENT AREA                                      */}
+      {/* ========================================================= */}
+      <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 text-slate-900">
+
+        {/* Top Sticky Header */}
+        <header className="h-14 px-6 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 shadow-sm z-10">
+          <div className="flex items-center gap-4">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider font-mono">
+              TERMINAL: {settings.terminalId}
+            </span>
+            <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-xs font-semibold">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+              Online
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {hasAccess('menu_admin') && (
+              <button
+                onClick={() => setAddItemModalOpen(true)}
+                className="px-3.5 py-1.5 bg-[#ff5500] hover:bg-orange-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-orange-600/20 transition-all"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Add New Dish / Drink</span>
+              </button>
+            )}
+
+            <div className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-700">
+              Currency: {settings.currency} (LKR)
+            </div>
+
+            <button
+              onClick={() => {
+                setTargetStaffForSwitch(staffList[0]);
+                setPinModalOpen(true);
+              }}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5"
+            >
+              <Lock className="h-3.5 w-3.5" />
+              <span>Switch / Lock</span>
+            </button>
+          </div>
+        </header>
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: SALES & REVENUE REPORTS                                 */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'reports' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            
+            {/* Horizontal Subtabs */}
+            <div className="flex items-center gap-6 border-b border-slate-200 pb-3 text-xs font-bold overflow-x-auto">
+              {[
+                'Daily Overview',
+                'Sales Detail',
+                'KOT Report',
+                'BOT Report',
+                'Sales Summary',
+                'Food vs Beverage',
+                'Stock Usage'
+              ].map(sub => (
+                <button
+                  key={sub}
+                  onClick={() => setReportSubTab(sub)}
+                  className={`transition-colors relative pb-1 whitespace-nowrap ${
+                    reportSubTab === sub
+                      ? 'text-[#ff5500] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-[#ff5500]'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  {sub}
+                </button>
+              ))}
+            </div>
+
+            {/* Sub-tab 1: Daily Overview */}
+            {reportSubTab === 'Daily Overview' && (
+              <>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                      Sales &amp; Revenue Reports
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Comprehensive financial breakdown of sales, service charges, taxes, and preparation area performances.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 shadow-sm font-mono">
+                      <span>09/19/2026</span>
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                      <span className="text-slate-400 font-sans">to</span>
+                      <span>09/19/2026</span>
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                    </div>
+
+                    <button
+                      onClick={() => setPrintModalConfig({ type: 'DAILY_SUMMARY', data: salesMetrics })}
+                      className="px-4 py-2 bg-[#008f5d] hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition-all"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                      <span>Print Thermal (80mm)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4 Main Metric Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">GROSS REVENUE</p>
+                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.grossRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">{salesMetrics.paidBillsCount} Paid Bills</p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">ITEM SUBTOTAL</p>
+                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.itemSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Food &amp; Beverage Sales</p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">SERVICE CHARGE</p>
+                    <p className="text-2xl font-black text-emerald-600 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.serviceCharge.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Collected for staff pool</p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">TAXES / DISCOUNTS</p>
+                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.taxes.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Discounts: {settings.currency} {salesMetrics.discounts.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                {/* Middle Section: Payment Methods Breakdown & Preparation Area Sales */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 mb-4">
+                      Payment Methods Breakdown
+                    </h3>
+                    <div className="space-y-3">
+                      {Object.keys(salesMetrics.paymentMethods).length === 0 ? (
+                        <p className="text-xs text-slate-400 italic">No payments collected yet today.</p>
+                      ) : (
+                        Object.entries(salesMetrics.paymentMethods).map(([method, data]) => (
+                          <div key={method} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                            <div className="flex items-center gap-3">
+                              <span className="px-2 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-mono font-black rounded-lg">
+                                {method.substring(0, 3)}
+                              </span>
+                              <div>
+                                <p className="text-xs font-bold text-slate-900">{method}</p>
+                                <span className="text-[10px] text-slate-500">{data.count} transactions</span>
+                              </div>
+                            </div>
+                            <span className="text-sm font-black font-mono text-slate-900">
+                              {settings.currency} {data.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 mb-4">
+                      Preparation Area Sales
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <span className="px-2 py-1 bg-rose-100 text-rose-800 text-[10px] font-mono font-black rounded-lg">KOT</span>
+                          <div>
+                            <p className="text-xs font-bold text-slate-900">Kitchen</p>
+                            <span className="text-[10px] text-slate-500">{salesMetrics.kitchenItemsCount} items prepared</span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-black font-mono text-slate-900">
+                          {settings.currency} {salesMetrics.kitchenRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <span className="px-2 py-1 bg-indigo-100 text-indigo-800 text-[10px] font-mono font-black rounded-lg">BOT</span>
+                          <div>
+                            <p className="text-xs font-bold text-slate-900">Bar</p>
+                            <span className="text-[10px] text-slate-500">{salesMetrics.barItemsCount} items prepared</span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-black font-mono text-slate-900">
+                          {settings.currency} {salesMetrics.barRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top Selling Menu Items Table */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 mb-3">
+                    Top Selling Menu Items
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5">MENU ITEM</th>
+                          <th className="py-2.5">AREA</th>
+                          <th className="py-2.5 text-center">PORTIONS SOLD</th>
+                          <th className="py-2.5 text-right">TOTAL REVENUE</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {salesMetrics.topItems.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/70">
+                            <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                            <td className="py-3 text-slate-500">{item.department}</td>
+                            <td className="py-3 text-center font-mono font-bold text-slate-700">{item.sold}</td>
+                            <td className="py-3 text-right font-mono font-black text-slate-900">
+                              {settings.currency} {item.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Sub-tab 2: Sales Detail Transaction Log */}
+            {reportSubTab === 'Sales Detail' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-black text-slate-900 uppercase">Paid Invoices Ledger</h3>
+                  <span className="text-xs font-mono text-slate-500">{transactions.length} Total Records</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Invoice #</th>
+                        <th className="py-2.5">Time</th>
+                        <th className="py-2.5">Table / Order</th>
+                        <th className="py-2.5">Cashier</th>
+                        <th className="py-2.5">Method</th>
+                        <th className="py-2.5 text-right">Subtotal</th>
+                        <th className="py-2.5 text-right">Service</th>
+                        <th className="py-2.5 text-right">Grand Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {transactions.map((t, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="py-3 font-mono font-bold text-slate-800">{t.invoiceNo}</td>
+                          <td className="py-3 text-slate-500">{t.date}</td>
+                          <td className="py-3 font-semibold text-slate-900">{t.table}</td>
+                          <td className="py-3 text-slate-600">{t.cashier}</td>
+                          <td className="py-3">
+                            <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-slate-700">
+                              {t.paymentMethod}
+                            </span>
+                          </td>
+                          <td className="py-3 text-right font-mono">{settings.currency} {t.subtotal.toFixed(2)}</td>
+                          <td className="py-3 text-right font-mono text-emerald-700">+{settings.currency} {t.serviceCharge.toFixed(2)}</td>
+                          <td className="py-3 text-right font-mono font-black text-slate-900">{settings.currency} {t.total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-tab 3 & 4: KOT / BOT Reports */}
+            {(reportSubTab === 'KOT Report' || reportSubTab === 'BOT Report') && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-black text-slate-900 uppercase">
+                    {reportSubTab === 'KOT Report' ? 'Kitchen Order Tickets (KOT) Audit' : 'Bar Order Tickets (BOT) Audit'}
+                  </h3>
+                  <span className={`px-2 py-1 rounded text-xs font-bold ${
+                    reportSubTab === 'KOT Report' ? 'bg-rose-100 text-rose-800' : 'bg-indigo-100 text-indigo-800'
+                  }`}>
+                    {reportSubTab === 'KOT Report' ? `${salesMetrics.kitchenItemsCount} items dispatched` : `${salesMetrics.barItemsCount} drinks dispatched`}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Item Dispatched</th>
+                        <th className="py-2.5">Target Dept</th>
+                        <th className="py-2.5 text-center">Total Quantity</th>
+                        <th className="py-2.5 text-right">Revenue Contributed</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {salesMetrics.topItems
+                        .filter(i => reportSubTab === 'KOT Report' ? i.department === 'Kitchen' : i.department === 'Bar')
+                        .map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                            <td className="py-3 text-slate-500">{item.department}</td>
+                            <td className="py-3 text-center font-mono font-bold">{item.sold}</td>
+                            <td className="py-3 text-right font-mono font-bold text-slate-900">{settings.currency} {item.revenue.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-tab 5: Food vs Beverage Breakdown */}
+            {reportSubTab === 'Food vs Beverage' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-rose-600 uppercase tracking-wider">Food / Kitchen (KOT)</span>
+                    <h3 className="text-3xl font-black font-mono text-slate-900 mt-2">
+                      {settings.currency} {salesMetrics.kitchenRevenue.toFixed(2)}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {((salesMetrics.kitchenRevenue / (salesMetrics.itemSubtotal || 1)) * 100).toFixed(1)}% of total menu sales
+                    </p>
+                  </div>
+                  <div className="mt-6 pt-4 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-700">Portions Prepared: {salesMetrics.kitchenItemsCount}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Beverages / Bar (BOT)</span>
+                    <h3 className="text-3xl font-black font-mono text-slate-900 mt-2">
+                      {settings.currency} {salesMetrics.barRevenue.toFixed(2)}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {((salesMetrics.barRevenue / (salesMetrics.itemSubtotal || 1)) * 100).toFixed(1)}% of total menu sales
+                    </p>
+                  </div>
+                  <div className="mt-6 pt-4 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-700">Drinks Served: {salesMetrics.barItemsCount}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-tab 6: Stock Usage */}
+            {reportSubTab === 'Stock Usage' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <h3 className="text-sm font-black text-slate-900 uppercase mb-3">Live Ingredient Stock Depletion</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Raw Material</th>
+                        <th className="py-2.5">Remaining Stock</th>
+                        <th className="py-2.5">Threshold</th>
+                        <th className="py-2.5 text-right">Unit Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {inventory.map(i => (
+                        <tr key={i.id} className="hover:bg-slate-50">
+                          <td className="py-3 font-bold text-slate-900">{i.name}</td>
+                          <td className="py-3 font-mono font-bold text-slate-700">{i.stock} {i.unit}</td>
+                          <td className="py-3 font-mono text-slate-400">{i.threshold} {i.unit}</td>
+                          <td className="py-3 text-right font-mono text-slate-600">{settings.currency} {i.cost.toFixed(2)} / {i.unit}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-tab 7: Sales Summary */}
+            {reportSubTab === 'Sales Summary' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4 max-w-xl">
+                <h3 className="text-base font-black text-slate-900 uppercase">Executive Summary</h3>
+                <div className="space-y-2 text-xs divide-y divide-slate-100">
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Total Orders Closed</span>
+                    <span className="font-mono font-bold text-slate-900">{salesMetrics.paidBillsCount}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Net Food &amp; Beverage Sales</span>
+                    <span className="font-mono font-bold text-slate-900">{settings.currency} {salesMetrics.itemSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Service Charges (10%)</span>
+                    <span className="font-mono font-bold text-emerald-600">+{settings.currency} {salesMetrics.serviceCharge.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Taxes Collected</span>
+                    <span className="font-mono font-bold text-slate-900">+{settings.currency} {salesMetrics.taxes.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-3 text-sm font-black text-slate-900 border-t-2 border-slate-900">
+                    <span>Total Net Revenue</span>
+                    <span className="font-mono text-[#ff5500]">{settings.currency} {salesMetrics.grossRevenue.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: POS TERMINAL                                            */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'pos' && (
+          <div className="flex-1 flex overflow-hidden">
+            {/* Catalog Grid */}
+            <div className="flex-1 flex flex-col p-5 overflow-hidden">
+              <div className="flex items-center justify-between gap-4 mb-4 shrink-0">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {categoriesList.map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                        selectedCategory === cat
+                          ? 'bg-[#ff5500] text-white shadow-md shadow-orange-600/20'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-64 shrink-0">
+                  <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={menuSearchQuery}
+                    onChange={e => setMenuSearchQuery(e.target.value)}
+                    placeholder="Search menu..."
+                    className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              {/* Dish Cards */}
+              <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pr-1">
+                {menuItems
+                  .filter(item => {
+                    const matchCat = selectedCategory === 'All' || item.category === selectedCategory;
+                    const matchQuery = item.name.toLowerCase().includes(menuSearchQuery.toLowerCase());
+                    return matchCat && matchQuery;
+                  })
+                  .map(dish => {
+                    const { cogs, portions, isSoldOut } = calculateDishAvailability(dish.recipe);
+                    return (
+                      <div
+                        key={dish.id}
+                        onClick={() => !isSoldOut && handleAddToCart(dish)}
+                        className={`bg-white rounded-2xl border overflow-hidden flex flex-col justify-between transition-all ${
+                          isSoldOut
+                            ? 'border-slate-200 opacity-50 cursor-not-allowed'
+                            : 'border-slate-200/90 hover:border-[#ff5500] hover:shadow-md cursor-pointer active:scale-[0.99]'
+                        }`}
+                      >
+                        {dish.imageUrl && (
+                          <div className="relative h-28 w-full bg-slate-100 overflow-hidden shrink-0">
+                            <img
+                              src={dish.imageUrl}
+                              alt={dish.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                            <span className={`absolute top-2 left-2 text-[9px] font-black px-2 py-0.5 rounded shadow-sm ${
+                              dish.department === 'Bar' ? 'bg-indigo-600 text-white' : 'bg-rose-600 text-white'
+                            }`}>
+                              {dish.department}
+                            </span>
+                            <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-lg bg-black/75 backdrop-blur-sm text-white font-mono font-black text-xs">
+                              {settings.currency} {dish.price.toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="p-4 pb-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              {!dish.imageUrl && (
+                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                                  dish.department === 'Bar' ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'
+                                }`}>
+                                  {dish.department}
+                                </span>
+                              )}
+                              <h4 className="font-extrabold text-sm text-slate-900 mt-0.5">{dish.name}</h4>
+                            </div>
+                            {!dish.imageUrl && (
+                              <span className="text-sm font-black font-mono text-[#ff5500]">
+                                {settings.currency} {dish.price.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1 line-clamp-2">{dish.description}</p>
+                        </div>
+
+                        <div className="p-4 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] bg-slate-50/50">
+                          {isSoldOut ? (
+                            <span className="text-rose-600 font-bold flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3" /> SOLD OUT (BOM 0)
+                            </span>
+                          ) : (
+                            <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                              <CheckCircle2 className="h-3 w-3" /> {portions} ready
+                            </span>
+                          )}
+                          <span className="text-slate-400 font-mono">Cost: {settings.currency} {cogs.toFixed(0)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* Right Side Ticket Sidebar */}
+            <div className="w-96 bg-white border-l border-slate-200 flex flex-col justify-between shrink-0 shadow-lg">
+              
+              {/* Order Target & Allocation Bar */}
+              <div className="p-4 border-b border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                      <Receipt className="h-4 w-4 text-[#ff5500]" />
+                      {orderMode === 'DINING' ? selectedTable.name : `Takeaway (${takeawayInfo.token})`}
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      {orderMode === 'DINING' ? `${selectedTable.zone} • ${guestCount} Guests` : takeawayInfo.name}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setAllocationModalOpen(true)}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs"
+                  >
+                    Change Table
+                  </button>
+                </div>
+
+                {/* Surcharge & Tax Controls */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    onClick={() => setServiceChargeActive(!serviceChargeActive)}
+                    className={`py-1 px-2 rounded-lg border text-xs font-bold transition-all ${
+                      serviceChargeActive
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                        : 'bg-slate-50 border-slate-200 text-slate-400'
+                    }`}
+                  >
+                    Service ({settings.serviceChargeRate}%): {serviceChargeActive ? 'ON' : 'OFF'}
+                  </button>
+
+                  <button
+                    onClick={() => setTaxActive(!taxActive)}
+                    className={`py-1 px-2 rounded-lg border text-xs font-bold transition-all ${
+                      taxActive
+                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                        : 'bg-slate-50 border-slate-200 text-slate-400'
+                    }`}
+                  >
+                    Tax ({settings.taxRate}%): {taxActive ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Ticket Items List */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+                {cart.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-6">
+                    <Monitor className="h-10 w-10 mb-2 stroke-[1]" />
+                    <p className="text-xs font-bold text-slate-600">Ticket is empty</p>
+                    <p className="text-[11px] text-slate-400 mt-1">Tap items to build order.</p>
+                  </div>
+                ) : (
+                  cart.map(item => (
+                    <div key={item.cartItemId} className="p-3 bg-slate-50 rounded-xl border border-slate-200/90">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-xs font-bold text-slate-900">{item.name}</p>
+                          <p className="text-xs font-mono font-bold text-[#ff5500] mt-0.5">
+                            {settings.currency} {(item.price * item.qty).toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setCart(prev => prev.map(i => i.cartItemId === item.cartItemId ? { ...i, qty: Math.max(1, i.qty - 1) } : i));
+                            }}
+                            className="h-6 w-6 rounded-md bg-white border border-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold"
+                          >
+                            -
+                          </button>
+                          <span className="text-xs font-bold w-5 text-center font-mono">{item.qty}</span>
+                          <button
+                            onClick={() => {
+                              setCart(prev => prev.map(i => i.cartItemId === item.cartItemId ? { ...i, qty: i.qty + 1 } : i));
+                            }}
+                            className="h-6 w-6 rounded-md bg-white border border-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold"
+                          >
+                            +
+                          </button>
+                          <button
+                            onClick={() => {
+                              setVoidPayload({ item, reason: '' });
+                              setVoidModalOpen(true);
+                            }}
+                            className="text-slate-400 hover:text-rose-600 ml-1 p-1"
+                            title="Void Line Item"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={item.notes}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setCart(prev => prev.map(i => i.cartItemId === item.cartItemId ? { ...i, notes: val } : i));
+                        }}
+                        placeholder="Add kitchen/bar modifier note..."
+                        className="w-full mt-2 text-[11px] px-2 py-1 bg-white border border-slate-200 rounded text-slate-700 placeholder-slate-400 focus:outline-none focus:border-[#ff5500]"
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Order Actions and Totals */}
+              <div className="p-4 border-t border-slate-200 bg-slate-50 space-y-3">
+                <div className="space-y-1 text-xs text-slate-600">
+                  <div className="flex justify-between">
+                    <span>Subtotal</span>
+                    <span className="font-mono font-bold text-slate-900">{settings.currency} {cartSubtotal.toFixed(2)}</span>
+                  </div>
+                  {serviceChargeActive && (
+                    <div className="flex justify-between text-emerald-700 font-medium">
+                      <span>Service Charge ({settings.serviceChargeRate}%)</span>
+                      <span className="font-mono">+{settings.currency} {cartServiceCharge.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {taxActive && (
+                    <div className="flex justify-between text-indigo-700 font-medium">
+                      <span>Taxes ({settings.taxRate}%)</span>
+                      <span className="font-mono">+{settings.currency} {cartTax.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
+                    <span>Grand Total</span>
+                    <span className="font-mono text-base text-[#ff5500]">{settings.currency} {cartGrandTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <button
+                  disabled={cart.length === 0}
+                  onClick={handleSendOrder}
+                  className="w-full py-3 bg-[#ff5500] hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-orange-600/30 disabled:opacity-40"
+                >
+                  <Send className="h-4 w-4" />
+                  <span>Send Order (Prints KOT / BOT / Temp)</span>
+                </button>
+
+                <button
+                  disabled={cart.length === 0}
+                  onClick={() => {
+                    setSettlingOrder(null);
+                    setCheckoutModalOpen(true);
+                  }}
+                  className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 disabled:opacity-40"
+                >
+                  <Receipt className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Direct Settle &amp; Pay ({settings.currency} {cartGrandTotal.toFixed(2)})</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: CASHIER SHIFTS & DRAWER BALANCING                       */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'shifts' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Cashier Shift &amp; Drawer Balancing</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Shift ID: <span className="font-mono font-bold text-slate-800">{currentShift.shiftId}</span> • Opened by {currentShift.openedBy} at {currentShift.openedAt}
+                </p>
+              </div>
+
+              <button
+                onClick={handleCloseShift}
+                className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-orange-600/20"
+              >
+                <Lock className="h-4 w-4" />
+                <span>Close Shift &amp; Print Z-Report</span>
+              </button>
+            </div>
+
+            {/* Reconciliation KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-black uppercase text-slate-400">Opening Float</p>
+                <p className="text-xl font-black font-mono text-slate-900 mt-1">
+                  {settings.currency} {currentShift.startingFloat.toFixed(2)}
+                </p>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-black uppercase text-slate-400">Cash Sales Collected</p>
+                <p className="text-xl font-black font-mono text-emerald-600 mt-1">
+                  +{settings.currency} {shiftCashMetrics.totalCashSales.toFixed(2)}
+                </p>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-black uppercase text-slate-400">Petty Cash Payouts</p>
+                <p className="text-xl font-black font-mono text-rose-600 mt-1">
+                  -{settings.currency} {shiftCashMetrics.totalPayouts.toFixed(2)}
+                </p>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-black uppercase text-slate-400">Expected Drawer Total</p>
+                <p className="text-xl font-black font-mono text-slate-900 mt-1">
+                  {settings.currency} {shiftCashMetrics.expectedCashInDrawer.toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            {/* Denomination Physical Counter & Petty Cash Box */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              {/* Physical Denominations Counter */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                    <Coins className="h-4 w-4 text-[#ff5500]" /> Physical Cash Drawer Count
+                  </h3>
+                  <span className="font-mono text-xs font-bold text-slate-600">
+                    Counted: {settings.currency} {shiftCashMetrics.countedCash.toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {[5000, 1000, 500, 100, 50, 20].map(denom => (
+                    <div key={denom} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="font-mono font-bold text-xs text-slate-700">{settings.currency} {denom}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400">×</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={denominations[denom] || ''}
+                          onChange={e => {
+                            const val = parseInt(e.target.value) || 0;
+                            setDenominations(prev => ({ ...prev, [denom]: val }));
+                          }}
+                          placeholder="0"
+                          className="w-16 px-2 py-1 bg-white border border-slate-300 rounded text-center text-xs font-mono font-bold"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Variance Display */}
+                <div className={`p-4 rounded-xl border flex items-center justify-between ${
+                  shiftCashMetrics.variance === 0
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : shiftCashMetrics.variance > 0
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}>
+                  <div>
+                    <p className="text-xs font-bold">
+                      {shiftCashMetrics.variance === 0 ? 'Drawer Perfectly Balanced' : shiftCashMetrics.variance > 0 ? 'Cash Overage Detected' : 'Cash Shortage Detected'}
+                    </p>
+                    <p className="text-[10px] opacity-80">Difference between physical count and system expectation</p>
+                  </div>
+                  <span className="text-base font-black font-mono">
+                    {shiftCashMetrics.variance > 0 ? '+' : ''}{settings.currency} {shiftCashMetrics.variance.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Petty Cash Out / Register Expenses */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                  <Banknote className="h-4 w-4 text-rose-500" /> Record Petty Cash Out
+                </h3>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!payoutForm.amount || !payoutForm.reason) return;
+                    const newPo = {
+                      id: `po_${Date.now()}`,
+                      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                      amount: parseFloat(payoutForm.amount) || 0,
+                      reason: payoutForm.reason.trim(),
+                      staff: currentUser.name
+                    };
+                    setCurrentShift(prev => ({ ...prev, payouts: [newPo, ...prev.payouts] }));
+                    setPayoutForm({ amount: '', reason: '' });
+                  }}
+                  className="space-y-3"
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Amount ({settings.currency})</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={payoutForm.amount}
+                        onChange={e => setPayoutForm(prev => ({ ...prev, amount: e.target.value }))}
+                        placeholder="e.g. 500.00"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Reason / Note</label>
+                      <input
+                        type="text"
+                        required
+                        value={payoutForm.reason}
+                        onChange={e => setPayoutForm(prev => ({ ...prev, reason: e.target.value }))}
+                        placeholder="e.g. Market Lemons, Ice Bags"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold"
+                  >
+                    Authorize Payout
+                  </button>
+                </form>
+
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Shift Payouts Audit</p>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {currentShift.payouts.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">No cash payouts logged in this shift.</p>
+                    ) : (
+                      currentShift.payouts.map(po => (
+                        <div key={po.id} className="flex justify-between items-center text-xs p-2 bg-slate-50 rounded-lg">
+                          <div>
+                            <p className="font-bold text-slate-800">{po.reason}</p>
+                            <span className="text-[10px] text-slate-400">{po.time} • Auth by {po.staff}</span>
+                          </div>
+                          <span className="font-mono font-bold text-rose-600">-{settings.currency} {po.amount.toFixed(2)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: TABLE MANAGEMENT                                        */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'tables' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Table &amp; Floor Management</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Real-time floor occupancy, zone mapping, and instant table order linkage.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setAddTableModalOpen(true)}
+                className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-orange-600/20"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Add New Table</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {floorTables.map(tbl => {
+                const isOccupied = tbl.status === 'OCCUPIED';
+                const isReserved = tbl.status === 'RESERVED';
+
+                return (
+                  <div
+                    key={tbl.id}
+                    className={`bg-white rounded-2xl border p-5 shadow-sm flex flex-col justify-between transition-all ${
+                      isOccupied
+                        ? 'border-orange-300 ring-2 ring-orange-500/10'
+                        : isReserved
+                        ? 'border-indigo-200'
+                        : 'border-slate-200'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-mono font-bold text-slate-400">{tbl.id}</span>
+                          <h3 className="text-base font-black text-slate-900">{tbl.name}</h3>
+                          <p className="text-xs text-slate-500">{tbl.zone}</p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          isOccupied
+                            ? 'bg-orange-100 text-[#ff5500]'
+                            : isReserved
+                            ? 'bg-indigo-100 text-indigo-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {tbl.status}
+                        </span>
+                      </div>
+
+                      <p className="text-xs font-mono text-slate-600 mt-3">Capacity: {tbl.capacity} Seats</p>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedTable(tbl);
+                          setOrderMode('DINING');
+                          setActiveTab('pos');
+                        }}
+                        className="flex-1 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold"
+                      >
+                        {isOccupied ? 'Open Order' : 'Seat Table'}
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const nextStatus = tbl.status === 'VACANT' ? 'RESERVED' : 'VACANT';
+                          setFloorTables(prev => prev.map(t => t.id === tbl.id ? { ...t, status: nextStatus } : t));
+                        }}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold"
+                        title="Toggle Reserved State"
+                      >
+                        Status
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: STAFF MANAGEMENT & ROLES                                */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'staff' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Staff Management &amp; Access Roles</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Configure employee credentials, security PINs, and role permissions across modules.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setAddStaffModalOpen(true)}
+                className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-orange-600/20"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Employee</span>
+              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Staff Member</th>
+                    <th className="py-3 px-4">Role</th>
+                    <th className="py-3 px-4">Security PIN</th>
+                    <th className="py-3 px-4">Allowed Modules</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {staffList.map(member => (
+                    <tr key={member.id} className="hover:bg-slate-50">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-8 w-8 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center">
+                            {member.avatar}
+                          </div>
+                          <div>
+                            <p className="font-extrabold text-slate-900">{member.name}</p>
+                            <span className="text-[10px] text-slate-400">{member.email}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="px-2 py-0.5 bg-orange-100 text-[#ff5500] rounded font-bold text-[10px]">
+                          {member.role}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-700">•••• ({member.pin})</td>
+                      <td className="py-3 px-4 text-slate-600">
+                        <span className="text-[11px] font-medium">
+                          {(ROLE_PERMISSIONS[member.role] || []).length} modules enabled
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => {
+                            if (staffList.length <= 1) return;
+                            setStaffList(prev => prev.filter(s => s.id !== member.id));
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100"
+                          title="Remove Staff"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: RECIPES & PORTIONS                                      */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'recipes' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Recipes, Portions &amp; BOM Costing</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Real-time Cost of Goods Sold (COGS), profit margins, and remaining portions linked directly to raw inventory.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (menuItems.length > 0) {
+                    handleOpenRecipeConfig(menuItems[0]);
+                  }
+                }}
+                className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-orange-600/20"
+              >
+                <Sliders className="h-3.5 w-3.5" />
+                <span>Configure Dish Recipe</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {menuItems.map(dish => {
+                const { cogs, portions, isSoldOut } = calculateDishAvailability(dish.recipe);
+                const margin = dish.price > 0 ? (((dish.price - cogs) / dish.price) * 100).toFixed(1) : 0;
+
+                return (
+                  <div key={dish.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">{dish.department} • {dish.category}</span>
+                          {isSoldOut && (
+                            <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 text-[9px] font-black rounded">
+                              OUT OF STOCK
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-base font-black text-slate-900 mt-0.5">{dish.name}</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">{dish.description}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-base font-black font-mono text-[#ff5500]">
+                          {settings.currency} {dish.price.toFixed(2)}
+                        </span>
+                        <p className="text-[10px] font-bold text-emerald-600">{margin}% Gross Margin</p>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <p className="text-[10px] font-black uppercase text-slate-400">Bill of Materials (BOM Breakdown)</p>
+                        <button
+                          onClick={() => handleOpenRecipeConfig(dish)}
+                          className="text-[11px] font-bold text-[#ff5500] hover:underline flex items-center gap-1"
+                        >
+                          <Sliders className="h-3 w-3" /> Edit Ingredients
+                        </button>
+                      </div>
+                      {dish.recipe && dish.recipe.length > 0 ? (
+                        dish.recipe.map((r, i) => {
+                          const ing = inventoryMap[r.ingredientId];
+                          const lineCost = ing ? (ing.cost * r.amount) : 0;
+                          return (
+                            <div key={i} className="flex justify-between text-xs">
+                              <span className="text-slate-700">{ing ? ing.name : r.ingredientId} ({r.amount} {ing ? ing.unit : ''})</span>
+                              <span className="font-mono text-slate-500">{settings.currency} {lineCost.toFixed(2)}</span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">No raw inventory linked to this item.</p>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-100">
+                      <span className="text-slate-600 font-medium">
+                        Live Portions in Stock: <strong className={isSoldOut ? 'text-rose-600 font-mono' : 'text-slate-900 font-mono'}>{portions}</strong>
+                      </span>
+                      <span className="font-mono font-bold text-slate-700">
+                        Total Raw Cost: {settings.currency} {cogs.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: STOCK & INVENTORY                                       */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'stock' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Stock &amp; Raw Inventory</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Raw ingredients and supplies dynamically depleted through recipe Bill of Materials upon settlement.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setReceiveStockForm(prev => ({
+                      ...prev,
+                      ingredientId: inventory[0]?.id || '',
+                      quantity: '',
+                      supplier: '',
+                      invoiceRef: '',
+                      newCost: ''
+                    }));
+                    setReceiveStockModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition-all"
+                >
+                  <Package className="h-3.5 w-3.5" />
+                  <span>Receive Stock (Intake)</span>
+                </button>
+
+                <button
+                  onClick={() => setAddInventoryModalOpen(true)}
+                  className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-orange-600/20 transition-all"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add New Raw Material</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Raw Ingredient</th>
+                    <th className="py-3 px-4">Category</th>
+                    <th className="py-3 px-4">Remaining Stock</th>
+                    <th className="py-3 px-4">Reorder Threshold</th>
+                    <th className="py-3 px-4">Unit Cost</th>
+                    <th className="py-3 px-4 text-right">Quick Restock</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {inventory.map(ing => {
+                    const isLow = ing.stock <= ing.threshold;
+                    return (
+                      <tr key={ing.id} className="hover:bg-slate-50/70">
+                        <td className="py-3 px-4">
+                          <p className="font-extrabold text-slate-900">{ing.name}</p>
+                          <span className="text-[10px] text-slate-400 font-mono">{ing.id}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-bold">
+                            {ing.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                          {ing.stock} {ing.unit}
+                          {isLow && <span className="ml-2 px-1.5 py-0.5 bg-rose-100 text-rose-700 text-[10px] rounded font-bold">Low Stock</span>}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-slate-400">{ing.threshold} {ing.unit}</td>
+                        <td className="py-3 px-4 font-mono text-slate-600">{settings.currency} {ing.cost.toFixed(2)} / {ing.unit}</td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => {
+                              setReceiveStockForm({
+                                ingredientId: ing.id,
+                                quantity: ing.unit === 'g' || ing.unit === 'ml' ? '1000' : '10',
+                                supplier: 'Local Market',
+                                invoiceRef: `REC-${Math.floor(100 + Math.random() * 900)}`,
+                                newCost: ing.cost.toString()
+                              });
+                              setReceiveStockModalOpen(true);
+                            }}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
+                          >
+                            + Intake Stock
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: KITCHEN DISPLAY (KDS)                                   */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'kds' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <h2 className="text-xl font-black text-slate-900">Live Kitchen Display (KOT)</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {activeOrders
+                .filter(o => o.items.some(i => i.department === 'Kitchen'))
+                .map(order => (
+                  <div key={order.orderId} className="bg-white rounded-2xl border-2 border-rose-200 p-4 shadow-sm">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-3">
+                      <div>
+                        <h4 className="font-extrabold text-sm text-slate-900">{order.tableName}</h4>
+                        <span className="text-[10px] text-slate-400">Order #{order.orderId}</span>
+                      </div>
+                      <span className="px-2 py-0.5 bg-rose-100 text-rose-700 font-bold text-xs rounded-full">
+                        {order.sentAt}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {order.items
+                        .filter(i => i.department === 'Kitchen')
+                        .map((item, idx) => (
+                          <div key={idx} className="p-2 bg-slate-50 rounded-lg">
+                            <p className="font-bold text-xs text-slate-900">{item.qty}x {item.name}</p>
+                            {item.notes && <p className="text-[10px] text-rose-600 font-semibold mt-0.5">&gt; {item.notes}</p>}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: BAR DISPLAY (BDS)                                       */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'bar' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <h2 className="text-xl font-black text-slate-900">Live Bar Display (BOT)</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {activeOrders
+                .filter(o => o.items.some(i => i.department === 'Bar'))
+                .map(order => (
+                  <div key={order.orderId} className="bg-white rounded-2xl border-2 border-indigo-200 p-4 shadow-sm">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-3">
+                      <div>
+                        <h4 className="font-extrabold text-sm text-slate-900">{order.tableName}</h4>
+                        <span className="text-[10px] text-slate-400">Order #{order.orderId}</span>
+                      </div>
+                      <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 font-bold text-xs rounded-full">
+                        {order.sentAt}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {order.items
+                        .filter(i => i.department === 'Bar')
+                        .map((item, idx) => (
+                          <div key={idx} className="p-2 bg-slate-50 rounded-lg">
+                            <p className="font-bold text-xs text-slate-900">{item.qty}x {item.name}</p>
+                            {item.notes && <p className="text-[10px] text-indigo-600 font-semibold mt-0.5">&gt; {item.notes}</p>}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: BILLING & SETTLEMENT                                    */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'billing' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Billing &amp; Settlement Queue</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Manage sent orders, print interim proforma bills, and settle final payments.
+                </p>
+              </div>
+              <span className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-700">
+                {activeOrders.length} Open Tables
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {activeOrders.length === 0 ? (
+                <div className="col-span-full h-64 bg-white rounded-2xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
+                  <Receipt className="h-10 w-10 mb-2 stroke-[1]" />
+                  <p className="text-sm font-bold text-slate-700">No active tables pending billing</p>
+                  <p className="text-xs mt-1">Send an order from the POS Terminal to populate this list.</p>
+                </div>
+              ) : (
+                activeOrders.map(order => {
+                  const fin = calculateOrderFinancials(order);
+                  return (
+                    <div key={order.orderId} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-[#ff5500]">
+                              {order.mode}
+                            </span>
+                            <h3 className="text-base font-extrabold text-slate-900 mt-1">{order.tableName}</h3>
+                            <p className="text-xs text-slate-500">Waitstaff: {order.server} • {order.sentAt}</p>
+                          </div>
+                          <span className="text-lg font-black font-mono text-[#ff5500]">
+                            {settings.currency} {fin.total.toFixed(2)}
+                          </span>
+                        </div>
+
+                        <div className="bg-slate-50 rounded-xl p-3 my-3 space-y-1.5 text-xs max-h-40 overflow-y-auto border border-slate-100">
+                          {order.items.map((item, idx) => (
+                            <div key={idx} className="flex justify-between">
+                              <span className="font-bold text-slate-800">{item.qty}x {item.name}</span>
+                              <span className="font-mono text-slate-500">{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 space-y-2">
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <button
+                            onClick={() => setPrintModalConfig({
+                              type: 'TEMP_BILL',
+                              data: {
+                                table: order.tableName,
+                                server: order.server,
+                                items: order.items,
+                                subtotal: fin.subtotal,
+                                service: fin.service,
+                                tax: fin.tax,
+                                total: fin.total
+                              }
+                            })}
+                            className="py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold flex items-center justify-center gap-1"
+                          >
+                            <Printer className="h-3.5 w-3.5" /> Temp Bill
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setSettlingOrder(order);
+                              setPaymentMethod('CASH');
+                              setCheckoutModalOpen(true);
+                            }}
+                            className="py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center justify-center gap-1 shadow-sm"
+                          >
+                            <DollarSign className="h-3.5 w-3.5" /> Settle Bill
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: MENU MANAGEMENT                                         */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'menu_admin' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Menu Management &amp; Recipe Configurator</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Add new dishes and beverages, configure preparation departments, and link ingredient recipes.
+                </p>
+              </div>
+              <button
+                onClick={() => setAddItemModalOpen(true)}
+                className="px-4 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-orange-600/20"
+              >
+                <Plus className="h-4 w-4" /> Add New Menu Item
+              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Item &amp; Photo</th>
+                    <th className="py-3 px-4">Area / Dept</th>
+                    <th className="py-3 px-4">Category</th>
+                    <th className="py-3 px-4">Selling Price</th>
+                    <th className="py-3 px-4">Est. COGS</th>
+                    <th className="py-3 px-4">Linked Ingredients</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {menuItems.map(item => {
+                    const { cogs } = calculateDishAvailability(item.recipe);
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50/70">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-3">
+                            {item.imageUrl ? (
+                              <img
+                                src={item.imageUrl}
+                                alt={item.name}
+                                className="h-10 w-10 rounded-xl object-cover border border-slate-200 shadow-sm shrink-0"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 font-bold text-[10px] shrink-0">
+                                NO PIC
+                              </div>
+                            )}
+                            <div>
+                              <p className="font-extrabold text-slate-900">{item.name}</p>
+                              <span className="text-[10px] text-slate-400 line-clamp-1">{item.description}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
+                          }`}>
+                            {item.department}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-600 font-medium">{item.category}</td>
+                        <td className="py-3 px-4 font-mono font-bold text-[#ff5500]">{settings.currency} {item.price.toFixed(2)}</td>
+                        <td className="py-3 px-4 font-mono text-slate-500">{settings.currency} {cogs.toFixed(2)}</td>
+                        <td className="py-3 px-4 text-[11px] text-slate-600">
+                          {item.recipe && item.recipe.length > 0 ? (
+                            <span>{item.recipe.length} raw supplies linked</span>
+                          ) : (
+                            <span className="text-amber-600 italic">No recipe linked</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => setMenuItems(prev => prev.filter(m => m.id !== item.id))}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100"
+                            title="Delete Item"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* VIEW: CANCELLED TICKETS                                       */}
+        {/* ------------------------------------------------------------- */}
+        {activeTab === 'cancelled' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <h2 className="text-xl font-black text-slate-900">Cancelled Tickets &amp; Voids Audit</h2>
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Audit ID</th>
+                    <th className="py-3 px-4">Time</th>
+                    <th className="py-3 px-4">Dish / Item</th>
+                    <th className="py-3 px-4">Table</th>
+                    <th className="py-3 px-4">Mandatory Reason</th>
+                    <th className="py-3 px-4">Authorized Staff</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {cancelledTickets.map(voidItem => (
+                    <tr key={voidItem.id} className="hover:bg-slate-50/70">
+                      <td className="py-3 px-4 font-mono font-bold text-rose-600">{voidItem.id}</td>
+                      <td className="py-3 px-4 text-slate-400">{voidItem.timestamp}</td>
+                      <td className="py-3 px-4 font-bold text-slate-900">{voidItem.qty}x {voidItem.itemName}</td>
+                      <td className="py-3 px-4 text-slate-600">{voidItem.table}</td>
+                      <td className="py-3 px-4 text-slate-700 italic">"{voidItem.reason}"</td>
+                      <td className="py-3 px-4 font-semibold text-slate-800">{voidItem.authorizedBy}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* ========================================================= */}
+      {/* 3. MODALS (Add Item, Staff, PIN Switch, Table, Thermal)   */}
+      {/* ========================================================= */}
+
+      {/* PIN AUTHENTICATION / SWITCH MODAL */}
+      {pinModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Lock className="h-5 w-5 text-[#ff5500]" />
+                <h3 className="text-base font-black text-slate-900">Switch Role / Staff</h3>
+              </div>
+              <button onClick={() => { setPinModalOpen(false); setPinInput(''); setPinError(''); }} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSwitchUserWithPin} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Select Employee</label>
+                <select
+                  value={targetStaffForSwitch ? targetStaffForSwitch.id : ''}
+                  onChange={e => setTargetStaffForSwitch(staffList.find(s => s.id === e.target.value))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white text-slate-800"
+                >
+                  {staffList.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Enter 4-Digit Security PIN</label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  autoFocus
+                  required
+                  value={pinInput}
+                  onChange={e => setPinInput(e.target.value)}
+                  placeholder="••••"
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-center text-xl font-mono tracking-widest text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                />
+                {pinError && <p className="text-xs text-rose-600 font-bold mt-1.5 text-center">{pinError}</p>}
+                <p className="text-[10px] text-slate-400 text-center mt-1">Hint: Admin 1234, Marco 1111, Chef 2222, Bar 3333</p>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-[#ff5500] hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-md shadow-orange-600/20"
+              >
+                Authenticate &amp; Switch
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD NEW EMPLOYEE MODAL */}
+      {addStaffModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-black text-slate-900">Add New Staff Member</h3>
+              <button onClick={() => setAddStaffModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateStaff} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newStaffForm.name}
+                  onChange={e => setNewStaffForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Kasun Silva"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Role / Department</label>
+                  <select
+                    value={newStaffForm.role}
+                    onChange={e => setNewStaffForm(prev => ({ ...prev, role: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900"
+                  >
+                    {Object.keys(ROLE_PERMISSIONS).map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">4-Digit PIN</label>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    required
+                    value={newStaffForm.pin}
+                    onChange={e => setNewStaffForm(prev => ({ ...prev, pin: e.target.value }))}
+                    placeholder="e.g. 7788"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={newStaffForm.email}
+                  onChange={e => setNewStaffForm(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="e.g. kasun@linolicove.me"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-md shadow-orange-600/20"
+              >
+                Save Staff Member
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD NEW DISH MODAL */}
+      {addItemModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-xl p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Add New Menu Dish / Drink</h3>
+                <p className="text-xs text-slate-500">Configure item details, price in {settings.currency}, and link recipe BOM.</p>
+              </div>
+              <button onClick={() => setAddItemModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateNewItem} className="mt-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Item / Dish Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={newDishForm.name}
+                    onChange={e => setNewDishForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g. Seafood Pasta Marinara"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Selling Price ({settings.currency})</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={newDishForm.price}
+                    onChange={e => setNewDishForm(prev => ({ ...prev, price: e.target.value }))}
+                    placeholder="e.g. 2150.00"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Preparation Area / Dept</label>
+                  <select
+                    value={newDishForm.department}
+                    onChange={e => setNewDishForm(prev => ({ ...prev, department: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="Kitchen">Kitchen (Sends KOT)</option>
+                    <option value="Bar">Bar (Sends BOT)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                  <input
+                    type="text"
+                    value={newDishForm.category}
+                    onChange={e => setNewDishForm(prev => ({ ...prev, category: e.target.value }))}
+                    placeholder="e.g. Rice & Noodles, Mains, Cocktails"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Dish Image URL or File Upload</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="url"
+                    value={newDishForm.imageUrl}
+                    onChange={e => setNewDishForm(prev => ({ ...prev, imageUrl: e.target.value }))}
+                    placeholder="https://example.com/dish.jpg (or pick / upload)"
+                    className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                  <label className="cursor-pointer px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors shrink-0">
+                    <span>Upload</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = ev => {
+                            if (ev.target?.result) {
+                              setNewDishForm(prev => ({ ...prev, imageUrl: ev.target.result }));
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {newDishForm.imageUrl && (
+                  <div className="mt-2 flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                    <img
+                      src={newDishForm.imageUrl}
+                      alt="Preview"
+                      className="h-12 w-12 rounded-lg object-cover border border-slate-200"
+                    />
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-slate-800">Image Preview Ready</p>
+                      <button
+                        type="button"
+                        onClick={() => setNewDishForm(prev => ({ ...prev, imageUrl: '' }))}
+                        className="text-[10px] text-rose-600 font-bold hover:underline"
+                      >
+                        Remove Image
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Description</label>
+                <textarea
+                  rows={2}
+                  value={newDishForm.description}
+                  onChange={e => setNewDishForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Appetizing description for servers and customer menu..."
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              {/* Interactive Recipe Builder within Add Dish */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <BookOpen className="h-3.5 w-3.5 text-[#ff5500]" /> Link Recipe Ingredients (BOM)
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-500">
+                    {newDishForm.recipeIngredients.length} ingredients added
+                  </span>
+                </div>
+
+                <div className="flex gap-2">
+                  <select
+                    id="newDishIngSelect"
+                    className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-800"
+                  >
+                    {inventory.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit}) - {settings.currency} {ing.cost}/{ing.unit}</option>
+                    ))}
+                  </select>
+                  <input
+                    id="newDishIngAmount"
+                    type="number"
+                    min="0.1"
+                    step="any"
+                    placeholder="Qty per serving"
+                    className="w-32 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sel = document.getElementById('newDishIngSelect');
+                      const amtInput = document.getElementById('newDishIngAmount');
+                      const ingId = sel?.value;
+                      const amt = parseFloat(amtInput?.value);
+                      if (!ingId || isNaN(amt) || amt <= 0) return;
+
+                      setNewDishForm(prev => {
+                        const existingIdx = prev.recipeIngredients.findIndex(r => r.ingredientId === ingId);
+                        if (existingIdx >= 0) {
+                          const updated = [...prev.recipeIngredients];
+                          updated[existingIdx] = { ingredientId: ingId, amount: amt };
+                          return { ...prev, recipeIngredients: updated };
+                        }
+                        return { ...prev, recipeIngredients: [...prev.recipeIngredients, { ingredientId: ingId, amount: amt }] };
+                      });
+                      if (amtInput) amtInput.value = '';
+                    }}
+                    className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800"
+                  >
+                    + Add
+                  </button>
+                </div>
+
+                {newDishForm.recipeIngredients.length > 0 && (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {newDishForm.recipeIngredients.map((item, idx) => {
+                      const ing = inventoryMap[item.ingredientId];
+                      return (
+                        <div key={idx} className="flex justify-between items-center text-xs p-2 bg-white rounded-xl border border-slate-200">
+                          <span className="font-bold text-slate-800">{ing ? ing.name : item.ingredientId}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-600">{item.amount} {ing?.unit}</span>
+                            <span className="font-mono text-slate-400">({settings.currency} {(item.amount * (ing?.cost || 0)).toFixed(2)})</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewDishForm(prev => ({
+                                  ...prev,
+                                  recipeIngredients: prev.recipeIngredients.filter((_, i) => i !== idx)
+                                }));
+                              }}
+                              className="text-slate-400 hover:text-rose-600"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAddItemModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-md shadow-orange-600/20"
+                >
+                  Save &amp; Add to Menu
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD NEW RAW INVENTORY MODAL */}
+      {addInventoryModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-[#ff5500]" />
+                <h3 className="text-base font-black text-slate-900">Add New Raw Material</h3>
+              </div>
+              <button onClick={() => setAddInventoryModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateInventoryItem} className="mt-4 space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Material / Ingredient Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newInventoryForm.name}
+                  onChange={e => setNewInventoryForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Single Malt Scotch, Lime Wedges"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                  <select
+                    value={newInventoryForm.category}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="Dry Goods">Dry Goods</option>
+                    <option value="Dairy & Eggs">Dairy &amp; Eggs</option>
+                    <option value="Meat">Meat</option>
+                    <option value="Poultry">Poultry</option>
+                    <option value="Seafood">Seafood</option>
+                    <option value="Beverages">Beverages</option>
+                    <option value="Bar Supplies">Bar Supplies</option>
+                    <option value="Bakery">Bakery</option>
+                    <option value="Produce">Produce / Veggies</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Unit of Measure</label>
+                  <select
+                    value={newInventoryForm.unit}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, unit: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="g">Grams (g)</option>
+                    <option value="ml">Milliliters (ml)</option>
+                    <option value="pcs">Pieces (pcs)</option>
+                    <option value="kg">Kilograms (kg)</option>
+                    <option value="l">Liters (l)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Unit Cost ({settings.currency})</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={newInventoryForm.cost}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, cost: e.target.value }))}
+                    placeholder="e.g. 1.50"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Initial Stock</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={newInventoryForm.stock}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, stock: e.target.value }))}
+                    placeholder="e.g. 5000"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Low Alert Limit</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={newInventoryForm.threshold}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, threshold: e.target.value }))}
+                    placeholder="e.g. 500"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full mt-2 py-3 bg-[#ff5500] hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-md shadow-orange-600/20"
+              >
+                Save Raw Material to Inventory
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RECEIVE STOCK / GRN INTAKE MODAL */}
+      {receiveStockModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-emerald-600" />
+                <h3 className="text-base font-black text-slate-900">Receive Stock Intake (GRN)</h3>
+              </div>
+              <button onClick={() => setReceiveStockModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleReceiveStock} className="mt-4 space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Select Ingredient / Item</label>
+                <select
+                  required
+                  value={receiveStockForm.ingredientId}
+                  onChange={e => {
+                    const id = e.target.value;
+                    const item = inventoryMap[id];
+                    setReceiveStockForm(prev => ({
+                      ...prev,
+                      ingredientId: id,
+                      newCost: item ? item.cost.toString() : ''
+                    }));
+                  }}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 font-bold focus:outline-none focus:border-[#ff5500]"
+                >
+                  {inventory.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.stock} {item.unit} in stock)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Quantity Received ({inventoryMap[receiveStockForm.ingredientId]?.unit || 'units'})
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={receiveStockForm.quantity}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, quantity: e.target.value }))}
+                    placeholder="e.g. 5000"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Updated Unit Cost ({settings.currency})
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={receiveStockForm.newCost}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, newCost: e.target.value }))}
+                    placeholder="Leave blank to keep current"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Supplier / Vendor</label>
+                  <input
+                    type="text"
+                    value={receiveStockForm.supplier}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, supplier: e.target.value }))}
+                    placeholder="e.g. Mirissa Harbor Market"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Invoice / GRN Ref</label>
+                  <input
+                    type="text"
+                    value={receiveStockForm.invoiceRef}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, invoiceRef: e.target.value }))}
+                    placeholder="e.g. GRN-902"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              {receiveStockForm.ingredientId && receiveStockForm.quantity && (
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 space-y-1">
+                  <p className="font-bold">Summary of Intake:</p>
+                  <p>
+                    Item: <strong>{inventoryMap[receiveStockForm.ingredientId]?.name}</strong>
+                  </p>
+                  <p>
+                    Stock will increase from <strong>{inventoryMap[receiveStockForm.ingredientId]?.stock} {inventoryMap[receiveStockForm.ingredientId]?.unit}</strong> to{' '}
+                    <strong>
+                      {(inventoryMap[receiveStockForm.ingredientId]?.stock || 0) + (parseFloat(receiveStockForm.quantity) || 0)}{' '}
+                      {inventoryMap[receiveStockForm.ingredientId]?.unit}
+                    </strong>
+                  </p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="w-full mt-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-md shadow-emerald-700/20"
+              >
+                Confirm Stock Intake &amp; Update Inventory
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DEDICATED RECIPE CONFIGURATOR MODAL */}
+      {recipeConfigModalOpen && editingDishForRecipe && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-900">
+                  Configure Recipe: {editingDishForRecipe.name}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Link raw ingredients to calculate real-time COGS, profit margins, and portions ready.
+                </p>
+              </div>
+              <button onClick={() => setRecipeConfigModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {/* Add Ingredient Bar */}
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                <span className="text-xs font-bold text-slate-800">Add Raw Ingredient to Recipe</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="sm:col-span-2">
+                    <select
+                      value={tempIngredientSelect.ingredientId}
+                      onChange={e => setTempIngredientSelect(prev => ({ ...prev, ingredientId: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 font-medium"
+                    >
+                      {inventory.map(item => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} ({item.unit}) - {settings.currency} {item.cost}/{item.unit}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      value={tempIngredientSelect.amount}
+                      onChange={e => setTempIngredientSelect(prev => ({ ...prev, amount: e.target.value }))}
+                      placeholder={`Portion (${inventoryMap[tempIngredientSelect.ingredientId]?.unit || 'units'})`}
+                      className="w-full px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const amt = parseFloat(tempIngredientSelect.amount);
+                    if (!tempIngredientSelect.ingredientId || isNaN(amt) || amt <= 0) return;
+
+                    setCurrentRecipeIngredients(prev => {
+                      const idx = prev.findIndex(r => r.ingredientId === tempIngredientSelect.ingredientId);
+                      if (idx >= 0) {
+                        const updated = [...prev];
+                        updated[idx] = { ingredientId: tempIngredientSelect.ingredientId, amount: amt };
+                        return updated;
+                      }
+                      return [...prev, { ingredientId: tempIngredientSelect.ingredientId, amount: amt }];
+                    });
+
+                    setTempIngredientSelect(prev => ({ ...prev, amount: '' }));
+                  }}
+                  className="w-full py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold"
+                >
+                  + Link Ingredient
+                </button>
+              </div>
+
+              {/* Linked Ingredients List */}
+              <div className="space-y-2">
+                <span className="text-xs font-black uppercase text-slate-400">Current Linked Ingredients ({currentRecipeIngredients.length})</span>
+                {currentRecipeIngredients.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic p-3 bg-slate-50 rounded-xl">No ingredients linked yet. Add above to track stock and COGS.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {currentRecipeIngredients.map((r, idx) => {
+                      const ing = inventoryMap[r.ingredientId];
+                      const lineCost = ing ? ing.cost * r.amount : 0;
+                      return (
+                        <div key={idx} className="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                          <div>
+                            <p className="font-bold text-slate-900">{ing ? ing.name : r.ingredientId}</p>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {r.amount} {ing?.unit} × {settings.currency} {ing?.cost.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono font-bold text-slate-800">
+                              {settings.currency} {lineCost.toFixed(2)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCurrentRecipeIngredients(prev => prev.filter((_, i) => i !== idx));
+                              }}
+                              className="text-slate-400 hover:text-rose-600"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Live Costing Calculation */}
+              {(() => {
+                const totalBOMCost = currentRecipeIngredients.reduce((sum, r) => {
+                  const ing = inventoryMap[r.ingredientId];
+                  return sum + (ing ? ing.cost * r.amount : 0);
+                }, 0);
+                const margin = editingDishForRecipe.price > 0
+                  ? (((editingDishForRecipe.price - totalBOMCost) / editingDishForRecipe.price) * 100).toFixed(1)
+                  : 0;
+
+                return (
+                  <div className="p-3 bg-slate-100 rounded-xl space-y-1 text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Menu Selling Price:</span>
+                      <span className="font-mono font-bold text-slate-900">{settings.currency} {editingDishForRecipe.price.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>Total Recipe BOM Cost (COGS):</span>
+                      <span className="font-mono font-bold text-[#ff5500]">{settings.currency} {totalBOMCost.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-emerald-700 pt-1 border-t border-slate-200">
+                      <span>Gross Profit Margin:</span>
+                      <span>{margin}%</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRecipeConfigModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRecipeConfig}
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-md shadow-orange-600/20"
+                >
+                  Save Recipe &amp; Recalculate
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SETTLE & PAY CHECKOUT MODAL */}
+      {checkoutModalOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-black text-slate-900">
+                Settle Invoice: {settlingOrder ? settlingOrder.tableName : selectedTable.name}
+              </h3>
+              <button onClick={() => setCheckoutModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {(() => {
+              const currentRef = settlingOrder || {
+                items: cart,
+                serviceChargeActive,
+                taxActive,
+                discountPercent
+              };
+              const fin = calculateOrderFinancials(currentRef);
+
+              return (
+                <div className="mt-4 space-y-4">
+                  <div className="grid grid-cols-3 gap-2">
+                    {['CASH', 'CARD', 'SPLIT'].map(type => (
+                      <button
+                        key={type}
+                        onClick={() => setPaymentMethod(type)}
+                        className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                          paymentMethod === type
+                            ? 'bg-[#ff5500] text-white border-[#ff5500] shadow-md shadow-orange-600/20'
+                            : 'bg-slate-50 border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+
+                  {paymentMethod === 'CASH' && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Cash Tendered ({settings.currency})</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={cashTendered}
+                        onChange={e => setCashTendered(e.target.value)}
+                        placeholder={fin.total.toFixed(2)}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-slate-900 font-mono text-sm focus:outline-none focus:border-[#ff5500]"
+                      />
+                      {parseFloat(cashTendered) > fin.total && (
+                        <p className="text-xs text-emerald-600 font-mono font-bold mt-1">
+                          Change: {settings.currency} {(parseFloat(cashTendered) - fin.total).toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5 text-xs">
+                    <div className="flex justify-between text-slate-500">
+                      <span>Item Subtotal</span>
+                      <span className="font-mono">{settings.currency} {fin.subtotal.toFixed(2)}</span>
+                    </div>
+                    {fin.service > 0 && (
+                      <div className="flex justify-between text-emerald-700 font-medium">
+                        <span>Service Charge ({settings.serviceChargeRate}%)</span>
+                        <span className="font-mono">+{settings.currency} {fin.service.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {fin.tax > 0 && (
+                      <div className="flex justify-between text-indigo-700 font-medium">
+                        <span>Taxes ({settings.taxRate}%)</span>
+                        <span className="font-mono">+{settings.currency} {fin.tax.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
+                      <span>Grand Total Due</span>
+                      <span className="text-base font-mono text-[#ff5500]">{settings.currency} {fin.total.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleCompleteSettlement}
+                    className="w-full py-3 bg-[#008f5d] hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-emerald-700/20"
+                  >
+                    Confirm Settlement &amp; Deduct BOM Stock
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* VOID ITEM AUDIT REASON MODAL */}
+      {voidModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-black text-rose-600 flex items-center gap-1.5">
+                <Trash2 className="h-4 w-4" /> Void Item Audit Required
+              </h3>
+              <button onClick={() => setVoidModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmVoid} className="mt-4 space-y-3">
+              <p className="text-xs text-slate-600">
+                Item: <strong>{voidPayload.item?.name}</strong>
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Mandatory Cancellation Reason</label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={voidPayload.reason}
+                  onChange={e => setVoidPayload(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="e.g. Customer changed mind, Kitchen burnt"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                />
+              </div>
+
+              <p className="text-[10px] text-slate-400">Authorized by {currentUser.name} ({currentUser.role})</p>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs"
+              >
+                Confirm Line Void
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD TABLE MODAL */}
+      {addTableModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-black text-slate-900">Add New Floor Table</h3>
+              <button onClick={() => setAddTableModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newTableForm.name) return;
+                const newTbl = {
+                  id: `T-${Math.floor(10 + Math.random() * 90)}`,
+                  name: newTableForm.name.trim(),
+                  zone: newTableForm.zone,
+                  capacity: parseInt(newTableForm.capacity) || 4,
+                  status: 'VACANT',
+                  currentOrderRef: null
+                };
+                setFloorTables(prev => [...prev, newTbl]);
+                setAddTableModalOpen(false);
+                setNewTableForm({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
+              }}
+              className="mt-4 space-y-3"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Table Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newTableForm.name}
+                  onChange={e => setNewTableForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Table 5, Beach Cabana 2"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Zone Area</label>
+                  <select
+                    value={newTableForm.zone}
+                    onChange={e => setNewTableForm(prev => ({ ...prev, zone: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900"
+                  >
+                    <option value="Indoor Main Hall">Indoor Main Hall</option>
+                    <option value="Deck Lounge">Deck Lounge</option>
+                    <option value="Cocktail Counter">Cocktail Counter</option>
+                    <option value="Private Ocean View">Private Ocean View</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Capacity</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={newTableForm.capacity}
+                    onChange={e => setNewTableForm(prev => ({ ...prev, capacity: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-md shadow-orange-600/20"
+              >
+                Create Table
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* TABLE ALLOCATION MODAL */}
+      {allocationModalOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-black text-slate-900">Allocate Table / Guest Order</h3>
+              <button onClick={() => setAllocationModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setOrderMode('DINING')}
+                  className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                    orderMode === 'DINING'
+                      ? 'bg-[#ff5500] text-white border-[#ff5500]'
+                      : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}
+                >
+                  Dine-In Tables
+                </button>
+                <button
+                  onClick={() => setOrderMode('TAKEAWAY')}
+                  className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                    orderMode === 'TAKEAWAY'
+                      ? 'bg-[#ff5500] text-white border-[#ff5500]'
+                      : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}
+                >
+                  Takeaway Express
+                </button>
+              </div>
+
+              {orderMode === 'DINING' ? (
+                <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto">
+                  {floorTables.map(table => (
+                    <button
+                      key={table.id}
+                      onClick={() => {
+                        setSelectedTable(table);
+                        setAllocationModalOpen(false);
+                      }}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        selectedTable.id === table.id
+                          ? 'border-[#ff5500] bg-orange-50/50'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      <p className="font-bold text-xs text-slate-900">{table.name}</p>
+                      <p className="text-[10px] text-slate-500">{table.zone}</p>
+                      <p className="text-[10px] text-slate-400 font-mono mt-1">{table.capacity} Seats ({table.status})</p>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Customer Name</label>
+                    <input
+                      type="text"
+                      value={takeawayInfo.name}
+                      onChange={e => setTakeawayInfo(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Order Token Tag</label>
+                    <input
+                      type="text"
+                      value={takeawayInfo.token}
+                      onChange={e => setTakeawayInfo(prev => ({ ...prev, token: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 80MM THERMAL RECEIPT VIEWER (DAILY SUMMARY, KOT, BOT, Z-REPORT, FINAL BILL) */}
+      {printModalConfig && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center">
+            
+            <div className="flex items-center justify-between w-full mb-3 text-white">
+              <span className="text-xs font-bold font-mono text-orange-400 uppercase">
+                80mm Thermal Dispatch
+              </span>
+              <button onClick={() => setPrintModalConfig(null)} className="text-slate-400 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="w-full bg-white text-slate-900 p-4 rounded font-mono text-[11px] leading-tight shadow-md max-h-[60vh] overflow-y-auto space-y-4">
+              
+              {/* Daily Summary */}
+              {printModalConfig.type === 'DAILY_SUMMARY' && (
+                <div className="space-y-2">
+                  <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
+                    <p className="font-black text-sm">{settings.restaurantName}</p>
+                    <p className="text-[10px]">{settings.tagline}</p>
+                    <p className="text-[10px] font-bold mt-1">DAILY SALES SUMMARY REPORT</p>
+                    <p className="text-[9px]">{new Date().toLocaleString()}</p>
+                  </div>
+                  <div className="space-y-1 text-xs py-1 border-b border-slate-300">
+                    <div className="flex justify-between">
+                      <span>GROSS REVENUE:</span>
+                      <span className="font-bold">{settings.currency} {printModalConfig.data.grossRevenue.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>ITEM SUBTOTAL:</span>
+                      <span>{settings.currency} {printModalConfig.data.itemSubtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>SERVICE CHARGE:</span>
+                      <span>{settings.currency} {printModalConfig.data.serviceCharge.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>TAXES / VAT:</span>
+                      <span>{settings.currency} {printModalConfig.data.taxes.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="text-center font-bold text-[9px] pt-1">--- END OF SUMMARY ---</div>
+                </div>
+              )}
+
+              {/* Multi Dispatch KOT / BOT / Temp */}
+              {printModalConfig.type === 'MULTI_DISPATCH' && (
+                <div className="space-y-3">
+                  <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
+                    <p className="font-black text-xs">** KITCHEN ORDER TICKET (KOT) **</p>
+                    <p className="font-bold text-xs mt-1">{printModalConfig.data.order.tableName}</p>
+                    <p className="text-[10px]">Time: {printModalConfig.data.order.sentAt}</p>
+                    <div className="text-left py-2 space-y-1">
+                      {printModalConfig.data.kitchenItems.map((item, idx) => (
+                        <div key={idx}>
+                          <p className="font-bold">{item.qty}x {item.name}</p>
+                          {item.notes && <p className="text-[10px] pl-2 italic">&gt; {item.notes}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {printModalConfig.data.barItems.length > 0 && (
+                    <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
+                      <p className="font-black text-xs">** BAR ORDER TICKET (BOT) **</p>
+                      <p className="font-bold text-xs mt-1">{printModalConfig.data.order.tableName}</p>
+                      <div className="text-left py-2 space-y-1">
+                        {printModalConfig.data.barItems.map((item, idx) => (
+                          <div key={idx}>
+                            <p className="font-bold">{item.qty}x {item.name}</p>
+                            {item.notes && <p className="text-[10px] pl-2 italic">&gt; {item.notes}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Z-Report Shift Closure Slip */}
+              {printModalConfig.type === 'Z_REPORT' && (
+                <div className="space-y-2">
+                  <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
+                    <p className="font-black text-sm">{settings.restaurantName}</p>
+                    <p className="font-bold text-xs mt-1">*** Z-REPORT (SHIFT CLOSE) ***</p>
+                    <p className="text-[9px]">Shift: {printModalConfig.data.shiftId}</p>
+                    <p className="text-[9px]">Closed by: {printModalConfig.data.closedBy} at {printModalConfig.data.closedAt}</p>
+                  </div>
+                  <div className="space-y-1 text-xs py-1 border-b border-slate-300">
+                    <div className="flex justify-between">
+                      <span>OPENING FLOAT:</span>
+                      <span>{settings.currency} {printModalConfig.data.startingFloat.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>CASH SALES:</span>
+                      <span>+{settings.currency} {printModalConfig.data.metrics.totalCashSales.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>PETTY PAYOUTS:</span>
+                      <span>-{settings.currency} {printModalConfig.data.metrics.totalPayouts.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold">
+                      <span>EXPECTED DRAWER:</span>
+                      <span>{settings.currency} {printModalConfig.data.metrics.expectedCashInDrawer.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold">
+                      <span>COUNTED CASH:</span>
+                      <span>{settings.currency} {printModalConfig.data.metrics.countedCash.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold border-t border-slate-300 pt-1">
+                      <span>VARIANCE:</span>
+                      <span>{settings.currency} {printModalConfig.data.metrics.variance.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <p className="text-center font-bold text-[9px] pt-1">REGISTER AUDITED &amp; CLOSED</p>
+                </div>
+              )}
+
+              {/* Final Settlement Tax Invoice */}
+              {printModalConfig.type === 'FINAL_BILL' && (
+                <div className="space-y-2">
+                  <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
+                    <p className="font-black text-sm">{settings.restaurantName}</p>
+                    <p className="text-[9px] whitespace-pre-line">{settings.receiptHeader}</p>
+                    <p className="font-bold text-xs mt-1">TAX INVOICE #{printModalConfig.data.invoiceNo}</p>
+                    <p className="text-[9px]">{printModalConfig.data.date} • {printModalConfig.data.table}</p>
+                  </div>
+
+                  <div className="py-1 border-b border-slate-300 space-y-1">
+                    {printModalConfig.data.items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between">
+                        <span>{item.qty}x {item.name}</span>
+                        <span>{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-1 text-[10px]">
+                    <div className="flex justify-between">
+                      <span>Subtotal:</span>
+                      <span>{settings.currency} {printModalConfig.data.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Service Charge ({settings.serviceChargeRate}%):</span>
+                      <span>{settings.currency} {printModalConfig.data.serviceCharge.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
+                      <span>TOTAL PAID:</span>
+                      <span>{settings.currency} {printModalConfig.data.total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-bold">
+                      <span>METHOD:</span>
+                      <span>{printModalConfig.data.paymentMethod}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-center font-bold text-[9px] pt-2 whitespace-pre-line">{settings.receiptFooter}</p>
+                </div>
+              )}
+
+            </div>
+
+            <button
+              onClick={() => window.print()}
+              className="w-full mt-4 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-orange-600/30"
+            >
+              <Printer className="h-4 w-4" /> Print 80mm
+            </button>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
