@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Monitor,
   Flame,
@@ -44,7 +44,11 @@ import {
   Volume2,
   Zap,
   ShoppingBag,
-  Upload
+  Upload,
+  Edit3,
+  Filter,
+  History,
+  ShieldAlert
 } from 'lucide-react';
 
 const ROLE_PERMISSIONS = {
@@ -220,6 +224,7 @@ export default function App() {
     drawerKickTrigger: 'CASH_ONLY',
     drawerPinout: 'PIN_2',
     chimeAudio: true,
+    autoPrintThreeSlips: true,
     receiptHeader: 'Linoli Cove Beach Resort & Dining\nBeach Road, Midigama\nTel: +94 74 036 6741',
     receiptFooter: 'Thank you for your visit!\nPlease come again.'
   });
@@ -227,6 +232,14 @@ export default function App() {
   const [pairedUsbDevice, setPairedUsbDevice] = useState(null);
   const [usbStatusMessage, setUsbStatusMessage] = useState('');
   const [settingsNotice, setSettingsNotice] = useState(null);
+
+  // Date Filter State for Reports
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [reportDateFilter, setReportDateFilter] = useState({
+    preset: 'Today',
+    startDate: todayStr,
+    endDate: todayStr
+  });
 
   // Data Collections
   const [inventory, setInventory] = useState(INITIAL_RAW_INVENTORY);
@@ -274,7 +287,8 @@ export default function App() {
     {
       invoiceNo: 'INV-8801',
       orderRef: 'ORD-0998',
-      date: '09/19/2026 13:10:45',
+      date: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD
+      dateTime: new Date().toLocaleDateString('en-US') + ' 13:10:45',
       table: 'Table 2',
       mode: 'DINING',
       cashier: 'System Administrator',
@@ -292,11 +306,24 @@ export default function App() {
     }
   ]);
 
+  // Comprehensive Change & Forensic Audit Logs
+  const [auditLogs, setAuditLogs] = useState([
+    {
+      id: 'AUD-001',
+      timestamp: new Date().toLocaleDateString() + ' 11:20 AM',
+      type: 'LINE_VOID',
+      orderRef: 'T-01',
+      details: 'Voided 1x Angus Truffle Burger - Reason: Customer cancelled prior to prep',
+      staff: 'System Administrator',
+      role: 'Administrator'
+    }
+  ]);
+
   // Cancelled Tickets / Voids Audit Log
   const [cancelledTickets, setCancelledTickets] = useState([
     {
       id: 'VOID-301',
-      timestamp: '09/19/2026 11:20 AM',
+      timestamp: new Date().toLocaleDateString() + ' 11:20 AM',
       itemName: 'Angus Truffle Burger',
       qty: 1,
       table: 'Table 1',
@@ -359,6 +386,11 @@ export default function App() {
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidPayload, setVoidPayload] = useState({ item: null, reason: '' });
 
+  // State for Editing Active Bills inside Billing Section
+  const [editBillModalOpen, setEditBillModalOpen] = useState(false);
+  const [activeOrderEditing, setActiveOrderEditing] = useState(null);
+  const [selectedDishToAdd, setSelectedDishToAdd] = useState('');
+
   // Inventory & Stock Intake Modals
   const [addInventoryModalOpen, setAddInventoryModalOpen] = useState(false);
   const [newInventoryForm, setNewInventoryForm] = useState({
@@ -384,6 +416,19 @@ export default function App() {
   const [editingDishForRecipe, setEditingDishForRecipe] = useState(null);
   const [currentRecipeIngredients, setCurrentRecipeIngredients] = useState([]);
   const [tempIngredientSelect, setTempIngredientSelect] = useState({ ingredientId: '', amount: '' });
+
+  const recordAuditLog = (type, orderRef, details) => {
+    const newLog = {
+      id: `AUD-${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      type,
+      orderRef: orderRef || 'N/A',
+      details,
+      staff: currentUser.name,
+      role: currentUser.role
+    };
+    setAuditLogs(prev => [newLog, ...prev]);
+  };
 
   const inventoryMap = useMemo(() => {
     const map = {};
@@ -604,8 +649,11 @@ export default function App() {
     const kitchenItems = cart.filter(i => i.department === 'Kitchen');
     const barItems = cart.filter(i => i.department === 'Bar');
 
+    recordAuditLog('ORDER_SENT', newOrderId, `Order dispatched for ${orderPayload.tableName} (${cart.length} items)`);
+
     setPrintModalConfig({
       type: 'MULTI_DISPATCH',
+      autoPrint: settings.autoPrintThreeSlips,
       data: {
         order: orderPayload,
         kitchenItems,
@@ -620,6 +668,132 @@ export default function App() {
 
     setCart([]);
     setEditingOrderId(null);
+  };
+
+  useEffect(() => {
+    if (printModalConfig && printModalConfig.autoPrint) {
+      const timer = setTimeout(() => {
+        try {
+          window.print();
+        } catch (err) {
+          console.warn('Auto-print dialog trigger notice:', err);
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [printModalConfig]);
+
+  const handleOpenEditActiveBill = (order) => {
+    setActiveOrderEditing(JSON.parse(JSON.stringify(order)));
+    setSelectedDishToAdd(menuItems[0]?.id || '');
+    setEditBillModalOpen(true);
+  };
+
+  const handleUpdateActiveItemQty = (cartItemId, delta) => {
+    if (!activeOrderEditing) return;
+    setActiveOrderEditing(prev => {
+      const updated = prev.items.map(item => {
+        if (item.cartItemId === cartItemId) {
+          const newQty = Math.max(1, item.qty + delta);
+          return { ...item, qty: newQty };
+        }
+        return item;
+      });
+      return { ...prev, items: updated };
+    });
+  };
+
+  const handleRemoveActiveItem = (cartItemId) => {
+    if (!activeOrderEditing) return;
+    const itemToRemove = activeOrderEditing.items.find(i => i.cartItemId === cartItemId);
+    setActiveOrderEditing(prev => ({
+      ...prev,
+      items: prev.items.filter(i => i.cartItemId !== cartItemId)
+    }));
+    if (itemToRemove) {
+      recordAuditLog(
+        'BILL_ITEM_DELETED',
+        activeOrderEditing.orderId,
+        `Removed "${itemToRemove.name}" (qty: ${itemToRemove.qty}) from active bill for ${activeOrderEditing.tableName}`
+      );
+    }
+  };
+
+  const handleAddItemToActiveBill = () => {
+    if (!activeOrderEditing || !selectedDishToAdd) return;
+    const dish = menuItems.find(m => m.id === selectedDishToAdd);
+    if (!dish) return;
+
+    const newItem = {
+      ...dish,
+      cartItemId: `cart_mod_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+      qty: 1,
+      notes: ''
+    };
+
+    setActiveOrderEditing(prev => ({
+      ...prev,
+      items: [...prev.items, newItem]
+    }));
+
+    recordAuditLog(
+      'BILL_ITEM_ADDED',
+      activeOrderEditing.orderId,
+      `Added 1x "${dish.name}" to active bill for ${activeOrderEditing.tableName}`
+    );
+  };
+
+  const handleSaveActiveBillChanges = () => {
+    if (!activeOrderEditing) return;
+    setActiveOrders(prev => prev.map(order => {
+      if (order.orderId === activeOrderEditing.orderId) {
+        return activeOrderEditing;
+      }
+      return order;
+    }));
+
+    recordAuditLog(
+      'ACTIVE_BILL_UPDATED',
+      activeOrderEditing.orderId,
+      `Updated active bill for ${activeOrderEditing.tableName} (now contains ${activeOrderEditing.items.length} items)`
+    );
+
+    setEditBillModalOpen(false);
+    setActiveOrderEditing(null);
+  };
+
+  const handleDeleteActiveBillByAdmin = (orderId, tableName, tableId) => {
+    if (currentUser.role !== 'Administrator') {
+      alert('Permission Denied: Only Administrators can delete active orders.');
+      return;
+    }
+
+    setActiveOrders(prev => prev.filter(o => o.orderId !== orderId));
+    if (tableId) {
+      setFloorTables(prev => prev.map(t => t.id === tableId ? { ...t, status: 'VACANT', currentOrderRef: null } : t));
+    }
+
+    recordAuditLog(
+      'BILL_DELETED_BY_ADMIN',
+      orderId,
+      `Active unsettled bill for "${tableName}" was permanently deleted by Administrator ${currentUser.name}`
+    );
+  };
+
+  const handleDeleteSettledTransactionByAdmin = (invoiceNo) => {
+    if (currentUser.role !== 'Administrator') {
+      alert('Permission Denied: Only Administrators can delete finalized transactions.');
+      return;
+    }
+
+    const targetTx = transactions.find(t => t.invoiceNo === invoiceNo);
+    setTransactions(prev => prev.filter(t => t.invoiceNo !== invoiceNo));
+
+    recordAuditLog(
+      'TRANSACTION_DELETED_BY_ADMIN',
+      invoiceNo,
+      `Finalized tax transaction "${invoiceNo}" (${targetTx?.total ? settings.currency + ' ' + targetTx.total.toFixed(2) : ''}) was permanently deleted by Administrator ${currentUser.name}`
+    );
   };
 
   const handleCompleteSettlement = () => {
@@ -667,7 +841,8 @@ export default function App() {
     const newInvoice = {
       invoiceNo: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
       orderRef: targetOrder.orderId,
-      date: new Date().toLocaleString(),
+      date: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD for clean filtering
+      dateTime: new Date().toLocaleString(),
       table: targetOrder.tableName,
       mode: targetOrder.mode,
       cashier: currentUser.name,
@@ -687,6 +862,8 @@ export default function App() {
       cashTendered: paymentMethod === 'CASH' ? (parseFloat(cashTendered) || total) : undefined,
       changeDue: paymentMethod === 'CASH' ? Math.max(0, (parseFloat(cashTendered) || total) - total) : 0
     };
+
+    recordAuditLog('BILL_SETTLED', newInvoice.invoiceNo, `Settled bill for ${newInvoice.table} via ${paymentMethod} (${settings.currency} ${total.toFixed(2)})`);
 
     // Keep all previous transactions intact and prepend new settled invoice
     setTransactions(prev => [newInvoice, ...prev]);
@@ -888,6 +1065,16 @@ export default function App() {
     setDenominations({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
   };
 
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      if (!reportDateFilter.startDate && !reportDateFilter.endDate) return true;
+      const txDate = t.date || (t.dateTime ? t.dateTime.slice(0, 10) : todayStr);
+      if (reportDateFilter.startDate && txDate < reportDateFilter.startDate) return false;
+      if (reportDateFilter.endDate && txDate > reportDateFilter.endDate) return false;
+      return true;
+    });
+  }, [transactions, reportDateFilter, todayStr]);
+
   const salesMetrics = useMemo(() => {
     let grossRevenue = 0;
     let itemSubtotal = 0;
@@ -901,7 +1088,7 @@ export default function App() {
     const paymentMethods = {};
     const itemSalesMap = {};
 
-    transactions.forEach(t => {
+    filteredTransactions.forEach(t => {
       grossRevenue += t.total;
       itemSubtotal += t.subtotal;
       serviceCharge += t.serviceCharge;
@@ -949,9 +1136,9 @@ export default function App() {
       barItemsCount,
       paymentMethods,
       topItems,
-      paidBillsCount: transactions.length
+      paidBillsCount: filteredTransactions.length
     };
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const categoriesList = useMemo(() => {
     const cats = new Set(['All']);
@@ -1319,7 +1506,8 @@ export default function App() {
                 'BOT Report',
                 'Sales Summary',
                 'Food vs Beverage',
-                'Stock Usage'
+                'Stock Usage',
+                'Forensic Audit Logs'
               ].map(sub => (
                 <button
                   key={sub}
@@ -1338,7 +1526,7 @@ export default function App() {
             {/* Sub-tab: Daily Overview */}
             {reportSubTab === 'Daily Overview' && (
               <>
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div>
                     <h2 className="text-xl font-black text-slate-900 tracking-tight">
                       Sales &amp; Revenue Reports
@@ -1348,13 +1536,63 @@ export default function App() {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 shadow-sm font-mono">
-                      <span>09/19/2026</span>
-                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                  {/* ACTIVE DATE FILTER CONTROL */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+                      {['Today', 'Yesterday', 'Last 7 Days', 'This Month', 'All Time'].map(preset => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            const now = new Date();
+                            let start = todayStr;
+                            let end = todayStr;
+
+                            if (preset === 'Yesterday') {
+                              const y = new Date();
+                              y.setDate(y.getDate() - 1);
+                              start = y.toISOString().slice(0, 10);
+                              end = start;
+                            } else if (preset === 'Last 7 Days') {
+                              const d7 = new Date();
+                              d7.setDate(d7.getDate() - 7);
+                              start = d7.toISOString().slice(0, 10);
+                              end = todayStr;
+                            } else if (preset === 'This Month') {
+                              start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+                              end = todayStr;
+                            } else if (preset === 'All Time') {
+                              start = '2020-01-01';
+                              end = '2099-12-31';
+                            }
+
+                            setReportDateFilter({ preset, startDate: start, endDate: end });
+                          }}
+                          className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
+                            reportDateFilter.preset === preset
+                              ? 'bg-[#ff5500] text-white shadow-sm'
+                              : 'text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs text-slate-700 shadow-sm font-mono">
+                      <input
+                        type="date"
+                        value={reportDateFilter.startDate}
+                        onChange={e => setReportDateFilter(prev => ({ ...prev, preset: 'Custom', startDate: e.target.value }))}
+                        className="bg-transparent border-0 text-slate-800 font-bold focus:outline-none text-xs"
+                      />
                       <span className="text-slate-400 font-sans">to</span>
-                      <span>09/19/2026</span>
-                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="date"
+                        value={reportDateFilter.endDate}
+                        onChange={e => setReportDateFilter(prev => ({ ...prev, preset: 'Custom', endDate: e.target.value }))}
+                        className="bg-transparent border-0 text-slate-800 font-bold focus:outline-none text-xs"
+                      />
                     </div>
 
                     <button
@@ -1502,10 +1740,10 @@ export default function App() {
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-sm font-black text-slate-900 uppercase">Paid Invoices Ledger</h3>
-                    <p className="text-[11px] text-slate-400">All transactions are permanently retained across sessions and shifts.</p>
+                    <p className="text-[11px] text-slate-400">All transactions are permanently retained across sessions. (Admin only can delete)</p>
                   </div>
                   <span className="text-xs font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-xl">
-                    {transactions.length} Total Settled Transactions
+                    {filteredTransactions.length} Filtered Transactions
                   </span>
                 </div>
                 <div className="overflow-x-auto">
@@ -1513,20 +1751,23 @@ export default function App() {
                     <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
                       <tr>
                         <th className="py-2.5">Invoice #</th>
-                        <th className="py-2.5">Time</th>
+                        <th className="py-2.5">Date &amp; Time</th>
                         <th className="py-2.5">Table / Order</th>
                         <th className="py-2.5">Cashier</th>
                         <th className="py-2.5">Method</th>
                         <th className="py-2.5 text-right">Subtotal</th>
                         <th className="py-2.5 text-right">Service</th>
                         <th className="py-2.5 text-right">Grand Total</th>
+                        {currentUser.role === 'Administrator' && (
+                          <th className="py-2.5 text-right text-rose-600">Admin Action</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {transactions.map((t, idx) => (
+                      {filteredTransactions.map((t, idx) => (
                         <tr key={idx} className="hover:bg-slate-50">
                           <td className="py-3 font-mono font-bold text-slate-800">{t.invoiceNo}</td>
-                          <td className="py-3 text-slate-500">{t.date}</td>
+                          <td className="py-3 text-slate-500">{t.dateTime || t.date}</td>
                           <td className="py-3 font-semibold text-slate-900">{t.table}</td>
                           <td className="py-3 text-slate-600">{t.cashier}</td>
                           <td className="py-3">
@@ -1537,6 +1778,76 @@ export default function App() {
                           <td className="py-3 text-right font-mono">{settings.currency} {t.subtotal.toFixed(2)}</td>
                           <td className="py-3 text-right font-mono text-emerald-700">+{settings.currency} {t.serviceCharge.toFixed(2)}</td>
                           <td className="py-3 text-right font-mono font-black text-slate-900">{settings.currency} {t.total.toFixed(2)}</td>
+                          {currentUser.role === 'Administrator' && (
+                            <td className="py-3 text-right">
+                              <button
+                                onClick={() => handleDeleteSettledTransactionByAdmin(t.invoiceNo)}
+                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 border border-rose-200 transition-colors"
+                                title="Admin only: Permanently delete transaction"
+                              >
+                                <Trash2 className="h-3 w-3" /> Delete
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-tab: Forensic Audit Logs */}
+            {reportSubTab === 'Forensic Audit Logs' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                      Comprehensive Activity &amp; Change Audit Log
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Every transaction, active ticket item addition, modification, quantity edit, void, or admin deletion is tracked.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-xl">
+                    {auditLogs.length} Events Logged
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Audit ID</th>
+                        <th className="py-2.5">Timestamp</th>
+                        <th className="py-2.5">Action Event</th>
+                        <th className="py-2.5">Reference</th>
+                        <th className="py-2.5">Details &amp; Audit Trail</th>
+                        <th className="py-2.5 text-right">Staff &amp; Role</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {auditLogs.map((log) => (
+                        <tr key={log.id} className="hover:bg-slate-50">
+                          <td className="py-3 font-mono font-bold text-slate-700">{log.id}</td>
+                          <td className="py-3 text-slate-400 font-mono text-[11px]">{log.timestamp}</td>
+                          <td className="py-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              log.type.includes('DELETE') ? 'bg-rose-100 text-rose-700' :
+                              log.type.includes('ADDED') ? 'bg-emerald-100 text-emerald-700' :
+                              log.type.includes('SETTLED') ? 'bg-blue-100 text-blue-700' :
+                              'bg-amber-100 text-amber-800'
+                            }`}>
+                              {log.type}
+                            </span>
+                          </td>
+                          <td className="py-3 font-mono font-semibold text-slate-800">{log.orderRef}</td>
+                          <td className="py-3 text-slate-700 font-medium">{log.details}</td>
+                          <td className="py-3 text-right">
+                            <span className="font-bold text-slate-900">{log.staff}</span>
+                            <span className="block text-[10px] text-slate-400">({log.role})</span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -2565,7 +2876,7 @@ export default function App() {
               <div>
                 <h2 className="text-xl font-black text-slate-900">Billing &amp; Settlement Queue</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Manage sent orders, print interim proforma bills, and settle final payments.
+                  Manage sent orders, modify items on active tickets, print interim proforma bills, and settle final payments.
                 </p>
               </div>
               <span className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-700">
@@ -2601,8 +2912,11 @@ export default function App() {
 
                         <div className="bg-slate-50 rounded-xl p-3 my-3 space-y-1.5 text-xs max-h-40 overflow-y-auto border border-slate-100">
                           {order.items.map((item, idx) => (
-                            <div key={idx} className="flex justify-between">
-                              <span className="font-bold text-slate-800">{item.qty}x {item.name}</span>
+                            <div key={idx} className="flex justify-between items-center">
+                              <div>
+                                <span className="font-bold text-slate-800">{item.qty}x {item.name}</span>
+                                {item.notes && <p className="text-[10px] text-slate-400 italic">note: {item.notes}</p>}
+                              </div>
                               <span className="font-mono text-slate-500">{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
                             </div>
                           ))}
@@ -2611,6 +2925,14 @@ export default function App() {
 
                       <div className="pt-2 border-t border-slate-100 space-y-2">
                         <div className="grid grid-cols-2 gap-2 text-xs">
+                          {/* EDIT / UPDATE ITEMS BUTTON */}
+                          <button
+                            onClick={() => handleOpenEditActiveBill(order)}
+                            className="py-1.5 bg-orange-50 hover:bg-orange-100 text-[#ff5500] border border-orange-200 rounded-lg font-bold flex items-center justify-center gap-1 transition-colors"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" /> Edit Items
+                          </button>
+
                           <button
                             onClick={() => setPrintModalConfig({
                               type: 'TEMP_BILL',
@@ -2628,17 +2950,30 @@ export default function App() {
                           >
                             <Printer className="h-3.5 w-3.5" /> Temp Bill
                           </button>
+                        </div>
 
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                           <button
                             onClick={() => {
                               setSettlingOrder(order);
                               setPaymentMethod('CASH');
                               setCheckoutModalOpen(true);
                             }}
-                            className="py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center justify-center gap-1 shadow-sm"
+                            className="py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center justify-center gap-1 shadow-sm"
                           >
                             <DollarSign className="h-3.5 w-3.5" /> Settle Bill
                           </button>
+
+                          {/* ADMIN ONLY DELETE ACTIVE BILL BUTTON */}
+                          {currentUser.role === 'Administrator' && (
+                            <button
+                              onClick={() => handleDeleteActiveBillByAdmin(order.orderId, order.tableName, order.tableId)}
+                              className="py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg font-bold flex items-center justify-center gap-1 transition-colors"
+                              title="Administrator Only: Delete active order"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" /> Cancel Bill
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -4149,7 +4484,7 @@ export default function App() {
           <div className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center">
             <div className="flex items-center justify-between w-full mb-3 text-white">
               <span className="text-xs font-bold font-mono text-orange-400 uppercase">
-                80mm Thermal Dispatch
+                80mm Thermal Dispatch {printModalConfig.type === 'MULTI_DISPATCH' && '(3 Copies Ready)'}
               </span>
               <button onClick={() => setPrintModalConfig(null)} className="text-slate-400 hover:text-white">
                 <X className="h-4 w-4" />
@@ -4189,37 +4524,90 @@ export default function App() {
                 </div>
               )}
 
-              {/* Multi Dispatch KOT / BOT */}
+              {/* Multi Dispatch KOT / BOT / TEMPORARY BILL (3 COPIES AUTO-PRINT) */}
               {printModalConfig.type === 'MULTI_DISPATCH' && (
-                <div className="space-y-3">
+                <div className="space-y-4">
+                  {/* COPY 1: KOT */}
                   <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
-                    <p className="font-black text-xs">** KITCHEN ORDER TICKET (KOT) **</p>
-                    <p className="font-bold text-xs mt-1">{printModalConfig.data.order.tableName}</p>
+                    <p className="font-bold text-[9px] bg-slate-100 py-0.5 rounded uppercase">[COPY 1 OF 3] - KITCHEN DISPATCH</p>
+                    <p className="font-black text-xs mt-1">** KITCHEN ORDER TICKET (KOT) **</p>
+                    <p className="font-bold text-xs mt-0.5">{printModalConfig.data.order.tableName}</p>
                     <p className="text-[10px]">Time: {printModalConfig.data.order.sentAt}</p>
                     <div className="text-left py-2 space-y-1">
-                      {printModalConfig.data.kitchenItems.map((item, idx) => (
-                        <div key={idx}>
-                          <p className="font-bold">{item.qty}x {item.name}</p>
-                          {item.notes && <p className="text-[10px] pl-2 italic">&gt; {item.notes}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {printModalConfig.data.barItems.length > 0 && (
-                    <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
-                      <p className="font-black text-xs">** BAR ORDER TICKET (BOT) **</p>
-                      <p className="font-bold text-xs mt-1">{printModalConfig.data.order.tableName}</p>
-                      <div className="text-left py-2 space-y-1">
-                        {printModalConfig.data.barItems.map((item, idx) => (
+                      {printModalConfig.data.kitchenItems.length === 0 ? (
+                        <p className="italic text-slate-400">No kitchen items in this order.</p>
+                      ) : (
+                        printModalConfig.data.kitchenItems.map((item, idx) => (
                           <div key={idx}>
                             <p className="font-bold">{item.qty}x {item.name}</p>
                             {item.notes && <p className="text-[10px] pl-2 italic">&gt; {item.notes}</p>}
                           </div>
-                        ))}
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* COPY 2: BOT */}
+                  <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
+                    <p className="font-bold text-[9px] bg-slate-100 py-0.5 rounded uppercase">[COPY 2 OF 3] - BAR DISPATCH</p>
+                    <p className="font-black text-xs mt-1">** BAR ORDER TICKET (BOT) **</p>
+                    <p className="font-bold text-xs mt-0.5">{printModalConfig.data.order.tableName}</p>
+                    <p className="text-[10px]">Time: {printModalConfig.data.order.sentAt}</p>
+                    <div className="text-left py-2 space-y-1">
+                      {printModalConfig.data.barItems.length === 0 ? (
+                        <p className="italic text-slate-400">No bar beverage items in this order.</p>
+                      ) : (
+                        printModalConfig.data.barItems.map((item, idx) => (
+                          <div key={idx}>
+                            <p className="font-bold">{item.qty}x {item.name}</p>
+                            {item.notes && <p className="text-[10px] pl-2 italic">&gt; {item.notes}</p>}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* COPY 3: TEMPORARY PROFORMA BILL */}
+                  <div className="pt-1 text-center space-y-2">
+                    <p className="font-bold text-[9px] bg-slate-100 py-0.5 rounded uppercase">[COPY 3 OF 3] - GUEST PROFORMA</p>
+                    <p className="font-black text-sm">{settings.restaurantName}</p>
+                    <p className="text-[9px]">{settings.tagline}</p>
+                    <p className="font-bold text-xs mt-1">PROFORMA TEMPORARY BILL</p>
+                    <p className="text-[9px]">{printModalConfig.data.order.tableName} • Server: {printModalConfig.data.order.server}</p>
+
+                    <div className="py-1 border-y border-dashed border-slate-300 text-left space-y-1">
+                      {printModalConfig.data.order.items.map((item, idx) => (
+                        <div key={idx} className="flex justify-between">
+                          <span>{item.qty}x {item.name}</span>
+                          <span>{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="space-y-1 text-[10px] text-right">
+                      <div className="flex justify-between">
+                        <span>Subtotal:</span>
+                        <span>{settings.currency} {printModalConfig.data.subtotal.toFixed(2)}</span>
+                      </div>
+                      {printModalConfig.data.service > 0 && (
+                        <div className="flex justify-between">
+                          <span>Service Charge ({settings.serviceChargeRate}%):</span>
+                          <span>{settings.currency} {printModalConfig.data.service.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {printModalConfig.data.tax > 0 && (
+                        <div className="flex justify-between">
+                          <span>Tax ({settings.taxRate}%):</span>
+                          <span>{settings.currency} {printModalConfig.data.tax.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
+                        <span>ESTIMATED TOTAL:</span>
+                        <span>{settings.currency} {printModalConfig.data.total.toFixed(2)}</span>
                       </div>
                     </div>
-                  )}
+                    <p className="text-[9px] text-slate-500 italic mt-2">-- NOT AN OFFICIAL TAX INVOICE --</p>
+                  </div>
                 </div>
               )}
 
@@ -4312,6 +4700,137 @@ export default function App() {
             >
               <Printer className="h-4 w-4" /> Print 80mm
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 12: EDIT ACTIVE UNSETTLED BILL ITEMS */}
+      {editBillModalOpen && activeOrderEditing && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <Edit3 className="h-4 w-4 text-[#ff5500]" />
+                    Modify Active Bill: {activeOrderEditing.tableName}
+                  </h3>
+                  <p className="text-xs text-slate-500">Order ID: {activeOrderEditing.orderId} • Server: {activeOrderEditing.server}</p>
+                </div>
+                <button
+                  onClick={() => { setEditBillModalOpen(false); setActiveOrderEditing(null); }}
+                  className="text-slate-400 hover:text-slate-900"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* ADD MORE ITEMS SECTION */}
+              <div className="mt-4 p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                <span className="text-xs font-bold text-slate-800">Add Menu Item to this Active Bill:</span>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedDishToAdd}
+                    onChange={e => setSelectedDishToAdd(e.target.value)}
+                    className="flex-1 px-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 font-bold focus:outline-none focus:border-[#ff5500]"
+                  >
+                    {menuItems.map(dish => (
+                      <option key={dish.id} value={dish.id}>
+                        [{dish.department}] {dish.name} - {settings.currency} {dish.price.toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleAddItemToActiveBill}
+                    className="px-4 py-1.5 bg-[#ff5500] hover:bg-orange-600 text-white rounded-xl text-xs font-bold shrink-0 transition-colors"
+                  >
+                    + Add to Bill
+                  </button>
+                </div>
+              </div>
+
+              {/* CURRENT ITEMS LIST */}
+              <div className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-1">
+                <span className="text-[10px] font-black uppercase text-slate-400">Current Items on Bill ({activeOrderEditing.items.length})</span>
+                {activeOrderEditing.items.length === 0 ? (
+                  <p className="text-xs text-rose-500 italic p-3 bg-rose-50 rounded-xl border border-rose-200">
+                    All items removed. Please add items or cancel the bill.
+                  </p>
+                ) : (
+                  activeOrderEditing.items.map((item) => (
+                    <div key={item.cartItemId} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-900">{item.name}</p>
+                          <span className="font-mono text-[11px] text-[#ff5500]">
+                            {settings.currency} {(item.price * item.qty).toFixed(2)} ({settings.currency} {item.price.toFixed(2)} each)
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateActiveItemQty(item.cartItemId, -1)}
+                            className="h-6 w-6 rounded-md bg-white border border-slate-200 text-slate-600 flex items-center justify-center font-bold"
+                          >
+                            -
+                          </button>
+                          <span className="font-mono font-bold w-4 text-center">{item.qty}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateActiveItemQty(item.cartItemId, 1)}
+                            className="h-6 w-6 rounded-md bg-white border border-slate-200 text-slate-600 flex items-center justify-center font-bold"
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveActiveItem(item.cartItemId)}
+                            className="p-1 text-slate-400 hover:text-rose-600 ml-2"
+                            title="Delete line item"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={item.notes || ''}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setActiveOrderEditing(prev => ({
+                            ...prev,
+                            items: prev.items.map(i => i.cartItemId === item.cartItemId ? { ...i, notes: val } : i)
+                          }));
+                        }}
+                        placeholder="Modifier / kitchen note..."
+                        className="w-full text-[11px] px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-slate-800"
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-200 flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setEditBillModalOpen(false); setActiveOrderEditing(null); }}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveActiveBillChanges}
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-700/20 transition-colors"
+              >
+                Save Changes to Active Bill
+              </button>
+            </div>
           </div>
         </div>
       )}
