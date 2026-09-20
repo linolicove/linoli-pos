@@ -196,7 +196,14 @@ const INITIAL_FLOOR_TABLES = [
 
 export default function App() {
   // Navigation & User State
-  const [activeTab, setActiveTab] = useState('reports');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginTab, setLoginTab] = useState('PASSWORD'); // 'PASSWORD' | 'PIN'
+  const [loginUsername, setLoginUsername] = useState('ishani@linolicove.me');
+  const [loginPassword, setLoginPassword] = useState('123456');
+  const [loginPinInput, setLoginPinInput] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  const [activeTab, setActiveTab] = useState('pos');
   const [reportSubTab, setReportSubTab] = useState('Daily Overview');
   const [currentUser, setCurrentUser] = useState(INITIAL_STAFF[0]);
   const [staffList, setStaffList] = useState(INITIAL_STAFF);
@@ -959,6 +966,248 @@ export default function App() {
     return Array.from(cats);
   }, [menuItems]);
 
+  const handlePasswordLogin = (e) => {
+    if (e) e.preventDefault();
+    setLoginError('');
+    const found = staffList.find(
+      s => s.email.toLowerCase() === loginUsername.trim().toLowerCase() ||
+           s.name.toLowerCase() === loginUsername.trim().toLowerCase()
+    );
+
+    if (found) {
+      setCurrentUser(found);
+      setIsAuthenticated(true);
+      const allowed = ROLE_PERMISSIONS[found.role] || [];
+      setActiveTab(allowed.includes('pos') ? 'pos' : (allowed[0] || 'pos'));
+    } else {
+      // Default to administrator if custom username
+      const admin = staffList[0];
+      setCurrentUser({ ...admin, name: loginUsername.split('@')[0] || 'Authenticated User' });
+      setIsAuthenticated(true);
+      setActiveTab('pos');
+    }
+  };
+
+  const handlePinPadSubmit = (pinVal) => {
+    const pin = pinVal || loginPinInput;
+    setLoginError('');
+    const found = staffList.find(s => s.pin === pin);
+    if (found) {
+      setCurrentUser(found);
+      setIsAuthenticated(true);
+      setLoginPinInput('');
+      const allowed = ROLE_PERMISSIONS[found.role] || [];
+      setActiveTab(allowed.includes('pos') ? 'pos' : (allowed[0] || 'pos'));
+    } else {
+      setLoginError('Invalid PIN. Use 1234, 1111, 2222, 3333, or 5555.');
+    }
+  };
+
+  const handleFastRoleSelect = (roleKey) => {
+    setLoginError('');
+    let target = null;
+    if (roleKey === 'Admin') target = staffList.find(s => s.role === 'Administrator') || staffList[0];
+    else if (roleKey === 'Cashier') target = staffList.find(s => s.role === 'Cashier') || staffList[1];
+    else if (roleKey === 'Waiter') target = staffList.find(s => s.role === 'Floor Server') || staffList[4];
+    else if (roleKey === 'Kitchen') target = staffList.find(s => s.role === 'Kitchen Chef') || staffList[2];
+    else if (roleKey === 'Bar') target = staffList.find(s => s.role === 'Bartender') || staffList[3];
+
+    if (target) {
+      setLoginUsername(target.email);
+      setLoginPassword('••••••');
+      setLoginPinInput(target.pin);
+      setCurrentUser(target);
+      setIsAuthenticated(true);
+      const allowed = ROLE_PERMISSIONS[target.role] || [];
+      setActiveTab(allowed.includes('pos') ? 'pos' : (allowed[0] || 'pos'));
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-[#070b14] p-4 font-sans select-none antialiased">
+        <div className="w-full max-w-[420px] rounded-[32px] border border-[#1b253b] bg-[#0c1424]/95 p-8 shadow-2xl shadow-black/80 backdrop-blur-md">
+          {/* Brand Logo Header */}
+          <div className="flex flex-col items-center text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-[#ff4500] to-[#ff6a00] text-2xl font-black text-white shadow-lg shadow-orange-600/40">
+              LC
+            </div>
+            <h1 className="mt-3.5 text-2xl font-black tracking-tight text-white">Linoli Cove</h1>
+            <p className="mt-0.5 text-[10px] font-extrabold tracking-[0.2em] text-[#ff5500] uppercase">
+              RESTAURANT &amp; BAR POS
+            </p>
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-400 border border-emerald-500/20">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              Terminal Ready
+            </div>
+          </div>
+
+          {/* Mode Switcher Tabs */}
+          <div className="mt-6 grid grid-cols-2 gap-1 rounded-2xl bg-[#070b14] p-1 border border-zinc-800/80">
+            <button
+              type="button"
+              onClick={() => { setLoginTab('PASSWORD'); setLoginError(''); }}
+              className={`py-2 text-xs font-bold rounded-xl transition-all ${
+                loginTab === 'PASSWORD'
+                  ? 'bg-gradient-to-r from-[#e64a00] to-[#ff5a00] text-white shadow-md shadow-orange-700/30'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Password Login
+            </button>
+            <button
+              type="button"
+              onClick={() => { setLoginTab('PIN'); setLoginError(''); }}
+              className={`py-2 text-xs font-bold rounded-xl transition-all ${
+                loginTab === 'PIN'
+                  ? 'bg-gradient-to-r from-[#e64a00] to-[#ff5a00] text-white shadow-md shadow-orange-700/30'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Quick PIN Pad
+            </button>
+          </div>
+
+          {/* Tab 1: Password Login Form */}
+          {loginTab === 'PASSWORD' && (
+            <form onSubmit={handlePasswordLogin} className="mt-5 space-y-4">
+              <div>
+                <label className="block text-[10px] font-extrabold tracking-wider text-zinc-400 uppercase mb-1.5">
+                  USERNAME
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={loginUsername}
+                  onChange={e => setLoginUsername(e.target.value)}
+                  className="w-full rounded-2xl border-2 border-orange-500/80 bg-[#eaf1ff] px-4 py-3 text-xs font-semibold text-slate-900 shadow-inner focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold tracking-wider text-zinc-400 uppercase mb-1.5">
+                  PASSWORD
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={loginPassword}
+                  onChange={e => setLoginPassword(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 bg-[#eaf1ff] px-4 py-3 text-xs font-semibold text-slate-900 shadow-inner focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+
+              {loginError && (
+                <p className="text-center text-xs font-bold text-rose-500">{loginError}</p>
+              )}
+
+              <button
+                type="submit"
+                className="w-full mt-2 rounded-2xl bg-gradient-to-r from-[#ff4a00] to-[#ff6600] py-3.5 text-xs font-extrabold tracking-wider text-white uppercase shadow-lg shadow-orange-600/30 hover:brightness-110 active:scale-[0.99] transition-all"
+              >
+                Sign In to POS
+              </button>
+            </form>
+          )}
+
+          {/* Tab 2: Quick PIN Pad */}
+          {loginTab === 'PIN' && (
+            <div className="mt-5 space-y-4">
+              <div className="flex flex-col items-center">
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-2">
+                  ENTER 4-DIGIT TERMINAL PIN
+                </p>
+                <div className="flex h-12 w-full items-center justify-center rounded-2xl border border-zinc-800 bg-[#070b14] px-4">
+                  <div className="flex items-center gap-3">
+                    {[0, 1, 2, 3].map(idx => (
+                      <span
+                        key={idx}
+                        className={`h-3.5 w-3.5 rounded-full transition-all ${
+                          loginPinInput.length > idx ? 'bg-orange-500 scale-110' : 'bg-zinc-700'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {loginError && (
+                <p className="text-center text-xs font-bold text-rose-500">{loginError}</p>
+              )}
+
+              {/* Numeric Keypad Grid */}
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => {
+                      if (loginPinInput.length < 4) {
+                        const next = loginPinInput + num;
+                        setLoginPinInput(next);
+                        if (next.length === 4) handlePinPadSubmit(next);
+                      }
+                    }}
+                    className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-base font-bold text-white hover:bg-zinc-800 active:scale-95 transition-all"
+                  >
+                    {num}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setLoginPinInput('')}
+                  className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-xs font-bold text-zinc-400 hover:bg-zinc-800"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (loginPinInput.length < 4) {
+                      const next = loginPinInput + '0';
+                      setLoginPinInput(next);
+                      if (next.length === 4) handlePinPadSubmit(next);
+                    }
+                  }}
+                  className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-base font-bold text-white hover:bg-zinc-800 active:scale-95 transition-all"
+                >
+                  0
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoginPinInput(prev => prev.slice(0, -1))}
+                  className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-xs font-bold text-zinc-400 hover:bg-zinc-800"
+                >
+                  Del
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Fast Role Switch ("Tap to fill") */}
+          <div className="mt-6 border-t border-zinc-800/80 pt-4">
+            <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-2.5">
+              <span>FAST ROLE SWITCH</span>
+              <span className="text-zinc-500 font-medium lowercase">Tap to fill</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {['Admin', 'Cashier', 'Waiter', 'Kitchen', 'Bar'].map(r => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => handleFastRoleSelect(r)}
+                  className="rounded-xl border border-zinc-800 bg-[#10192b] px-3 py-1.5 text-[11px] font-bold text-zinc-300 hover:border-orange-500 hover:bg-orange-500/10 hover:text-white transition-all active:scale-95"
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-full bg-[#0b0f19] text-zinc-100 font-sans select-none overflow-hidden antialiased">
 
@@ -1096,16 +1345,25 @@ export default function App() {
               </div>
             </div>
           </div>
-          <button
-            onClick={() => {
-              setTargetStaffForSwitch(staffList.find(s => s.id !== currentUser.id) || staffList[0]);
-              setPinModalOpen(true);
-            }}
-            title="Fast PIN Role Switch"
-            className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-          >
-            <KeyRound className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                setTargetStaffForSwitch(staffList.find(s => s.id !== currentUser.id) || staffList[0]);
+                setPinModalOpen(true);
+              }}
+              title="Fast PIN Role Switch"
+              className="p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            >
+              <KeyRound className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setIsAuthenticated(false)}
+              title="Lock Terminal & Log Out"
+              className="p-1.5 rounded-xl text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-colors"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -1140,14 +1398,11 @@ export default function App() {
             </div>
 
             <button
-              onClick={() => {
-                setTargetStaffForSwitch(staffList[0]);
-                setPinModalOpen(true);
-              }}
+              onClick={() => setIsAuthenticated(false)}
               className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5"
             >
               <Lock className="h-3.5 w-3.5" />
-              <span>Switch / Lock</span>
+              <span>Lock Terminal</span>
             </button>
           </div>
         </header>
