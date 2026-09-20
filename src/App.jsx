@@ -197,9 +197,6 @@ const INITIAL_FLOOR_TABLES = [
 export default function App() {
   // Navigation & User State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loginTab, setLoginTab] = useState('PASSWORD'); // 'PASSWORD' | 'PIN'
-  const [loginUsername, setLoginUsername] = useState('ishani@linolicove.me');
-  const [loginPassword, setLoginPassword] = useState('123456');
   const [loginPinInput, setLoginPinInput] = useState('');
   const [loginError, setLoginError] = useState('');
 
@@ -272,7 +269,7 @@ export default function App() {
     }
   ]);
 
-  // Settled Transactions History
+  // Settled Transactions History - Permanently retained across all sessions
   const [transactions, setTransactions] = useState([
     {
       invoiceNo: 'INV-8801',
@@ -330,7 +327,6 @@ export default function App() {
   });
   const [payoutForm, setPayoutForm] = useState({ amount: '', reason: '' });
 
-  // Dialog & Modal Triggers
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [targetStaffForSwitch, setTargetStaffForSwitch] = useState(null);
@@ -439,11 +435,10 @@ export default function App() {
 
   const playCashRegisterChime = () => {
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-      const ctx = new AudioContext();
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
 
-      // High bell tone
       const osc1 = ctx.createOscillator();
       const gain1 = ctx.createGain();
       osc1.type = 'sine';
@@ -456,7 +451,6 @@ export default function App() {
       osc1.start(ctx.currentTime);
       osc1.stop(ctx.currentTime + 0.55);
 
-      // Bell harmonic
       const osc2 = ctx.createOscillator();
       const gain2 = ctx.createGain();
       osc2.type = 'triangle';
@@ -473,9 +467,7 @@ export default function App() {
   };
 
   const triggerCashDrawerDiagnostic = () => {
-    if (settings.chimeAudio) {
-      playCashRegisterChime();
-    }
+    if (settings.chimeAudio) playCashRegisterChime();
     setSettingsNotice({
       title: 'Cash Drawer Solenoid Fired',
       detail: `Kick pulse sent via ${settings.drawerPinout === 'PIN_2' ? 'Pin 2 (ESC p 0)' : 'Pin 5 (ESC p 1)'} • Chime played`
@@ -696,6 +688,7 @@ export default function App() {
       changeDue: paymentMethod === 'CASH' ? Math.max(0, (parseFloat(cashTendered) || total) - total) : 0
     };
 
+    // Keep all previous transactions intact and prepend new settled invoice
     setTransactions(prev => [newInvoice, ...prev]);
     setActiveOrders(prev => prev.filter(o => o.orderId !== targetOrder.orderId));
 
@@ -966,28 +959,6 @@ export default function App() {
     return Array.from(cats);
   }, [menuItems]);
 
-  const handlePasswordLogin = (e) => {
-    if (e) e.preventDefault();
-    setLoginError('');
-    const found = staffList.find(
-      s => s.email.toLowerCase() === loginUsername.trim().toLowerCase() ||
-           s.name.toLowerCase() === loginUsername.trim().toLowerCase()
-    );
-
-    if (found) {
-      setCurrentUser(found);
-      setIsAuthenticated(true);
-      const allowed = ROLE_PERMISSIONS[found.role] || [];
-      setActiveTab(allowed.includes('pos') ? 'pos' : (allowed[0] || 'pos'));
-    } else {
-      // Default to administrator if custom username
-      const admin = staffList[0];
-      setCurrentUser({ ...admin, name: loginUsername.split('@')[0] || 'Authenticated User' });
-      setIsAuthenticated(true);
-      setActiveTab('pos');
-    }
-  };
-
   const handlePinPadSubmit = (pinVal) => {
     const pin = pinVal || loginPinInput;
     setLoginError('');
@@ -996,6 +967,7 @@ export default function App() {
       setCurrentUser(found);
       setIsAuthenticated(true);
       setLoginPinInput('');
+      setCart([]); // Fresh session buffer for new login
       const allowed = ROLE_PERMISSIONS[found.role] || [];
       setActiveTab(allowed.includes('pos') ? 'pos' : (allowed[0] || 'pos'));
     } else {
@@ -1013,11 +985,10 @@ export default function App() {
     else if (roleKey === 'Bar') target = staffList.find(s => s.role === 'Bartender') || staffList[3];
 
     if (target) {
-      setLoginUsername(target.email);
-      setLoginPassword('••••••');
       setLoginPinInput(target.pin);
       setCurrentUser(target);
       setIsAuthenticated(true);
+      setCart([]); // Fresh session buffer
       const allowed = ROLE_PERMISSIONS[target.role] || [];
       setActiveTab(allowed.includes('pos') ? 'pos' : (allowed[0] || 'pos'));
     }
@@ -1042,147 +1013,77 @@ export default function App() {
             </div>
           </div>
 
-          {/* Mode Switcher Tabs */}
-          <div className="mt-6 grid grid-cols-2 gap-1 rounded-2xl bg-[#070b14] p-1 border border-zinc-800/80">
-            <button
-              type="button"
-              onClick={() => { setLoginTab('PASSWORD'); setLoginError(''); }}
-              className={`py-2 text-xs font-bold rounded-xl transition-all ${
-                loginTab === 'PASSWORD'
-                  ? 'bg-gradient-to-r from-[#e64a00] to-[#ff5a00] text-white shadow-md shadow-orange-700/30'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              Password Login
-            </button>
-            <button
-              type="button"
-              onClick={() => { setLoginTab('PIN'); setLoginError(''); }}
-              className={`py-2 text-xs font-bold rounded-xl transition-all ${
-                loginTab === 'PIN'
-                  ? 'bg-gradient-to-r from-[#e64a00] to-[#ff5a00] text-white shadow-md shadow-orange-700/30'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              Quick PIN Pad
-            </button>
-          </div>
-
-          {/* Tab 1: Password Login Form */}
-          {loginTab === 'PASSWORD' && (
-            <form onSubmit={handlePasswordLogin} className="mt-5 space-y-4">
-              <div>
-                <label className="block text-[10px] font-extrabold tracking-wider text-zinc-400 uppercase mb-1.5">
-                  USERNAME
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={loginUsername}
-                  onChange={e => setLoginUsername(e.target.value)}
-                  className="w-full rounded-2xl border-2 border-orange-500/80 bg-[#eaf1ff] px-4 py-3 text-xs font-semibold text-slate-900 shadow-inner focus:outline-none focus:ring-2 focus:ring-orange-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-extrabold tracking-wider text-zinc-400 uppercase mb-1.5">
-                  PASSWORD
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-300 bg-[#eaf1ff] px-4 py-3 text-xs font-semibold text-slate-900 shadow-inner focus:outline-none focus:ring-2 focus:ring-orange-500"
-                />
-              </div>
-
-              {loginError && (
-                <p className="text-center text-xs font-bold text-rose-500">{loginError}</p>
-              )}
-
-              <button
-                type="submit"
-                className="w-full mt-2 rounded-2xl bg-gradient-to-r from-[#ff4a00] to-[#ff6600] py-3.5 text-xs font-extrabold tracking-wider text-white uppercase shadow-lg shadow-orange-600/30 hover:brightness-110 active:scale-[0.99] transition-all"
-              >
-                Sign In to POS
-              </button>
-            </form>
-          )}
-
-          {/* Tab 2: Quick PIN Pad */}
-          {loginTab === 'PIN' && (
-            <div className="mt-5 space-y-4">
-              <div className="flex flex-col items-center">
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-2">
-                  ENTER 4-DIGIT TERMINAL PIN
-                </p>
-                <div className="flex h-12 w-full items-center justify-center rounded-2xl border border-zinc-800 bg-[#070b14] px-4">
-                  <div className="flex items-center gap-3">
-                    {[0, 1, 2, 3].map(idx => (
-                      <span
-                        key={idx}
-                        className={`h-3.5 w-3.5 rounded-full transition-all ${
-                          loginPinInput.length > idx ? 'bg-orange-500 scale-110' : 'bg-zinc-700'
-                        }`}
-                      />
-                    ))}
-                  </div>
+          {/* Quick PIN Pad */}
+          <div className="mt-6 space-y-4">
+            <div className="flex flex-col items-center">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-2">
+                ENTER 4-DIGIT TERMINAL PIN
+              </p>
+              <div className="flex h-12 w-full items-center justify-center rounded-2xl border border-zinc-800 bg-[#070b14] px-4">
+                <div className="flex items-center gap-3">
+                  {[0, 1, 2, 3].map(idx => (
+                    <span
+                      key={idx}
+                      className={`h-3.5 w-3.5 rounded-full transition-all ${
+                        loginPinInput.length > idx ? 'bg-orange-500 scale-110' : 'bg-zinc-700'
+                      }`}
+                    />
+                  ))}
                 </div>
               </div>
+            </div>
 
-              {loginError && (
-                <p className="text-center text-xs font-bold text-rose-500">{loginError}</p>
-              )}
+            {loginError && (
+              <p className="text-center text-xs font-bold text-rose-500">{loginError}</p>
+            )}
 
-              {/* Numeric Keypad Grid */}
-              <div className="grid grid-cols-3 gap-2 pt-1">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => {
-                      if (loginPinInput.length < 4) {
-                        const next = loginPinInput + num;
-                        setLoginPinInput(next);
-                        if (next.length === 4) handlePinPadSubmit(next);
-                      }
-                    }}
-                    className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-base font-bold text-white hover:bg-zinc-800 active:scale-95 transition-all"
-                  >
-                    {num}
-                  </button>
-                ))}
+            {/* Numeric Keypad Grid */}
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
                 <button
-                  type="button"
-                  onClick={() => setLoginPinInput('')}
-                  className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-xs font-bold text-zinc-400 hover:bg-zinc-800"
-                >
-                  Clear
-                </button>
-                <button
+                  key={num}
                   type="button"
                   onClick={() => {
                     if (loginPinInput.length < 4) {
-                      const next = loginPinInput + '0';
+                      const next = loginPinInput + num;
                       setLoginPinInput(next);
                       if (next.length === 4) handlePinPadSubmit(next);
                     }
                   }}
                   className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-base font-bold text-white hover:bg-zinc-800 active:scale-95 transition-all"
                 >
-                  0
+                  {num}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setLoginPinInput(prev => prev.slice(0, -1))}
-                  className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-xs font-bold text-zinc-400 hover:bg-zinc-800"
-                >
-                  Del
-                </button>
-              </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setLoginPinInput('')}
+                className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-xs font-bold text-zinc-400 hover:bg-zinc-800"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (loginPinInput.length < 4) {
+                    const next = loginPinInput + '0';
+                    setLoginPinInput(next);
+                    if (next.length === 4) handlePinPadSubmit(next);
+                  }
+                }}
+                className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-base font-bold text-white hover:bg-zinc-800 active:scale-95 transition-all"
+              >
+                0
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginPinInput(prev => prev.slice(0, -1))}
+                className="flex h-12 items-center justify-center rounded-2xl border border-zinc-800 bg-[#10192b] text-xs font-bold text-zinc-400 hover:bg-zinc-800"
+              >
+                Del
+              </button>
             </div>
-          )}
+          </div>
 
           {/* Fast Role Switch ("Tap to fill") */}
           <div className="mt-6 border-t border-zinc-800/80 pt-4">
@@ -1434,6 +1335,7 @@ export default function App() {
               ))}
             </div>
 
+            {/* Sub-tab: Daily Overview */}
             {reportSubTab === 'Daily Overview' && (
               <>
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1598,8 +1500,13 @@ export default function App() {
             {reportSubTab === 'Sales Detail' && (
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-black text-slate-900 uppercase">Paid Invoices Ledger</h3>
-                  <span className="text-xs font-mono text-slate-500">{transactions.length} Total Records</span>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Paid Invoices Ledger</h3>
+                    <p className="text-[11px] text-slate-400">All transactions are permanently retained across sessions and shifts.</p>
+                  </div>
+                  <span className="text-xs font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-xl">
+                    {transactions.length} Total Settled Transactions
+                  </span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
@@ -2449,7 +2356,7 @@ export default function App() {
                           onClick={() => handleOpenRecipeConfig(dish)}
                           className="text-[11px] font-bold text-[#ff5500] hover:underline flex items-center gap-1"
                         >
-                          <Sliders className="h-3 w-3" /> Edit Ingredients
+                          <Sliders className="h-3.5 w-3.5" /> Edit Ingredients
                         </button>
                       </div>
                       {dish.recipe && dish.recipe.length > 0 ? (
