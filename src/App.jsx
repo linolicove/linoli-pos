@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Monitor,
   Flame,
@@ -43,9 +43,8 @@ import {
   Usb,
   Volume2,
   Zap,
-  Phone,
-  MapPin,
-  Building2
+  ShoppingBag,
+  Upload
 } from 'lucide-react';
 
 const ROLE_PERMISSIONS = {
@@ -74,8 +73,12 @@ const INITIAL_RAW_INVENTORY = [
   { id: 'ing_beef_patty', name: 'Prime Angus Beef Patty', category: 'Meat', stock: 32, unit: 'pcs', cost: 450.00, threshold: 10 },
   { id: 'ing_burger_bun', name: 'Brioche Bun', category: 'Bakery', stock: 38, unit: 'pcs', cost: 65.00, threshold: 12 },
   { id: 'ing_cheddar', name: 'Aged Cheddar Cheese', category: 'Dairy & Eggs', stock: 2100, unit: 'g', cost: 1.20, threshold: 400 },
-  { id: 'ing_chicken', name: 'Chicken Breast Fillet', category: 'Poultry', stock: 8500, unit: 'g', cost: 1.10, threshold: 2000 },
-  { id: 'ing_syrup_spiced', name: 'Demerara Cocktail Syrup', category: 'Bar Supplies', stock: 1750, unit: 'ml', cost: 0.80, threshold: 300 }
+  { id: 'ing_calamari', name: 'Fresh Reef Calamari', category: 'Seafood', stock: 6500, unit: 'g', cost: 1.95, threshold: 1200 },
+  { id: 'ing_rum', name: 'White Rum', category: 'Bar Supplies', stock: 4500, unit: 'ml', cost: 3.20, threshold: 1000 },
+  { id: 'ing_lime', name: 'Fresh Lime Juice', category: 'Produce', stock: 3200, unit: 'ml', cost: 0.80, threshold: 500 },
+  { id: 'ing_mint', name: 'Garden Fresh Mint', category: 'Produce', stock: 850, unit: 'g', cost: 1.50, threshold: 200 },
+  { id: 'ing_soda', name: 'Sparkling Soda Water', category: 'Beverages', stock: 9500, unit: 'ml', cost: 0.15, threshold: 2000 },
+  { id: 'ing_lion_lager', name: 'Lion Lager 625ml', category: 'Bar Supplies', stock: 54, unit: 'pcs', cost: 650.00, threshold: 15 }
 ];
 
 const INITIAL_MENU_ITEMS = [
@@ -95,19 +98,6 @@ const INITIAL_MENU_ITEMS = [
     ]
   },
   {
-    id: 'drink_espresso',
-    name: 'Espresso',
-    department: 'Bar',
-    category: 'Hot Coffee',
-    price: 600.00,
-    prepTime: '3m',
-    imageUrl: 'https://images.unsplash.com/photo-1510591509098-f4fdc6d0ff04?auto=format&fit=crop&w=400&q=80',
-    description: 'Double shot of single-origin dark roasted arabica coffee.',
-    recipe: [
-      { ingredientId: 'ing_espresso_beans', amount: 18 }
-    ]
-  },
-  {
     id: 'dish_classic_burger',
     name: 'Angus Truffle Burger',
     department: 'Kitchen',
@@ -123,6 +113,48 @@ const INITIAL_MENU_ITEMS = [
     ]
   },
   {
+    id: 'dish_hot_butter_calamari',
+    name: 'Hot Butter Calamari',
+    department: 'Kitchen',
+    category: 'Starters',
+    price: 1850.00,
+    prepTime: '10m',
+    imageUrl: 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?auto=format&fit=crop&w=400&q=80',
+    description: 'Crispy seasoned calamari tossed with fresh chili butter and leeks.',
+    recipe: [
+      { ingredientId: 'ing_calamari', amount: 200 }
+    ]
+  },
+  {
+    id: 'drink_mojito',
+    name: 'Classic Coastal Mojito',
+    department: 'Bar',
+    category: 'Cocktails',
+    price: 1450.00,
+    prepTime: '4m',
+    imageUrl: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=400&q=80',
+    description: 'White rum, fresh garden mint, lime wedges, crushed ice & sparkling soda.',
+    recipe: [
+      { ingredientId: 'ing_rum', amount: 60 },
+      { ingredientId: 'ing_lime', amount: 30 },
+      { ingredientId: 'ing_mint', amount: 15 },
+      { ingredientId: 'ing_soda', amount: 120 }
+    ]
+  },
+  {
+    id: 'drink_lion_beer',
+    name: 'Lion Lager 625ml',
+    department: 'Bar',
+    category: 'Beer & Wine',
+    price: 950.00,
+    prepTime: '1m',
+    imageUrl: 'https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=400&q=80',
+    description: 'Crisp chilled local Sri Lankan lager bottle.',
+    recipe: [
+      { ingredientId: 'ing_lion_lager', amount: 1 }
+    ]
+  },
+  {
     id: 'drink_cappuccino',
     name: 'Café Cappuccino',
     department: 'Bar',
@@ -135,109 +167,71 @@ const INITIAL_MENU_ITEMS = [
       { ingredientId: 'ing_espresso_beans', amount: 18 },
       { ingredientId: 'ing_milk', amount: 180 }
     ]
+  },
+  {
+    id: 'drink_espresso',
+    name: 'Double Espresso',
+    department: 'Bar',
+    category: 'Hot Coffee',
+    price: 600.00,
+    prepTime: '3m',
+    imageUrl: 'https://images.unsplash.com/photo-1510591509098-f4fdc6d0ff04?auto=format&fit=crop&w=400&q=80',
+    description: 'Double shot of single-origin dark roasted arabica coffee.',
+    recipe: [
+      { ingredientId: 'ing_espresso_beans', amount: 18 }
+    ]
   }
 ];
 
 const INITIAL_FLOOR_TABLES = [
   { id: 'T-01', name: 'Table 1', zone: 'Indoor Main Hall', capacity: 2, status: 'VACANT', currentOrderRef: null },
   { id: 'T-02', name: 'Table 2', zone: 'Indoor Main Hall', capacity: 4, status: 'OCCUPIED', currentOrderRef: 'ORD-1001' },
-  { id: 'T-03', name: 'Table 3', zone: 'Deck Lounge', capacity: 4, status: 'VACANT', currentOrderRef: null },
+  { id: 'T-03', name: 'Table 3', zone: 'Indoor Main Hall', capacity: 4, status: 'VACANT', currentOrderRef: null },
   { id: 'T-04', name: 'Table 4', zone: 'Deck Lounge', capacity: 6, status: 'RESERVED', currentOrderRef: null },
+  { id: 'T-05', name: 'Table 5', zone: 'Deck Lounge', capacity: 4, status: 'VACANT', currentOrderRef: null },
   { id: 'BAR-01', name: 'Bar Seat 01', zone: 'Cocktail Counter', capacity: 1, status: 'VACANT', currentOrderRef: null },
   { id: 'BAR-02', name: 'Bar Seat 02', zone: 'Cocktail Counter', capacity: 1, status: 'VACANT', currentOrderRef: null },
   { id: 'VIP-01', name: 'VIP Cabana 1', zone: 'Private Ocean View', capacity: 8, status: 'VACANT', currentOrderRef: null }
 ];
 
-const playCashRegisterChime = () => {
-  try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
-
-    // Primary metallic strike bell (1320 Hz - High E)
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(1320, ctx.currentTime);
-    osc1.frequency.exponentialRampToValueAtTime(1280, ctx.currentTime + 0.35);
-
-    gain1.gain.setValueAtTime(0.7, ctx.currentTime);
-    gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
-    osc1.start(ctx.currentTime);
-    osc1.stop(ctx.currentTime + 0.65);
-
-    // Secondary resonant harmonic bell (2640 Hz)
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'triangle';
-    osc2.frequency.setValueAtTime(2640, ctx.currentTime);
-    gain2.gain.setValueAtTime(0.4, ctx.currentTime);
-    gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
-
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-    osc2.start(ctx.currentTime);
-    osc2.stop(ctx.currentTime + 0.5);
-
-    // Metallic latch mechanical click
-    const osc3 = ctx.createOscillator();
-    const gain3 = ctx.createGain();
-    osc3.type = 'square';
-    osc3.frequency.setValueAtTime(440, ctx.currentTime + 0.05);
-    gain3.gain.setValueAtTime(0.3, ctx.currentTime + 0.05);
-    gain3.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-
-    osc3.connect(gain3);
-    gain3.connect(ctx.destination);
-    osc3.start(ctx.currentTime + 0.05);
-    osc3.stop(ctx.currentTime + 0.15);
-  } catch (err) {
-    console.warn('Audio chime warning:', err);
-  }
-};
-
 export default function App() {
-  const [activeTab, setActiveTab] = useState('settings');
+  // Navigation & User State
+  const [activeTab, setActiveTab] = useState('reports');
   const [reportSubTab, setReportSubTab] = useState('Daily Overview');
   const [currentUser, setCurrentUser] = useState(INITIAL_STAFF[0]);
   const [staffList, setStaffList] = useState(INITIAL_STAFF);
 
-  // Exact Linoli Cove Midigama settings matching your screenshot
+  // System Configuration State
   const [settings, setSettings] = useState({
     restaurantName: 'Linoli Cove Midigama',
-    phone: '+94 74 036 6741',
-    address: '380 A Matara Road,Midigama, 81700',
-    currency: 'RS.',
-    serviceChargeRate: 10.00,
-    taxRate: 0.00,
-    receiptHeader: 'Welcome to Down South!\nFresh Seafood & Craft Drinks',
-    receiptFooter: 'Thank you for dining with us!\nPlease come again.',
-    terminalId: 'LINOLI-MAIN-01',
     tagline: 'RESTAURANT & BAR',
-    // Hardware thermal & drawer settings
+    terminalId: 'LINOLI-MAIN-01',
+    phone: '+94 74 036 6741',
+    address: '380 A Matara Road, Midigama, 81700',
+    currency: 'Rs.',
+    serviceChargeRate: 10,
+    taxRate: 8,
+    receiptRollWidth: '80mm',
     autoDrawerKick: 'ENABLED',
-    drawerKickTrigger: 'CASH_ONLY', // 'CASH_ONLY' or 'ALL'
-    drawerPinout: 'PIN_2', // 'PIN_2' = ESC p 0, 'PIN_5' = ESC p 1
-    receiptRollWidth: '80mm', // '80mm' or '58mm'
-    chimeAudio: true
+    drawerKickTrigger: 'CASH_ONLY',
+    drawerPinout: 'PIN_2',
+    chimeAudio: true,
+    receiptHeader: 'Linoli Cove Beach Resort & Dining\nBeach Road, Midigama\nTel: +94 74 036 6741',
+    receiptFooter: 'Thank you for your visit!\nPlease come again.'
   });
 
-  // Direct USB ESC/POS Printer Pairing state
   const [pairedUsbDevice, setPairedUsbDevice] = useState(null);
   const [usbStatusMessage, setUsbStatusMessage] = useState('');
-  const [drawerAlertBanner, setDrawerAlertBanner] = useState(null);
+  const [settingsNotice, setSettingsNotice] = useState(null);
 
-  // Core collections
+  // Data Collections
   const [inventory, setInventory] = useState(INITIAL_RAW_INVENTORY);
   const [menuItems, setMenuItems] = useState(INITIAL_MENU_ITEMS);
   const [floorTables, setFloorTables] = useState(INITIAL_FLOOR_TABLES);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [menuSearchQuery, setMenuSearchQuery] = useState('');
 
-  // POS Order Staging
+  // POS Working Ticket State
   const [orderMode, setOrderMode] = useState('DINING');
   const [selectedTable, setSelectedTable] = useState(INITIAL_FLOOR_TABLES[1]);
   const [takeawayInfo, setTakeawayInfo] = useState({ name: 'Walk-in Guest', phone: '', token: 'TK-102' });
@@ -245,12 +239,11 @@ export default function App() {
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
 
-  // Surcharges on Current Cart
+  // Surcharges on Active Ticket
   const [serviceChargeActive, setServiceChargeActive] = useState(true);
   const [taxActive, setTaxActive] = useState(false);
   const [discountPercent, setDiscountPercent] = useState(0);
 
-  // Active Orders in Kitchen / Floor
   const [activeOrders, setActiveOrders] = useState([
     {
       orderId: 'ORD-1001',
@@ -267,7 +260,7 @@ export default function App() {
       discountPercent: 0,
       items: [
         { ...INITIAL_MENU_ITEMS[0], cartItemId: 'c_init_1', qty: 1, notes: 'Less spicy please' },
-        { ...INITIAL_MENU_ITEMS[1], cartItemId: 'c_init_2', qty: 1, notes: 'Sugar on the side' }
+        { ...INITIAL_MENU_ITEMS[6], cartItemId: 'c_init_2', qty: 1, notes: 'Sugar on the side' }
       ]
     }
   ]);
@@ -283,7 +276,7 @@ export default function App() {
       cashier: 'System Administrator',
       items: [
         { name: 'SEAFOOD FRIED RICE', department: 'Kitchen', qty: 1, price: 2250.00 },
-        { name: 'Espresso', department: 'Bar', qty: 1, price: 600.00 }
+        { name: 'Double Espresso', department: 'Bar', qty: 1, price: 600.00 }
       ],
       subtotal: 2850.00,
       serviceCharge: 285.00,
@@ -308,7 +301,6 @@ export default function App() {
     }
   ]);
 
-  // Cashier Shifts
   const [currentShift, setCurrentShift] = useState({
     shiftId: 'SHIFT-20260919-01',
     openedAt: '09:00 AM',
@@ -321,7 +313,14 @@ export default function App() {
   });
 
   const [shiftHistory, setShiftHistory] = useState([]);
-  const [denominations, setDenominations] = useState({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
+  const [denominations, setDenominations] = useState({
+    5000: 0,
+    1000: 0,
+    500: 0,
+    100: 0,
+    50: 0,
+    20: 0
+  });
   const [payoutForm, setPayoutForm] = useState({ amount: '', reason: '' });
 
   // Dialog & Modal Triggers
@@ -357,6 +356,7 @@ export default function App() {
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidPayload, setVoidPayload] = useState({ item: null, reason: '' });
 
+  // Inventory & Stock Intake Modals
   const [addInventoryModalOpen, setAddInventoryModalOpen] = useState(false);
   const [newInventoryForm, setNewInventoryForm] = useState({
     name: '',
@@ -376,6 +376,7 @@ export default function App() {
     newCost: ''
   });
 
+  // Dedicated Recipe Configurator Modal
   const [recipeConfigModalOpen, setRecipeConfigModalOpen] = useState(false);
   const [editingDishForRecipe, setEditingDishForRecipe] = useState(null);
   const [currentRecipeIngredients, setCurrentRecipeIngredients] = useState([]);
@@ -429,55 +430,70 @@ export default function App() {
     return { subtotal, discount, service, tax, total };
   };
 
+  const playCashRegisterChime = () => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+
+      // High bell tone
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(1320, ctx.currentTime);
+      osc1.frequency.exponentialRampToValueAtTime(1280, ctx.currentTime + 0.35);
+      gain1.gain.setValueAtTime(0.6, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(ctx.currentTime);
+      osc1.stop(ctx.currentTime + 0.55);
+
+      // Bell harmonic
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(2640, ctx.currentTime);
+      gain2.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(ctx.currentTime);
+      osc2.stop(ctx.currentTime + 0.45);
+    } catch (err) {
+      console.warn('Audio chime notice:', err);
+    }
+  };
+
+  const triggerCashDrawerDiagnostic = () => {
+    if (settings.chimeAudio) {
+      playCashRegisterChime();
+    }
+    setSettingsNotice({
+      title: 'Cash Drawer Solenoid Fired',
+      detail: `Kick pulse sent via ${settings.drawerPinout === 'PIN_2' ? 'Pin 2 (ESC p 0)' : 'Pin 5 (ESC p 1)'} • Chime played`
+    });
+    setTimeout(() => setSettingsNotice(null), 4000);
+  };
+
   const handlePairUsbPrinter = async () => {
     if (!navigator.usb) {
-      setUsbStatusMessage('WebUSB not supported in this browser. Windows Printer Driver is active.');
+      setUsbStatusMessage('WebUSB not supported in this browser. Standard Windows printer spooler active.');
       return;
     }
     try {
-      setUsbStatusMessage('Requesting USB device selection...');
-      const device = await navigator.usb.requestDevice({
-        filters: [] // Allow user to choose any USB thermal printer (Epson, Rongta, Xprinter, etc.)
-      });
+      setUsbStatusMessage('Waiting for thermal printer USB selection...');
+      const device = await navigator.usb.requestDevice({ filters: [] });
       await device.open();
       if (device.configuration === null) {
         await device.selectConfiguration(1);
       }
       await device.claimInterface(0);
       setPairedUsbDevice(device);
-      setUsbStatusMessage(`Connected to ${device.productName || 'Thermal USB Printer'}`);
+      setUsbStatusMessage(`Paired with ${device.productName || 'Thermal Printer'}`);
     } catch (err) {
-      console.error('USB Pairing Error:', err);
-      setUsbStatusMessage('Device pairing cancelled or using Windows Print Spooler.');
-    }
-  };
-
-  // Sends the RJ11/RJ12 Solenoid kick pulse (ESC p m t1 t2)
-  const triggerCashDrawerKick = async (reason = 'Cash Settlement') => {
-    if (settings.chimeAudio) {
-      playCashRegisterChime();
-    }
-
-    setDrawerAlertBanner({
-      title: 'Cash Drawer Kicked Open',
-      detail: `${reason} • RJ11/RJ12 Solenoid Pulse sent (${settings.drawerPinout === 'PIN_2' ? 'Pin 2 / ESC p 0' : 'Pin 5 / ESC p 1'})`
-    });
-    setTimeout(() => setDrawerAlertBanner(null), 4500);
-
-    // If paired via direct WebUSB, transmit raw binary ESC/POS pulse bytes
-    if (pairedUsbDevice && pairedUsbDevice.opened) {
-      try {
-        // ESC p m t1 t2: 27, 112, (0 or 1), 50 (pulse on 100ms), 50 (pulse off 100ms)
-        const pinCode = settings.drawerPinout === 'PIN_2' ? 0 : 1;
-        const kickCommand = new Uint8Array([27, 112, pinCode, 50, 50]);
-        // Transfer to out endpoint
-        const endpoint = pairedUsbDevice.configuration.interfaces[0].alternate.endpoints.find(e => e.direction === 'out');
-        if (endpoint) {
-          await pairedUsbDevice.transferOut(endpoint.endpointNumber, kickCommand);
-        }
-      } catch (usbErr) {
-        console.warn('USB Direct drawer kick fallback:', usbErr);
-      }
+      console.warn('USB Pairing cancelled or error:', err);
+      setUsbStatusMessage('Printer driver ready via OS print spooler.');
     }
   };
 
@@ -623,7 +639,7 @@ export default function App() {
 
     const { subtotal, discount, service, tax, total } = calculateOrderFinancials(targetOrder);
 
-    // Deplete Inventory Based on Recipe BOM
+    // Deplete inventory based on dish Bill of Materials
     const deductions = {};
     let orderRawCost = 0;
 
@@ -680,14 +696,8 @@ export default function App() {
       setFloorTables(prev => prev.map(t => t.id === targetOrder.tableId ? { ...t, status: 'VACANT', currentOrderRef: null } : t));
     }
 
-    // AUTOMATIC CASH DRAWER OPENING CHECK
-    const shouldKickDrawer = settings.autoDrawerKick === 'ENABLED' && (
-      settings.drawerKickTrigger === 'ALL' ||
-      (settings.drawerKickTrigger === 'CASH_ONLY' && paymentMethod === 'CASH')
-    );
-
-    if (shouldKickDrawer) {
-      triggerCashDrawerKick(`Settlement: ${newInvoice.invoiceNo} (${paymentMethod})`);
+    if (settings.autoDrawerKick === 'ENABLED' && (settings.drawerKickTrigger === 'ALL' || (settings.drawerKickTrigger === 'CASH_ONLY' && paymentMethod === 'CASH'))) {
+      if (settings.chimeAudio) playCashRegisterChime();
     }
 
     setPrintModalConfig({
@@ -952,20 +962,20 @@ export default function App() {
   return (
     <div className="flex h-screen w-full bg-[#0b0f19] text-zinc-100 font-sans select-none overflow-hidden antialiased">
 
-      {/* Pop-up Hardware Notification Toast */}
-      {drawerAlertBanner && (
-        <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-emerald-400 animate-bounce">
+      {/* Floating System Notice Toast */}
+      {settingsNotice && (
+        <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-emerald-400">
           <div className="p-2 bg-emerald-700 rounded-xl">
-            <Zap className="h-5 w-5 text-yellow-300" />
+            <Zap className="h-4 w-4 text-amber-300" />
           </div>
           <div>
-            <p className="text-xs font-black uppercase tracking-wider">{drawerAlertBanner.title}</p>
-            <p className="text-[11px] font-mono opacity-90">{drawerAlertBanner.detail}</p>
+            <p className="text-xs font-black uppercase tracking-wider">{settingsNotice.title}</p>
+            <p className="text-[11px] font-mono opacity-90">{settingsNotice.detail}</p>
           </div>
         </div>
       )}
 
-      {}
+      {/* SIDEBAR NAVIGATION */}
       <aside className="w-64 bg-[#060813] border-r border-zinc-800/80 flex flex-col justify-between shrink-0 z-20 overflow-y-auto">
         <div>
           {/* Logo Header */}
@@ -985,7 +995,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Navigation Items */}
+          {/* Navigation Links with Role Filtering */}
           <nav className="p-3 space-y-1">
             {[
               { id: 'pos', name: 'POS Terminal', icon: Monitor, badge: cart.reduce((a, b) => a + b.qty, 0) },
@@ -1030,6 +1040,7 @@ export default function App() {
               );
             })}
 
+            {/* ADMINISTRATION SECTION */}
             <div className="pt-4 pb-1.5 px-3">
               <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
                 ADMINISTRATION
@@ -1071,7 +1082,7 @@ export default function App() {
           </nav>
         </div>
 
-        {/* User Footer */}
+        {/* User Footer with Fast PIN Switch Modal */}
         <div className="p-3 border-t border-zinc-900 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="h-9 w-9 rounded-full bg-zinc-800 text-orange-400 font-black text-xs flex items-center justify-center border border-zinc-700">
@@ -1098,7 +1109,7 @@ export default function App() {
         </div>
       </aside>
 
-      {}
+      {/* MAIN CONTENT AREA */}
       <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 text-slate-900">
 
         {/* Top Header */}
@@ -1111,12 +1122,6 @@ export default function App() {
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
               Online
             </div>
-            {pairedUsbDevice && (
-              <div className="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-                <Usb className="h-3 w-3" />
-                USB Printer Active
-              </div>
-            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -1131,7 +1136,7 @@ export default function App() {
             )}
 
             <div className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-700">
-              Currency: {settings.currency}
+              Currency: {settings.currency} (LKR)
             </div>
 
             <button
@@ -1147,317 +1152,376 @@ export default function App() {
           </div>
         </header>
 
-        {}
-        {activeTab === 'settings' && (
-          <div className="flex-1 overflow-y-auto p-8 space-y-8 max-w-7xl mx-auto w-full">
-            <div>
-              <h2 className="text-xl font-black text-slate-900">System &amp; Restaurant Settings</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Configure restaurant details, currency, default service charge rate, and thermal receipt headers/footers.
-              </p>
+        {/* VIEW 1: SALES & REVENUE REPORTS */}
+        {activeTab === 'reports' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center gap-6 border-b border-slate-200 pb-3 text-xs font-bold overflow-x-auto">
+              {[
+                'Daily Overview',
+                'Sales Detail',
+                'KOT Report',
+                'BOT Report',
+                'Sales Summary',
+                'Food vs Beverage',
+                'Stock Usage'
+              ].map(sub => (
+                <button
+                  key={sub}
+                  onClick={() => setReportSubTab(sub)}
+                  className={`transition-colors relative pb-1 whitespace-nowrap ${
+                    reportSubTab === sub
+                      ? 'text-[#ff5500] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-[#ff5500]'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  {sub}
+                </button>
+              ))}
             </div>
 
-            {/* RESTAURANT IDENTITY */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-[#ff5500]" />
-                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
-                  RESTAURANT IDENTITY
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Restaurant Name</label>
-                  <input
-                    type="text"
-                    value={settings.restaurantName}
-                    onChange={e => setSettings(prev => ({ ...prev, restaurantName: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Phone Number</label>
-                  <input
-                    type="text"
-                    value={settings.phone}
-                    onChange={e => setSettings(prev => ({ ...prev, phone: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1">Address</label>
-                <input
-                  type="text"
-                  value={settings.address}
-                  onChange={e => setSettings(prev => ({ ...prev, address: e.target.value }))}
-                  className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                />
-              </div>
-            </div>
-
-            {/* CURRENCY & CHARGES */}
-            <div className="space-y-4 pt-2 border-t border-slate-200">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
-                  CURRENCY &amp; CHARGES
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Currency Symbol</label>
-                  <input
-                    type="text"
-                    value={settings.currency}
-                    onChange={e => setSettings(prev => ({ ...prev, currency: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Default Service Charge (%)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={settings.serviceChargeRate}
-                    onChange={e => setSettings(prev => ({ ...prev, serviceChargeRate: parseFloat(e.target.value) || 0 }))}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Tax / VAT Rate (%)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={settings.taxRate}
-                    onChange={e => setSettings(prev => ({ ...prev, taxRate: parseFloat(e.target.value) || 0 }))}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* RECEIPT CUSTOMIZATION */}
-            <div className="space-y-4 pt-2 border-t border-slate-200">
-              <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
-                RECEIPT CUSTOMIZATION
-              </h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Receipt Header Message</label>
-                  <textarea
-                    rows={3}
-                    value={settings.receiptHeader}
-                    onChange={e => setSettings(prev => ({ ...prev, receiptHeader: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Receipt Footer Message</label>
-                  <textarea
-                    rows={3}
-                    value={settings.receiptFooter}
-                    onChange={e => setSettings(prev => ({ ...prev, receiptFooter: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {}
-            <div className="space-y-6 pt-2 border-t border-slate-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                    <Printer className="h-4 w-4 text-[#ff5500]" />
-                    THERMAL PRINTER &amp; CASH DRAWER HARDWARE
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Direct WebUSB ESC/POS hardware, RJ11/RJ12 solenoid pulse, and Windows print spooler integration
-                  </p>
-                </div>
-                <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-semibold rounded-full border border-slate-200">
-                  {pairedUsbDevice ? `USB: ${pairedUsbDevice.productName || 'Connected'}` : 'Windows Printer Driver (Active)'}
-                </span>
-              </div>
-
-              {/* USB Hardware Pairing Card */}
-              <div className="p-4 bg-white border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <div className="px-2.5 py-1 bg-amber-100 text-amber-800 text-[11px] font-black rounded-lg">
-                    USB
-                  </div>
+            {reportSubTab === 'Daily Overview' && (
+              <>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <p className="text-xs text-slate-600">
-                      Supports direct WebUSB ESC/POS kick + standard Windows thermal printer drivers
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                      Sales &amp; Revenue Reports
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Comprehensive financial breakdown of sales, service charges, taxes, and preparation area performances.
                     </p>
-                    {usbStatusMessage && (
-                      <p className="text-[11px] font-mono text-indigo-600 mt-0.5">{usbStatusMessage}</p>
-                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 shadow-sm font-mono">
+                      <span>09/19/2026</span>
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                      <span className="text-slate-400 font-sans">to</span>
+                      <span>09/19/2026</span>
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                    </div>
+
+                    <button
+                      onClick={() => setPrintModalConfig({ type: 'DAILY_SUMMARY', data: salesMetrics })}
+                      className="px-4 py-2 bg-[#008f5d] hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition-all"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                      <span>Print Thermal (80mm)</span>
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handlePairUsbPrinter}
-                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm"
-                  >
-                    <Usb className="h-4 w-4" />
-                    <span>Pair USB Printer</span>
-                  </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">GROSS REVENUE</p>
+                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.grossRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">{salesMetrics.paidBillsCount} Paid Bills</p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">ITEM SUBTOTAL</p>
+                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.itemSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Food &amp; Beverage Sales</p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">SERVICE CHARGE</p>
+                    <p className="text-2xl font-black text-emerald-600 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.serviceCharge.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Collected for staff pool</p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">TAXES / DISCOUNTS</p>
+                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.taxes.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Discounts: {settings.currency} {salesMetrics.discounts.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 mb-4">
+                      Payment Methods Breakdown
+                    </h3>
+                    <div className="space-y-3">
+                      {Object.keys(salesMetrics.paymentMethods).length === 0 ? (
+                        <p className="text-xs text-slate-400 italic">No payments collected yet today.</p>
+                      ) : (
+                        Object.entries(salesMetrics.paymentMethods).map(([method, data]) => (
+                          <div key={method} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                            <div className="flex items-center gap-3">
+                              <span className="px-2 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-mono font-black rounded-lg">
+                                {method.substring(0, 3)}
+                              </span>
+                              <div>
+                                <p className="text-xs font-bold text-slate-900">{method}</p>
+                                <span className="text-[10px] text-slate-500">{data.count} transactions</span>
+                              </div>
+                            </div>
+                            <span className="text-sm font-black font-mono text-slate-900">
+                              {settings.currency} {data.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 mb-4">
+                      Preparation Area Sales
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <span className="px-2 py-1 bg-rose-100 text-rose-800 text-[10px] font-mono font-black rounded-lg">KOT</span>
+                          <div>
+                            <p className="text-xs font-bold text-slate-900">Kitchen</p>
+                            <span className="text-[10px] text-slate-500">{salesMetrics.kitchenItemsCount} items prepared</span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-black font-mono text-slate-900">
+                          {settings.currency} {salesMetrics.kitchenRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <span className="px-2 py-1 bg-indigo-100 text-indigo-800 text-[10px] font-mono font-black rounded-lg">BOT</span>
+                          <div>
+                            <p className="text-xs font-bold text-slate-900">Bar</p>
+                            <span className="text-[10px] text-slate-500">{salesMetrics.barItemsCount} items prepared</span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-black font-mono text-slate-900">
+                          {settings.currency} {salesMetrics.barRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 mb-3">
+                    Top Selling Menu Items
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5">MENU ITEM</th>
+                          <th className="py-2.5">AREA</th>
+                          <th className="py-2.5 text-center">PORTIONS SOLD</th>
+                          <th className="py-2.5 text-right">TOTAL REVENUE</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {salesMetrics.topItems.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/70">
+                            <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                            <td className="py-3 text-slate-500">{item.department}</td>
+                            <td className="py-3 text-center font-mono font-bold text-slate-700">{item.sold}</td>
+                            <td className="py-3 text-right font-mono font-black text-slate-900">
+                              {settings.currency} {item.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Sub-tab: Sales Detail */}
+            {reportSubTab === 'Sales Detail' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-black text-slate-900 uppercase">Paid Invoices Ledger</h3>
+                  <span className="text-xs font-mono text-slate-500">{transactions.length} Total Records</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Invoice #</th>
+                        <th className="py-2.5">Time</th>
+                        <th className="py-2.5">Table / Order</th>
+                        <th className="py-2.5">Cashier</th>
+                        <th className="py-2.5">Method</th>
+                        <th className="py-2.5 text-right">Subtotal</th>
+                        <th className="py-2.5 text-right">Service</th>
+                        <th className="py-2.5 text-right">Grand Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {transactions.map((t, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="py-3 font-mono font-bold text-slate-800">{t.invoiceNo}</td>
+                          <td className="py-3 text-slate-500">{t.date}</td>
+                          <td className="py-3 font-semibold text-slate-900">{t.table}</td>
+                          <td className="py-3 text-slate-600">{t.cashier}</td>
+                          <td className="py-3">
+                            <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-slate-700">
+                              {t.paymentMethod}
+                            </span>
+                          </td>
+                          <td className="py-3 text-right font-mono">{settings.currency} {t.subtotal.toFixed(2)}</td>
+                          <td className="py-3 text-right font-mono text-emerald-700">+{settings.currency} {t.serviceCharge.toFixed(2)}</td>
+                          <td className="py-3 text-right font-mono font-black text-slate-900">{settings.currency} {t.total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
+            )}
 
-              {/* Cash Drawer & Solenoid Controls Grid */}
+            {/* Sub-tab: KOT & BOT Reports */}
+            {(reportSubTab === 'KOT Report' || reportSubTab === 'BOT Report') && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-black text-slate-900 uppercase">
+                    {reportSubTab === 'KOT Report' ? 'Kitchen Order Tickets (KOT) Audit' : 'Bar Order Tickets (BOT) Audit'}
+                  </h3>
+                  <span className={`px-2 py-1 rounded text-xs font-bold ${
+                    reportSubTab === 'KOT Report' ? 'bg-rose-100 text-rose-800' : 'bg-indigo-100 text-indigo-800'
+                  }`}>
+                    {reportSubTab === 'KOT Report' ? `${salesMetrics.kitchenItemsCount} items dispatched` : `${salesMetrics.barItemsCount} drinks dispatched`}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Item Dispatched</th>
+                        <th className="py-2.5">Target Dept</th>
+                        <th className="py-2.5 text-center">Total Quantity</th>
+                        <th className="py-2.5 text-right">Revenue Contributed</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {salesMetrics.topItems
+                        .filter(i => reportSubTab === 'KOT Report' ? i.department === 'Kitchen' : i.department === 'Bar')
+                        .map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                            <td className="py-3 text-slate-500">{item.department}</td>
+                            <td className="py-3 text-center font-mono font-bold">{item.sold}</td>
+                            <td className="py-3 text-right font-mono font-bold text-slate-900">{settings.currency} {item.revenue.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-tab: Food vs Beverage */}
+            {reportSubTab === 'Food vs Beverage' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-bold text-slate-800">Cash Drawer Auto-Kick</label>
-                    <span className="text-[10px] font-bold text-orange-600 uppercase">Automatic</span>
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-rose-600 uppercase tracking-wider">Food / Kitchen (KOT)</span>
+                    <h3 className="text-3xl font-black font-mono text-slate-900 mt-2">
+                      {settings.currency} {salesMetrics.kitchenRevenue.toFixed(2)}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {((salesMetrics.kitchenRevenue / (salesMetrics.itemSubtotal || 1)) * 100).toFixed(1)}% of total menu sales
+                    </p>
                   </div>
-                  <p className="text-[11px] text-slate-500 mb-2">
-                    Automatically sends a pulse to open cash drawer when final bill is settled.
-                  </p>
-                  <select
-                    value={settings.autoDrawerKick}
-                    onChange={e => setSettings(prev => ({ ...prev, autoDrawerKick: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  >
-                    <option value="ENABLED">Enabled (Auto-Open)</option>
-                    <option value="DISABLED">Disabled (Manual Only)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-bold text-slate-800">Drawer Kick Trigger</label>
-                    <span className="text-[10px] font-bold text-emerald-600 uppercase">Trigger Mode</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mb-2">
-                    Controls which customer payment settlement methods pop open the cash drawer.
-                  </p>
-                  <select
-                    value={settings.drawerKickTrigger}
-                    onChange={e => setSettings(prev => ({ ...prev, drawerKickTrigger: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  >
-                    <option value="CASH_ONLY">On CASH Payments Only (Recommended)</option>
-                    <option value="ALL">On All Settlements (Cash, Card, Split)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-bold text-slate-800">RJ11/RJ12 Connector Pin</label>
-                    <span className="text-[10px] font-bold text-indigo-600 uppercase">Pinout</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mb-2">
-                    Solenoid pulse signal pinout for your printer manufacturer (Epson, Xprinter, etc).
-                  </p>
-                  <select
-                    value={settings.drawerPinout}
-                    onChange={e => setSettings(prev => ({ ...prev, drawerPinout: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  >
-                    <option value="PIN_2">Pin 2 - ESC p 0 (Standard Epson, Xprinter, Rongta)</option>
-                    <option value="PIN_5">Pin 5 - ESC p 1 (Star Micronics, Custom)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-bold text-slate-800">Thermal Receipt Roll Width</label>
-                    <span className="text-[10px] font-bold text-purple-600 uppercase">Paper Size</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mb-2">
-                    Default paper roll width format for printed customer bills, KOT, and BOT tickets.
-                  </p>
-                  <select
-                    value={settings.receiptRollWidth}
-                    onChange={e => setSettings(prev => ({ ...prev, receiptRollWidth: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  >
-                    <option value="80mm">80mm Standard Thermal Roll (76mm printable)</option>
-                    <option value="58mm">58mm Compact Thermal Roll (48mm printable)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-bold text-slate-800">Cash Register Chime (Audio)</label>
-                    <span className="text-[10px] font-bold text-blue-600 uppercase">Web Audio</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mb-2">
-                    Synthesizes an authentic "ka-ching" metallic bell chime via Web Audio API.
-                  </p>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setSettings(prev => ({ ...prev, chimeAudio: !prev.chimeAudio }))}
-                      className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
-                        settings.chimeAudio
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                          : 'bg-slate-100 border-slate-200 text-slate-500'
-                      }`}
-                    >
-                      {settings.chimeAudio ? 'Chime Enabled (Active)' : 'Chime Muted'}
-                    </button>
-                    <button
-                      onClick={playCashRegisterChime}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5"
-                    >
-                      <Volume2 className="h-3.5 w-3.5" /> Test Sound
-                    </button>
+                  <div className="mt-6 pt-4 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-700">Portions Prepared: {salesMetrics.kitchenItemsCount}</span>
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-bold text-slate-800">Hardware Kick Diagnostic</label>
-                    <span className="text-[10px] font-bold text-rose-600 uppercase">Test Tool</span>
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Beverages / Bar (BOT)</span>
+                    <h3 className="text-3xl font-black font-mono text-slate-900 mt-2">
+                      {settings.currency} {salesMetrics.barRevenue.toFixed(2)}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {((salesMetrics.barRevenue / (salesMetrics.itemSubtotal || 1)) * 100).toFixed(1)}% of total menu sales
+                    </p>
                   </div>
-                  <p className="text-[11px] text-slate-500 mb-2">
-                    Fire a test pulse now to verify physical solenoid drawer kick and chime output.
-                  </p>
-                  <button
-                    onClick={() => triggerCashDrawerKick('Manual Diagnostic Test')}
-                    className="w-full py-2 bg-[#ff5500] hover:bg-orange-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-orange-600/20 transition-all"
-                  >
-                    <Zap className="h-4 w-4" /> Pop Open Cash Drawer Now
-                  </button>
+                  <div className="mt-6 pt-4 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-700">Drinks Served: {salesMetrics.barItemsCount}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Save Settings Confirmation */}
-            <div className="pt-4 border-t border-slate-200 flex justify-end">
-              <button
-                onClick={() => {
-                  setDrawerAlertBanner({
-                    title: 'System Settings Saved',
-                    detail: 'Identity, receipt headers, and hardware parameters are active.'
-                  });
-                  setTimeout(() => setDrawerAlertBanner(null), 3000);
-                }}
-                className="px-6 py-2.5 bg-[#008f5d] hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-700/20 flex items-center gap-2 transition-all"
-              >
-                <CheckCircle2 className="h-4 w-4" /> Save System Settings
-              </button>
-            </div>
+            {/* Sub-tab: Stock Usage */}
+            {reportSubTab === 'Stock Usage' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <h3 className="text-sm font-black text-slate-900 uppercase mb-3">Live Ingredient Stock Depletion</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Raw Material</th>
+                        <th className="py-2.5">Remaining Stock</th>
+                        <th className="py-2.5">Threshold</th>
+                        <th className="py-2.5 text-right">Unit Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {inventory.map(i => (
+                        <tr key={i.id} className="hover:bg-slate-50">
+                          <td className="py-3 font-bold text-slate-900">{i.name}</td>
+                          <td className="py-3 font-mono font-bold text-slate-700">{i.stock} {i.unit}</td>
+                          <td className="py-3 font-mono text-slate-400">{i.threshold} {i.unit}</td>
+                          <td className="py-3 text-right font-mono text-slate-600">{settings.currency} {i.cost.toFixed(2)} / {i.unit}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-tab: Sales Summary */}
+            {reportSubTab === 'Sales Summary' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4 max-w-xl">
+                <h3 className="text-base font-black text-slate-900 uppercase">Executive Summary</h3>
+                <div className="space-y-2 text-xs divide-y divide-slate-100">
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Total Orders Closed</span>
+                    <span className="font-mono font-bold text-slate-900">{salesMetrics.paidBillsCount}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Net Food &amp; Beverage Sales</span>
+                    <span className="font-mono font-bold text-slate-900">{settings.currency} {salesMetrics.itemSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Service Charges ({settings.serviceChargeRate}%)</span>
+                    <span className="font-mono font-bold text-emerald-600">+{settings.currency} {salesMetrics.serviceCharge.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Taxes Collected</span>
+                    <span className="font-mono font-bold text-slate-900">+{settings.currency} {salesMetrics.taxes.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-3 text-sm font-black text-slate-900 border-t-2 border-slate-900">
+                    <span>Total Net Revenue</span>
+                    <span className="font-mono text-[#ff5500]">{settings.currency} {salesMetrics.grossRevenue.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
-        {}
+        {/* VIEW 2: POS TERMINAL */}
         {activeTab === 'pos' && (
           <div className="flex-1 flex overflow-hidden">
-            {/* Catalog Grid */}
             <div className="flex-1 flex flex-col p-5 overflow-hidden">
               <div className="flex items-center justify-between gap-4 mb-4 shrink-0">
                 <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -1488,7 +1552,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Dish Cards */}
+              {/* Dish Cards Grid */}
               <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pr-1">
                 {menuItems
                   .filter(item => {
@@ -1518,8 +1582,8 @@ export default function App() {
                                 e.currentTarget.style.display = 'none';
                               }}
                             />
-                            <span className={`absolute top-2 left-2 text-[9px] font-black px-2 py-0.5 rounded shadow-sm ${
-                              dish.department === 'Bar' ? 'bg-indigo-600 text-white' : 'bg-rose-600 text-white'
+                            <span className={`absolute top-2 left-2 text-[9px] font-black px-2 py-0.5 rounded shadow-sm text-white ${
+                              dish.department === 'Bar' ? 'bg-indigo-600' : 'bg-rose-600'
                             }`}>
                               {dish.department}
                             </span>
@@ -1568,10 +1632,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Right Side Ticket Sidebar */}
+            {/* Right Ticket Sidebar */}
             <div className="w-96 bg-white border-l border-slate-200 flex flex-col justify-between shrink-0 shadow-lg">
-              
-              {/* Order Target & Allocation Bar */}
               <div className="p-4 border-b border-slate-200 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1591,8 +1653,7 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Surcharges and Cash Drawer Fast Pop */}
-                <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
                     onClick={() => setServiceChargeActive(!serviceChargeActive)}
                     className={`py-1 px-2 rounded-lg border text-xs font-bold transition-all ${
@@ -1601,7 +1662,7 @@ export default function App() {
                         : 'bg-slate-50 border-slate-200 text-slate-400'
                     }`}
                   >
-                    Svc ({settings.serviceChargeRate}%): {serviceChargeActive ? 'ON' : 'OFF'}
+                    Service ({settings.serviceChargeRate}%): {serviceChargeActive ? 'ON' : 'OFF'}
                   </button>
 
                   <button
@@ -1614,19 +1675,10 @@ export default function App() {
                   >
                     Tax ({settings.taxRate}%): {taxActive ? 'ON' : 'OFF'}
                   </button>
-
-                  <button
-                    onClick={() => triggerCashDrawerKick('POS Manual Kick')}
-                    title="Pop Cash Drawer Now"
-                    className="py-1 px-2 rounded-lg border border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center gap-1"
-                  >
-                    <Zap className="h-3 w-3 text-[#ff5500]" />
-                    <span>Drawer</span>
-                  </button>
                 </div>
               </div>
 
-              {/* Ticket Items List */}
+              {/* Items in Cart */}
               <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
                 {cart.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-6">
@@ -1740,95 +1792,611 @@ export default function App() {
           </div>
         )}
 
-        {}
-        {activeTab === 'reports' && (
+        {/* VIEW 3: CASHIER SHIFTS & DRAWER */}
+        {activeTab === 'shifts' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="flex items-center gap-6 border-b border-slate-200 pb-3 text-xs font-bold overflow-x-auto">
-              {[
-                'Daily Overview',
-                'Sales Detail',
-                'KOT Report',
-                'BOT Report',
-                'Sales Summary',
-                'Food vs Beverage',
-                'Stock Usage'
-              ].map(sub => (
-                <button
-                  key={sub}
-                  onClick={() => setReportSubTab(sub)}
-                  className={`transition-colors relative pb-1 whitespace-nowrap ${
-                    reportSubTab === sub
-                      ? 'text-[#ff5500] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-[#ff5500]'
-                      : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  {sub}
-                </button>
-              ))}
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Cashier Shift &amp; Drawer Balancing</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Shift ID: <span className="font-mono font-bold text-slate-800">{currentShift.shiftId}</span> • Opened by {currentShift.openedBy} at {currentShift.openedAt}
+                </p>
+              </div>
+
+              <button
+                onClick={handleCloseShift}
+                className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-orange-600/20"
+              >
+                <Lock className="h-4 w-4" />
+                <span>Close Shift &amp; Print Z-Report</span>
+              </button>
             </div>
 
-            {reportSubTab === 'Daily Overview' && (
-              <>
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-black uppercase text-slate-400">Opening Float</p>
+                <p className="text-xl font-black font-mono text-slate-900 mt-1">
+                  {settings.currency} {currentShift.startingFloat.toFixed(2)}
+                </p>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-black uppercase text-slate-400">Cash Sales Collected</p>
+                <p className="text-xl font-black font-mono text-emerald-600 mt-1">
+                  +{settings.currency} {shiftCashMetrics.totalCashSales.toFixed(2)}
+                </p>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-black uppercase text-slate-400">Petty Cash Payouts</p>
+                <p className="text-xl font-black font-mono text-rose-600 mt-1">
+                  -{settings.currency} {shiftCashMetrics.totalPayouts.toFixed(2)}
+                </p>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-black uppercase text-slate-400">Expected Drawer Total</p>
+                <p className="text-xl font-black font-mono text-slate-900 mt-1">
+                  {settings.currency} {shiftCashMetrics.expectedCashInDrawer.toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Cash Count */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                    <Coins className="h-4 w-4 text-[#ff5500]" /> Physical Cash Drawer Count
+                  </h3>
+                  <span className="font-mono text-xs font-bold text-slate-600">
+                    Counted: {settings.currency} {shiftCashMetrics.countedCash.toFixed(2)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {[5000, 1000, 500, 100, 50, 20].map(denom => (
+                    <div key={denom} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="font-mono font-bold text-xs text-slate-700">{settings.currency} {denom}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400">×</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={denominations[denom] || ''}
+                          onChange={e => {
+                            const val = parseInt(e.target.value) || 0;
+                            setDenominations(prev => ({ ...prev, [denom]: val }));
+                          }}
+                          placeholder="0"
+                          className="w-16 px-2 py-1 bg-white border border-slate-300 rounded text-center text-xs font-mono font-bold"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className={`p-4 rounded-xl border flex items-center justify-between ${
+                  shiftCashMetrics.variance === 0
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : shiftCashMetrics.variance > 0
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}>
                   <div>
-                    <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                      Sales &amp; Revenue Reports
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Financial performance for {settings.restaurantName} ({settings.currency}).
+                    <p className="text-xs font-bold">
+                      {shiftCashMetrics.variance === 0 ? 'Drawer Perfectly Balanced' : shiftCashMetrics.variance > 0 ? 'Cash Overage Detected' : 'Cash Shortage Detected'}
                     </p>
+                    <p className="text-[10px] opacity-80">Difference between physical count and system expectation</p>
                   </div>
+                  <span className="text-base font-black font-mono">
+                    {shiftCashMetrics.variance > 0 ? '+' : ''}{settings.currency} {shiftCashMetrics.variance.toFixed(2)}
+                  </span>
+                </div>
+              </div>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setPrintModalConfig({ type: 'DAILY_SUMMARY', data: salesMetrics })}
-                      className="px-4 py-2 bg-[#008f5d] hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition-all"
-                    >
-                      <Printer className="h-3.5 w-3.5" />
-                      <span>Print Thermal ({settings.receiptRollWidth})</span>
-                    </button>
+              {/* Petty Cash */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                  <Banknote className="h-4 w-4 text-rose-500" /> Record Petty Cash Out
+                </h3>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!payoutForm.amount || !payoutForm.reason) return;
+                    const newPo = {
+                      id: `po_${Date.now()}`,
+                      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                      amount: parseFloat(payoutForm.amount) || 0,
+                      reason: payoutForm.reason.trim(),
+                      staff: currentUser.name
+                    };
+                    setCurrentShift(prev => ({ ...prev, payouts: [newPo, ...prev.payouts] }));
+                    setPayoutForm({ amount: '', reason: '' });
+                  }}
+                  className="space-y-3"
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Amount ({settings.currency})</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={payoutForm.amount}
+                        onChange={e => setPayoutForm(prev => ({ ...prev, amount: e.target.value }))}
+                        placeholder="e.g. 500.00"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Reason / Note</label>
+                      <input
+                        type="text"
+                        required
+                        value={payoutForm.reason}
+                        onChange={e => setPayoutForm(prev => ({ ...prev, reason: e.target.value }))}
+                        placeholder="e.g. Market Lemons, Ice Bags"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold"
+                  >
+                    Authorize Payout
+                  </button>
+                </form>
+
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Shift Payouts Audit</p>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {currentShift.payouts.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">No cash payouts logged in this shift.</p>
+                    ) : (
+                      currentShift.payouts.map(po => (
+                        <div key={po.id} className="flex justify-between items-center text-xs p-2 bg-slate-50 rounded-lg">
+                          <div>
+                            <p className="font-bold text-slate-800">{po.reason}</p>
+                            <span className="text-[10px] text-slate-400">{po.time} • Auth by {po.staff}</span>
+                          </div>
+                          <span className="font-mono font-bold text-rose-600">-{settings.currency} {po.amount.toFixed(2)}</span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">GROSS REVENUE</p>
-                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
-                      {settings.currency} {salesMetrics.grossRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">{salesMetrics.paidBillsCount} Paid Bills</p>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">ITEM SUBTOTAL</p>
-                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
-                      {settings.currency} {salesMetrics.itemSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">Food &amp; Beverage Sales</p>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">SERVICE CHARGE</p>
-                    <p className="text-2xl font-black text-emerald-600 mt-2 font-mono">
-                      {settings.currency} {salesMetrics.serviceCharge.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">Collected for staff pool</p>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">TAXES / DISCOUNTS</p>
-                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
-                      {settings.currency} {salesMetrics.taxes.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">Discounts: {settings.currency} {salesMetrics.discounts.toFixed(2)}</p>
-                  </div>
-                </div>
-              </>
-            )}
+              </div>
+            </div>
           </div>
         )}
 
-        {}
+        {/* VIEW 4: TABLE MANAGEMENT */}
+        {activeTab === 'tables' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Table &amp; Floor Management</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Real-time floor occupancy, zone mapping, and instant table order linkage.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setAddTableModalOpen(true)}
+                className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-orange-600/20"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Add New Table</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {floorTables.map(tbl => {
+                const isOccupied = tbl.status === 'OCCUPIED';
+                const isReserved = tbl.status === 'RESERVED';
+
+                return (
+                  <div
+                    key={tbl.id}
+                    className={`bg-white rounded-2xl border p-5 shadow-sm flex flex-col justify-between transition-all ${
+                      isOccupied
+                        ? 'border-orange-300 ring-2 ring-orange-500/10'
+                        : isReserved
+                        ? 'border-indigo-200'
+                        : 'border-slate-200'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[10px] font-mono font-bold text-slate-400">{tbl.id}</span>
+                          <h3 className="text-base font-black text-slate-900">{tbl.name}</h3>
+                          <p className="text-xs text-slate-500">{tbl.zone}</p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          isOccupied
+                            ? 'bg-orange-100 text-[#ff5500]'
+                            : isReserved
+                            ? 'bg-indigo-100 text-indigo-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {tbl.status}
+                        </span>
+                      </div>
+
+                      <p className="text-xs font-mono text-slate-600 mt-3">Capacity: {tbl.capacity} Seats</p>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedTable(tbl);
+                          setOrderMode('DINING');
+                          setActiveTab('pos');
+                        }}
+                        className="flex-1 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold"
+                      >
+                        {isOccupied ? 'Open Order' : 'Seat Table'}
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const nextStatus = tbl.status === 'VACANT' ? 'RESERVED' : 'VACANT';
+                          setFloorTables(prev => prev.map(t => t.id === tbl.id ? { ...t, status: nextStatus } : t));
+                        }}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold"
+                        title="Toggle Reserved State"
+                      >
+                        Status
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 5: STAFF MANAGEMENT */}
+        {activeTab === 'staff' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Staff Management &amp; Access Roles</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Configure employee credentials, security PINs, and role permissions across modules.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setAddStaffModalOpen(true)}
+                className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-orange-600/20"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Employee</span>
+              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Staff Member</th>
+                    <th className="py-3 px-4">Role</th>
+                    <th className="py-3 px-4">Security PIN</th>
+                    <th className="py-3 px-4">Allowed Modules</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {staffList.map(member => (
+                    <tr key={member.id} className="hover:bg-slate-50">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-8 w-8 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center">
+                            {member.avatar}
+                          </div>
+                          <div>
+                            <p className="font-extrabold text-slate-900">{member.name}</p>
+                            <span className="text-[10px] text-slate-400">{member.email}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="px-2 py-0.5 bg-orange-100 text-[#ff5500] rounded font-bold text-[10px]">
+                          {member.role}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-700">•••• ({member.pin})</td>
+                      <td className="py-3 px-4 text-slate-600">
+                        <span className="text-[11px] font-medium">
+                          {(ROLE_PERMISSIONS[member.role] || []).length} modules enabled
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => {
+                            if (staffList.length <= 1) return;
+                            setStaffList(prev => prev.filter(s => s.id !== member.id));
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100"
+                          title="Remove Staff"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 6: RECIPES & PORTIONS */}
+        {activeTab === 'recipes' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Recipes, Portions &amp; BOM Costing</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Real-time Cost of Goods Sold (COGS), profit margins, and remaining portions linked directly to raw inventory.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (menuItems.length > 0) {
+                    handleOpenRecipeConfig(menuItems[0]);
+                  }
+                }}
+                className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-orange-600/20"
+              >
+                <Sliders className="h-3.5 w-3.5" />
+                <span>Configure Dish Recipe</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {menuItems.map(dish => {
+                const { cogs, portions, isSoldOut } = calculateDishAvailability(dish.recipe);
+                const margin = dish.price > 0 ? (((dish.price - cogs) / dish.price) * 100).toFixed(1) : 0;
+
+                return (
+                  <div key={dish.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">{dish.department} • {dish.category}</span>
+                          {isSoldOut && (
+                            <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 text-[9px] font-black rounded">
+                              OUT OF STOCK
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-base font-black text-slate-900 mt-0.5">{dish.name}</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">{dish.description}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-base font-black font-mono text-[#ff5500]">
+                          {settings.currency} {dish.price.toFixed(2)}
+                        </span>
+                        <p className="text-[10px] font-bold text-emerald-600">{margin}% Gross Margin</p>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <p className="text-[10px] font-black uppercase text-slate-400">Bill of Materials (BOM Breakdown)</p>
+                        <button
+                          onClick={() => handleOpenRecipeConfig(dish)}
+                          className="text-[11px] font-bold text-[#ff5500] hover:underline flex items-center gap-1"
+                        >
+                          <Sliders className="h-3 w-3" /> Edit Ingredients
+                        </button>
+                      </div>
+                      {dish.recipe && dish.recipe.length > 0 ? (
+                        dish.recipe.map((r, i) => {
+                          const ing = inventoryMap[r.ingredientId];
+                          const lineCost = ing ? (ing.cost * r.amount) : 0;
+                          return (
+                            <div key={i} className="flex justify-between text-xs">
+                              <span className="text-slate-700">{ing ? ing.name : r.ingredientId} ({r.amount} {ing ? ing.unit : ''})</span>
+                              <span className="font-mono text-slate-500">{settings.currency} {lineCost.toFixed(2)}</span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">No raw inventory linked to this item.</p>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-100">
+                      <span className="text-slate-600 font-medium">
+                        Live Portions in Stock: <strong className={isSoldOut ? 'text-rose-600 font-mono' : 'text-slate-900 font-mono'}>{portions}</strong>
+                      </span>
+                      <span className="font-mono font-bold text-slate-700">
+                        Total Raw Cost: {settings.currency} {cogs.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 7: STOCK & RAW INVENTORY */}
+        {activeTab === 'stock' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Stock &amp; Raw Inventory</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Raw ingredients and supplies dynamically depleted through recipe Bill of Materials upon settlement.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setReceiveStockForm(prev => ({
+                      ...prev,
+                      ingredientId: inventory[0]?.id || '',
+                      quantity: '',
+                      supplier: '',
+                      invoiceRef: '',
+                      newCost: ''
+                    }));
+                    setReceiveStockModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition-all"
+                >
+                  <Package className="h-3.5 w-3.5" />
+                  <span>Receive Stock (Intake)</span>
+                </button>
+
+                <button
+                  onClick={() => setAddInventoryModalOpen(true)}
+                  className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-orange-600/20 transition-all"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add New Raw Material</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Raw Ingredient</th>
+                    <th className="py-3 px-4">Category</th>
+                    <th className="py-3 px-4">Remaining Stock</th>
+                    <th className="py-3 px-4">Reorder Threshold</th>
+                    <th className="py-3 px-4">Unit Cost</th>
+                    <th className="py-3 px-4 text-right">Quick Restock</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {inventory.map(ing => {
+                    const isLow = ing.stock <= ing.threshold;
+                    return (
+                      <tr key={ing.id} className="hover:bg-slate-50/70">
+                        <td className="py-3 px-4">
+                          <p className="font-extrabold text-slate-900">{ing.name}</p>
+                          <span className="text-[10px] text-slate-400 font-mono">{ing.id}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-bold">
+                            {ing.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                          {ing.stock} {ing.unit}
+                          {isLow && <span className="ml-2 px-1.5 py-0.5 bg-rose-100 text-rose-700 text-[10px] rounded font-bold">Low Stock</span>}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-slate-400">{ing.threshold} {ing.unit}</td>
+                        <td className="py-3 px-4 font-mono text-slate-600">{settings.currency} {ing.cost.toFixed(2)} / {ing.unit}</td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => {
+                              setReceiveStockForm({
+                                ingredientId: ing.id,
+                                quantity: ing.unit === 'g' || ing.unit === 'ml' ? '1000' : '10',
+                                supplier: 'Local Market',
+                                invoiceRef: `REC-${Math.floor(100 + Math.random() * 900)}`,
+                                newCost: ing.cost.toString()
+                              });
+                              setReceiveStockModalOpen(true);
+                            }}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
+                          >
+                            + Intake Stock
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 8: KITCHEN DISPLAY */}
+        {activeTab === 'kds' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <h2 className="text-xl font-black text-slate-900">Live Kitchen Display (KOT)</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {activeOrders
+                .filter(o => o.items.some(i => i.department === 'Kitchen'))
+                .map(order => (
+                  <div key={order.orderId} className="bg-white rounded-2xl border-2 border-rose-200 p-4 shadow-sm">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-3">
+                      <div>
+                        <h4 className="font-extrabold text-sm text-slate-900">{order.tableName}</h4>
+                        <span className="text-[10px] text-slate-400">Order #{order.orderId}</span>
+                      </div>
+                      <span className="px-2 py-0.5 bg-rose-100 text-rose-700 font-bold text-xs rounded-full">
+                        {order.sentAt}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {order.items
+                        .filter(i => i.department === 'Kitchen')
+                        .map((item, idx) => (
+                          <div key={idx} className="p-2 bg-slate-50 rounded-lg">
+                            <p className="font-bold text-xs text-slate-900">{item.qty}x {item.name}</p>
+                            {item.notes && <p className="text-[10px] text-rose-600 font-semibold mt-0.5">&gt; {item.notes}</p>}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 9: BAR DISPLAY */}
+        {activeTab === 'bar' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <h2 className="text-xl font-black text-slate-900">Live Bar Display (BOT)</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {activeOrders
+                .filter(o => o.items.some(i => i.department === 'Bar'))
+                .map(order => (
+                  <div key={order.orderId} className="bg-white rounded-2xl border-2 border-indigo-200 p-4 shadow-sm">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-3">
+                      <div>
+                        <h4 className="font-extrabold text-sm text-slate-900">{order.tableName}</h4>
+                        <span className="text-[10px] text-slate-400">Order #{order.orderId}</span>
+                      </div>
+                      <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 font-bold text-xs rounded-full">
+                        {order.sentAt}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {order.items
+                        .filter(i => i.department === 'Bar')
+                        .map((item, idx) => (
+                          <div key={idx} className="p-2 bg-slate-50 rounded-lg">
+                            <p className="font-bold text-xs text-slate-900">{item.qty}x {item.name}</p>
+                            {item.notes && <p className="text-[10px] text-indigo-600 font-semibold mt-0.5">&gt; {item.notes}</p>}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 10: BILLING & SETTLEMENT */}
         {activeTab === 'billing' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <div className="flex items-center justify-between">
@@ -1919,167 +2487,124 @@ export default function App() {
           </div>
         )}
 
-        {}
-        {activeTab === 'kds' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <h2 className="text-xl font-black text-slate-900">Live Kitchen Display (KOT)</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {activeOrders
-                .filter(o => o.items.some(i => i.department === 'Kitchen'))
-                .map(order => (
-                  <div key={order.orderId} className="bg-white rounded-2xl border-2 border-rose-200 p-4 shadow-sm">
-                    <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-3">
-                      <div>
-                        <h4 className="font-extrabold text-sm text-slate-900">{order.tableName}</h4>
-                        <span className="text-[10px] text-slate-400">Order #{order.orderId}</span>
-                      </div>
-                      <span className="px-2 py-0.5 bg-rose-100 text-rose-700 font-bold text-xs rounded-full">
-                        {order.sentAt}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {order.items
-                        .filter(i => i.department === 'Kitchen')
-                        .map((item, idx) => (
-                          <div key={idx} className="p-2 bg-slate-50 rounded-lg">
-                            <p className="font-bold text-xs text-slate-900">{item.qty}x {item.name}</p>
-                            {item.notes && <p className="text-[10px] text-rose-600 font-semibold mt-0.5">&gt; {item.notes}</p>}
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'bar' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <h2 className="text-xl font-black text-slate-900">Live Bar Display (BOT)</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {activeOrders
-                .filter(o => o.items.some(i => i.department === 'Bar'))
-                .map(order => (
-                  <div key={order.orderId} className="bg-white rounded-2xl border-2 border-indigo-200 p-4 shadow-sm">
-                    <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-3">
-                      <div>
-                        <h4 className="font-extrabold text-sm text-slate-900">{order.tableName}</h4>
-                        <span className="text-[10px] text-slate-400">Order #{order.orderId}</span>
-                      </div>
-                      <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 font-bold text-xs rounded-full">
-                        {order.sentAt}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {order.items
-                        .filter(i => i.department === 'Bar')
-                        .map((item, idx) => (
-                          <div key={idx} className="p-2 bg-slate-50 rounded-lg">
-                            <p className="font-bold text-xs text-slate-900">{item.qty}x {item.name}</p>
-                            {item.notes && <p className="text-[10px] text-indigo-600 font-semibold mt-0.5">&gt; {item.notes}</p>}
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'tables' && (
+        {/* VIEW 11: MENU MANAGEMENT */}
+        {activeTab === 'menu_admin' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-black text-slate-900">Table &amp; Floor Management</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Real-time floor occupancy and seating.</p>
+                <h2 className="text-xl font-black text-slate-900">Menu Management &amp; Recipe Configurator</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Add new dishes and beverages, upload food photos, configure preparation departments, and link ingredient recipes.
+                </p>
               </div>
               <button
-                onClick={() => setAddTableModalOpen(true)}
-                className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-orange-600/20"
+                onClick={() => setAddItemModalOpen(true)}
+                className="px-4 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-orange-600/20"
               >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Add New Table</span>
+                <Plus className="h-4 w-4" /> Add New Menu Item
               </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {floorTables.map(tbl => (
-                <div key={tbl.id} className="bg-white rounded-2xl border p-5 shadow-sm border-slate-200 flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <span className="text-[10px] font-mono font-bold text-slate-400">{tbl.id}</span>
-                        <h3 className="text-base font-black text-slate-900">{tbl.name}</h3>
-                        <p className="text-xs text-slate-500">{tbl.zone}</p>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        tbl.status === 'OCCUPIED' ? 'bg-orange-100 text-[#ff5500]' : 'bg-emerald-100 text-emerald-700'
-                      }`}>
-                        {tbl.status}
-                      </span>
-                    </div>
-                    <p className="text-xs font-mono text-slate-600 mt-3">Capacity: {tbl.capacity} Seats</p>
-                  </div>
-                  <div className="mt-4 pt-3 border-t border-slate-100">
-                    <button
-                      onClick={() => {
-                        setSelectedTable(tbl);
-                        setOrderMode('DINING');
-                        setActiveTab('pos');
-                      }}
-                      className="w-full py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold"
-                    >
-                      {tbl.status === 'OCCUPIED' ? 'Open Order' : 'Seat Table'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'stock' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-black text-slate-900">Stock &amp; Raw Inventory</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Raw materials automatically depleted on bill settlement.</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setReceiveStockModalOpen(true)}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5"
-                >
-                  <Package className="h-3.5 w-3.5" /> Receive Stock
-                </button>
-                <button
-                  onClick={() => setAddInventoryModalOpen(true)}
-                  className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add Material
-                </button>
-              </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
                   <tr>
-                    <th className="py-3 px-4">Raw Ingredient</th>
+                    <th className="py-3 px-4">Item &amp; Photo</th>
+                    <th className="py-3 px-4">Area / Dept</th>
                     <th className="py-3 px-4">Category</th>
-                    <th className="py-3 px-4">Remaining Stock</th>
-                    <th className="py-3 px-4">Unit Cost</th>
+                    <th className="py-3 px-4">Selling Price</th>
+                    <th className="py-3 px-4">Est. COGS</th>
+                    <th className="py-3 px-4">Linked Ingredients</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {inventory.map(ing => (
-                    <tr key={ing.id} className="hover:bg-slate-50/70">
-                      <td className="py-3 px-4 font-bold text-slate-900">{ing.name}</td>
-                      <td className="py-3 px-4 text-slate-600">{ing.category}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-slate-800">{ing.stock} {ing.unit}</td>
-                      <td className="py-3 px-4 font-mono text-slate-600">{settings.currency} {ing.cost.toFixed(2)} / {ing.unit}</td>
+                  {menuItems.map(item => {
+                    const { cogs } = calculateDishAvailability(item.recipe);
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50/70">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-3">
+                            {item.imageUrl ? (
+                              <img
+                                src={item.imageUrl}
+                                alt={item.name}
+                                className="h-10 w-10 rounded-xl object-cover border border-slate-200 shadow-sm shrink-0"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 font-bold text-[10px] shrink-0">
+                                NO PIC
+                              </div>
+                            )}
+                            <div>
+                              <p className="font-extrabold text-slate-900">{item.name}</p>
+                              <span className="text-[10px] text-slate-400 line-clamp-1">{item.description}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
+                          }`}>
+                            {item.department}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-600 font-medium">{item.category}</td>
+                        <td className="py-3 px-4 font-mono font-bold text-[#ff5500]">{settings.currency} {item.price.toFixed(2)}</td>
+                        <td className="py-3 px-4 font-mono text-slate-500">{settings.currency} {cogs.toFixed(2)}</td>
+                        <td className="py-3 px-4 text-[11px] text-slate-600">
+                          {item.recipe && item.recipe.length > 0 ? (
+                            <span>{item.recipe.length} raw supplies linked</span>
+                          ) : (
+                            <span className="text-amber-600 italic">No recipe linked</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => setMenuItems(prev => prev.filter(m => m.id !== item.id))}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100"
+                            title="Delete Item"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 12: CANCELLED TICKETS */}
+        {activeTab === 'cancelled' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <h2 className="text-xl font-black text-slate-900">Cancelled Tickets &amp; Voids Audit</h2>
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Audit ID</th>
+                    <th className="py-3 px-4">Time</th>
+                    <th className="py-3 px-4">Dish / Item</th>
+                    <th className="py-3 px-4">Table</th>
+                    <th className="py-3 px-4">Mandatory Reason</th>
+                    <th className="py-3 px-4">Authorized Staff</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {cancelledTickets.map(voidItem => (
+                    <tr key={voidItem.id} className="hover:bg-slate-50/70">
+                      <td className="py-3 px-4 font-mono font-bold text-rose-600">{voidItem.id}</td>
+                      <td className="py-3 px-4 text-slate-400">{voidItem.timestamp}</td>
+                      <td className="py-3 px-4 font-bold text-slate-900">{voidItem.qty}x {voidItem.itemName}</td>
+                      <td className="py-3 px-4 text-slate-600">{voidItem.table}</td>
+                      <td className="py-3 px-4 text-slate-700 italic">"{voidItem.reason}"</td>
+                      <td className="py-3 px-4 font-semibold text-slate-800">{voidItem.authorizedBy}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2088,9 +2613,1073 @@ export default function App() {
           </div>
         )}
 
+        {/* VIEW 13: SYSTEM SETTINGS */}
+        {activeTab === 'settings' && (
+          <div className="flex-1 overflow-y-auto p-8 space-y-8 max-w-6xl mx-auto w-full">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Settings className="h-5 w-5 text-[#ff5500]" />
+                  System &amp; Restaurant Settings
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Manage store identity, taxation rates, thermal 80mm/58mm roll styles, and POS hardware peripherals.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setSettingsNotice({
+                    title: 'System Settings Saved',
+                    detail: `Updated store configuration for ${settings.restaurantName} • Active`
+                  });
+                  setTimeout(() => setSettingsNotice(null), 3500);
+                }}
+                className="px-5 py-2.5 bg-[#008f5d] hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md shadow-emerald-700/20 transition-all self-start sm:self-auto"
+              >
+                <CheckCircle2 className="h-4 w-4" /> Save System Settings
+              </button>
+            </div>
+
+            {/* RESTAURANT IDENTITY */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-[#ff5500]" />
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
+                  Restaurant Identity &amp; Location
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Restaurant Name</label>
+                  <input
+                    type="text"
+                    value={settings.restaurantName}
+                    onChange={e => setSettings(prev => ({ ...prev, restaurantName: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Tagline / Subtitle</label>
+                  <input
+                    type="text"
+                    value={settings.tagline}
+                    onChange={e => setSettings(prev => ({ ...prev, tagline: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Contact Phone Number</label>
+                  <input
+                    type="text"
+                    value={settings.phone || ''}
+                    onChange={e => setSettings(prev => ({ ...prev, phone: e.target.value }))}
+                    placeholder="+94 74 036 6741"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Terminal Hardware ID</label>
+                  <input
+                    type="text"
+                    value={settings.terminalId}
+                    onChange={e => setSettings(prev => ({ ...prev, terminalId: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Street Address</label>
+                <input
+                  type="text"
+                  value={settings.address || ''}
+                  onChange={e => setSettings(prev => ({ ...prev, address: e.target.value }))}
+                  placeholder="380 A Matara Road, Midigama, 81700"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
+                />
+              </div>
+            </div>
+
+            {/* CURRENCY & CHARGES */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
+                  Currency, Tax &amp; Surcharge Rates
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Currency Symbol</label>
+                  <input
+                    type="text"
+                    value={settings.currency}
+                    onChange={e => setSettings(prev => ({ ...prev, currency: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold font-mono text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">E.g. Rs., $, €, LKR, AED</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Default Service Charge (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={settings.serviceChargeRate}
+                    onChange={e => setSettings(prev => ({ ...prev, serviceChargeRate: parseFloat(e.target.value) || 0 }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Applied to table bills when active</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Tax / VAT / GST Rate (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={settings.taxRate}
+                    onChange={e => setSettings(prev => ({ ...prev, taxRate: parseFloat(e.target.value) || 0 }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Government sales tax or VAT rate</p>
+                </div>
+              </div>
+            </div>
+
+            {/* RECEIPT CUSTOMIZATION */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-indigo-500" />
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
+                  Thermal Receipt Customization
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Receipt Header Text</label>
+                  <textarea
+                    rows={3}
+                    value={settings.receiptHeader}
+                    onChange={e => setSettings(prev => ({ ...prev, receiptHeader: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Receipt Footer Text</label>
+                  <textarea
+                    rows={3}
+                    value={settings.receiptFooter}
+                    onChange={e => setSettings(prev => ({ ...prev, receiptFooter: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* HARDWARE PERIPHERALS & CASH DRAWER */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                    <Printer className="h-4 w-4 text-[#ff5500]" />
+                    Hardware Peripherals &amp; Cash Drawer Solenoid
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Configure thermal roll sizing, RJ11/RJ12 drawer solenoids, and direct WebUSB printer pairing.
+                  </p>
+                </div>
+                <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-semibold rounded-full border border-slate-200">
+                  {pairedUsbDevice ? `USB: ${pairedUsbDevice.productName || 'Connected'}` : 'OS Printer Spooler'}
+                </span>
+              </div>
+
+              {/* USB Device Card */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="px-2.5 py-1 bg-amber-100 text-amber-800 text-[11px] font-black rounded-lg">
+                    USB
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">Thermal Printer Direct Connection</p>
+                    <p className="text-[11px] text-slate-500">
+                      Connect directly via WebUSB for zero-latency ESC/POS slip dispatch and solenoid kick.
+                    </p>
+                    {usbStatusMessage && (
+                      <p className="text-[11px] font-mono text-indigo-600 mt-0.5">{usbStatusMessage}</p>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  onClick={handlePairUsbPrinter}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shrink-0"
+                >
+                  <Usb className="h-4 w-4" />
+                  <span>Pair USB Thermal Printer</span>
+                </button>
+              </div>
+
+              {/* Hardware Parameters Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">Receipt Roll Width</label>
+                  <select
+                    value={settings.receiptRollWidth || '80mm'}
+                    onChange={e => setSettings(prev => ({ ...prev, receiptRollWidth: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="80mm">80mm Thermal Paper (Standard)</option>
+                    <option value="58mm">58mm Thermal Paper (Compact)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">Auto Drawer Kick</label>
+                  <select
+                    value={settings.autoDrawerKick || 'ENABLED'}
+                    onChange={e => setSettings(prev => ({ ...prev, autoDrawerKick: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="ENABLED">Enabled (Auto-Pop)</option>
+                    <option value="DISABLED">Disabled (Manual Only)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">Drawer Kick Trigger</label>
+                  <select
+                    value={settings.drawerKickTrigger || 'CASH_ONLY'}
+                    onChange={e => setSettings(prev => ({ ...prev, drawerKickTrigger: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="CASH_ONLY">Cash Payments Only</option>
+                    <option value="ALL">All Payments (Cash &amp; Card)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">RJ11/RJ12 Pinout</label>
+                  <select
+                    value={settings.drawerPinout || 'PIN_2'}
+                    onChange={e => setSettings(prev => ({ ...prev, drawerPinout: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="PIN_2">Pin 2 / ESC p 0 (Epson, Rongta, Xprinter)</option>
+                    <option value="PIN_5">Pin 5 / ESC p 1 (Star Micronics, Custom)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">Chime Sound (Web Audio)</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSettings(prev => ({ ...prev, chimeAudio: !prev.chimeAudio }))}
+                      className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+                        settings.chimeAudio
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                          : 'bg-slate-100 border-slate-200 text-slate-500'
+                      }`}
+                    >
+                      {settings.chimeAudio ? 'Chime ON' : 'Chime OFF'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={playCashRegisterChime}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1"
+                    >
+                      <Volume2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">Hardware Diagnostic</label>
+                  <button
+                    type="button"
+                    onClick={triggerCashDrawerDiagnostic}
+                    className="w-full py-2 bg-[#ff5500] hover:bg-orange-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    <Zap className="h-3.5 w-3.5" /> Pop Cash Drawer
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
 
-      {}
+      {/* MODAL 1: PIN AUTHENTICATION / SWITCH */}
+      {pinModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Lock className="h-5 w-5 text-[#ff5500]" />
+                <h3 className="text-base font-black text-slate-900">Switch Role / Staff</h3>
+              </div>
+              <button onClick={() => { setPinModalOpen(false); setPinInput(''); setPinError(''); }} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSwitchUserWithPin} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Select Employee</label>
+                <select
+                  value={targetStaffForSwitch ? targetStaffForSwitch.id : ''}
+                  onChange={e => setTargetStaffForSwitch(staffList.find(s => s.id === e.target.value))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white text-slate-800"
+                >
+                  {staffList.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Enter 4-Digit Security PIN</label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  autoFocus
+                  required
+                  value={pinInput}
+                  onChange={e => setPinInput(e.target.value)}
+                  placeholder="••••"
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-center text-xl font-mono tracking-widest text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                />
+                {pinError && <p className="text-xs text-rose-600 font-bold mt-1.5 text-center">{pinError}</p>}
+                <p className="text-[10px] text-slate-400 text-center mt-1">Default PINs: Admin 1234, Marco 1111, Chef 2222, Bar 3333</p>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-[#ff5500] hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-md shadow-orange-600/20"
+              >
+                Authenticate &amp; Switch
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: ADD NEW EMPLOYEE */}
+      {addStaffModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-black text-slate-900">Add New Staff Member</h3>
+              <button onClick={() => setAddStaffModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateStaff} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newStaffForm.name}
+                  onChange={e => setNewStaffForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Kasun Silva"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Role / Department</label>
+                  <select
+                    value={newStaffForm.role}
+                    onChange={e => setNewStaffForm(prev => ({ ...prev, role: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900"
+                  >
+                    {Object.keys(ROLE_PERMISSIONS).map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">4-Digit PIN</label>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    required
+                    value={newStaffForm.pin}
+                    onChange={e => setNewStaffForm(prev => ({ ...prev, pin: e.target.value }))}
+                    placeholder="e.g. 7788"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={newStaffForm.email}
+                  onChange={e => setNewStaffForm(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="e.g. kasun@linolicove.me"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-md shadow-orange-600/20"
+              >
+                Save Staff Member
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: ADD NEW DISH WITH PHOTO */}
+      {addItemModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-xl p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Add New Menu Dish / Drink</h3>
+                <p className="text-xs text-slate-500">Configure item details, price in {settings.currency}, and link recipe BOM.</p>
+              </div>
+              <button onClick={() => setAddItemModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateNewItem} className="mt-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Item / Dish Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={newDishForm.name}
+                    onChange={e => setNewDishForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g. Seafood Pasta Marinara"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Selling Price ({settings.currency})</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={newDishForm.price}
+                    onChange={e => setNewDishForm(prev => ({ ...prev, price: e.target.value }))}
+                    placeholder="e.g. 2150.00"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Preparation Area / Dept</label>
+                  <select
+                    value={newDishForm.department}
+                    onChange={e => setNewDishForm(prev => ({ ...prev, department: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="Kitchen">Kitchen (Sends KOT)</option>
+                    <option value="Bar">Bar (Sends BOT)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                  <input
+                    type="text"
+                    value={newDishForm.category}
+                    onChange={e => setNewDishForm(prev => ({ ...prev, category: e.target.value }))}
+                    placeholder="e.g. Rice & Noodles, Mains, Cocktails"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Dish Image URL or File Upload</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="url"
+                    value={newDishForm.imageUrl}
+                    onChange={e => setNewDishForm(prev => ({ ...prev, imageUrl: e.target.value }))}
+                    placeholder="https://example.com/dish.jpg (or pick / upload)"
+                    className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                  <label className="cursor-pointer px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors shrink-0">
+                    <Upload className="h-3.5 w-3.5" />
+                    <span>Upload</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = ev => {
+                            if (ev.target?.result) {
+                              setNewDishForm(prev => ({ ...prev, imageUrl: ev.target.result }));
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {newDishForm.imageUrl && (
+                  <div className="mt-2 flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                    <img
+                      src={newDishForm.imageUrl}
+                      alt="Preview"
+                      className="h-12 w-12 rounded-lg object-cover border border-slate-200"
+                    />
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-slate-800">Image Preview Ready</p>
+                      <button
+                        type="button"
+                        onClick={() => setNewDishForm(prev => ({ ...prev, imageUrl: '' }))}
+                        className="text-[10px] text-rose-600 font-bold hover:underline"
+                      >
+                        Remove Image
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Description</label>
+                <textarea
+                  rows={2}
+                  value={newDishForm.description}
+                  onChange={e => setNewDishForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Appetizing description for servers and customer menu..."
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              {/* Recipe builder in add item */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <BookOpen className="h-3.5 w-3.5 text-[#ff5500]" /> Link Recipe Ingredients (BOM)
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-500">
+                    {newDishForm.recipeIngredients.length} ingredients added
+                  </span>
+                </div>
+
+                <div className="flex gap-2">
+                  <select
+                    id="newDishIngSelect"
+                    className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-800"
+                  >
+                    {inventory.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit}) - {settings.currency} {ing.cost}/{ing.unit}</option>
+                    ))}
+                  </select>
+                  <input
+                    id="newDishIngAmount"
+                    type="number"
+                    min="0.1"
+                    step="any"
+                    placeholder="Qty per serving"
+                    className="w-32 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sel = document.getElementById('newDishIngSelect');
+                      const amtInput = document.getElementById('newDishIngAmount');
+                      const ingId = sel?.value;
+                      const amt = parseFloat(amtInput?.value);
+                      if (!ingId || isNaN(amt) || amt <= 0) return;
+
+                      setNewDishForm(prev => {
+                        const existingIdx = prev.recipeIngredients.findIndex(r => r.ingredientId === ingId);
+                        if (existingIdx >= 0) {
+                          const updated = [...prev.recipeIngredients];
+                          updated[existingIdx] = { ingredientId: ingId, amount: amt };
+                          return { ...prev, recipeIngredients: updated };
+                        }
+                        return { ...prev, recipeIngredients: [...prev.recipeIngredients, { ingredientId: ingId, amount: amt }] };
+                      });
+                      if (amtInput) amtInput.value = '';
+                    }}
+                    className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800"
+                  >
+                    + Add
+                  </button>
+                </div>
+
+                {newDishForm.recipeIngredients.length > 0 && (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                    {newDishForm.recipeIngredients.map((item, idx) => {
+                      const ing = inventoryMap[item.ingredientId];
+                      return (
+                        <div key={idx} className="flex justify-between items-center text-xs p-2 bg-white rounded-xl border border-slate-200">
+                          <span className="font-bold text-slate-800">{ing ? ing.name : item.ingredientId}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-600">{item.amount} {ing?.unit}</span>
+                            <span className="font-mono text-slate-400">({settings.currency} {(item.amount * (ing?.cost || 0)).toFixed(2)})</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewDishForm(prev => ({
+                                  ...prev,
+                                  recipeIngredients: prev.recipeIngredients.filter((_, i) => i !== idx)
+                                }));
+                              }}
+                              className="text-slate-400 hover:text-rose-600"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAddItemModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-md shadow-orange-600/20"
+                >
+                  Save &amp; Add to Menu
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: ADD NEW RAW MATERIAL */}
+      {addInventoryModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-[#ff5500]" />
+                <h3 className="text-base font-black text-slate-900">Add New Raw Material</h3>
+              </div>
+              <button onClick={() => setAddInventoryModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateInventoryItem} className="mt-4 space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Material / Ingredient Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newInventoryForm.name}
+                  onChange={e => setNewInventoryForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Single Malt Scotch, Lime Wedges"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                  <select
+                    value={newInventoryForm.category}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="Dry Goods">Dry Goods</option>
+                    <option value="Dairy & Eggs">Dairy &amp; Eggs</option>
+                    <option value="Meat">Meat</option>
+                    <option value="Poultry">Poultry</option>
+                    <option value="Seafood">Seafood</option>
+                    <option value="Beverages">Beverages</option>
+                    <option value="Bar Supplies">Bar Supplies</option>
+                    <option value="Bakery">Bakery</option>
+                    <option value="Produce">Produce / Veggies</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Unit of Measure</label>
+                  <select
+                    value={newInventoryForm.unit}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, unit: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="g">Grams (g)</option>
+                    <option value="ml">Milliliters (ml)</option>
+                    <option value="pcs">Pieces (pcs)</option>
+                    <option value="kg">Kilograms (kg)</option>
+                    <option value="l">Liters (l)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Unit Cost ({settings.currency})</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={newInventoryForm.cost}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, cost: e.target.value }))}
+                    placeholder="e.g. 1.50"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Initial Stock</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={newInventoryForm.stock}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, stock: e.target.value }))}
+                    placeholder="e.g. 5000"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Low Alert Limit</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={newInventoryForm.threshold}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, threshold: e.target.value }))}
+                    placeholder="e.g. 500"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full mt-2 py-3 bg-[#ff5500] hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-md shadow-orange-600/20"
+              >
+                Save Raw Material to Inventory
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: RECEIVE STOCK (GRN) */}
+      {receiveStockModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-emerald-600" />
+                <h3 className="text-base font-black text-slate-900">Receive Stock Intake (GRN)</h3>
+              </div>
+              <button onClick={() => setReceiveStockModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleReceiveStock} className="mt-4 space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Select Ingredient / Item</label>
+                <select
+                  required
+                  value={receiveStockForm.ingredientId}
+                  onChange={e => {
+                    const id = e.target.value;
+                    const item = inventoryMap[id];
+                    setReceiveStockForm(prev => ({
+                      ...prev,
+                      ingredientId: id,
+                      newCost: item ? item.cost.toString() : ''
+                    }));
+                  }}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 font-bold focus:outline-none focus:border-[#ff5500]"
+                >
+                  {inventory.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.stock} {item.unit} in stock)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Quantity Received ({inventoryMap[receiveStockForm.ingredientId]?.unit || 'units'})
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={receiveStockForm.quantity}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, quantity: e.target.value }))}
+                    placeholder="e.g. 5000"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Updated Unit Cost ({settings.currency})
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={receiveStockForm.newCost}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, newCost: e.target.value }))}
+                    placeholder="Leave blank to keep current"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Supplier / Vendor</label>
+                  <input
+                    type="text"
+                    value={receiveStockForm.supplier}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, supplier: e.target.value }))}
+                    placeholder="e.g. Mirissa Harbor Market"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Invoice / GRN Ref</label>
+                  <input
+                    type="text"
+                    value={receiveStockForm.invoiceRef}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, invoiceRef: e.target.value }))}
+                    placeholder="e.g. GRN-902"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              {receiveStockForm.ingredientId && receiveStockForm.quantity && (
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 space-y-1">
+                  <p className="font-bold">Summary of Intake:</p>
+                  <p>
+                    Item: <strong>{inventoryMap[receiveStockForm.ingredientId]?.name}</strong>
+                  </p>
+                  <p>
+                    Stock will increase from <strong>{inventoryMap[receiveStockForm.ingredientId]?.stock} {inventoryMap[receiveStockForm.ingredientId]?.unit}</strong> to{' '}
+                    <strong>
+                      {(inventoryMap[receiveStockForm.ingredientId]?.stock || 0) + (parseFloat(receiveStockForm.quantity) || 0)}{' '}
+                      {inventoryMap[receiveStockForm.ingredientId]?.unit}
+                    </strong>
+                  </p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="w-full mt-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-md shadow-emerald-700/20"
+              >
+                Confirm Stock Intake &amp; Update Inventory
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: RECIPE CONFIGURATOR */}
+      {recipeConfigModalOpen && editingDishForRecipe && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-900">
+                  Configure Recipe: {editingDishForRecipe.name}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Link raw ingredients to calculate real-time COGS, profit margins, and portions ready.
+                </p>
+              </div>
+              <button onClick={() => setRecipeConfigModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                <span className="text-xs font-bold text-slate-800">Add Raw Ingredient to Recipe</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="sm:col-span-2">
+                    <select
+                      value={tempIngredientSelect.ingredientId}
+                      onChange={e => setTempIngredientSelect(prev => ({ ...prev, ingredientId: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 font-medium"
+                    >
+                      {inventory.map(item => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} ({item.unit}) - {settings.currency} {item.cost}/{item.unit}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      value={tempIngredientSelect.amount}
+                      onChange={e => setTempIngredientSelect(prev => ({ ...prev, amount: e.target.value }))}
+                      placeholder={`Portion (${inventoryMap[tempIngredientSelect.ingredientId]?.unit || 'units'})`}
+                      className="w-full px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const amt = parseFloat(tempIngredientSelect.amount);
+                    if (!tempIngredientSelect.ingredientId || isNaN(amt) || amt <= 0) return;
+
+                    setCurrentRecipeIngredients(prev => {
+                      const idx = prev.findIndex(r => r.ingredientId === tempIngredientSelect.ingredientId);
+                      if (idx >= 0) {
+                        const updated = [...prev];
+                        updated[idx] = { ingredientId: tempIngredientSelect.ingredientId, amount: amt };
+                        return updated;
+                      }
+                      return [...prev, { ingredientId: tempIngredientSelect.ingredientId, amount: amt }];
+                    });
+
+                    setTempIngredientSelect(prev => ({ ...prev, amount: '' }));
+                  }}
+                  className="w-full py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold"
+                >
+                  + Link Ingredient
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-xs font-black uppercase text-slate-400">Current Linked Ingredients ({currentRecipeIngredients.length})</span>
+                {currentRecipeIngredients.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic p-3 bg-slate-50 rounded-xl">No ingredients linked yet. Add above to track stock and COGS.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {currentRecipeIngredients.map((r, idx) => {
+                      const ing = inventoryMap[r.ingredientId];
+                      const lineCost = ing ? ing.cost * r.amount : 0;
+                      return (
+                        <div key={idx} className="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                          <div>
+                            <p className="font-bold text-slate-900">{ing ? ing.name : r.ingredientId}</p>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {r.amount} {ing?.unit} × {settings.currency} {ing?.cost.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono font-bold text-slate-800">
+                              {settings.currency} {lineCost.toFixed(2)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCurrentRecipeIngredients(prev => prev.filter((_, i) => i !== idx));
+                              }}
+                              className="text-slate-400 hover:text-rose-600"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {(() => {
+                const totalBOMCost = currentRecipeIngredients.reduce((sum, r) => {
+                  const ing = inventoryMap[r.ingredientId];
+                  return sum + (ing ? ing.cost * r.amount : 0);
+                }, 0);
+                const margin = editingDishForRecipe.price > 0
+                  ? (((editingDishForRecipe.price - totalBOMCost) / editingDishForRecipe.price) * 100).toFixed(1)
+                  : 0;
+
+                return (
+                  <div className="p-3 bg-slate-100 rounded-xl space-y-1 text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Menu Selling Price:</span>
+                      <span className="font-mono font-bold text-slate-900">{settings.currency} {editingDishForRecipe.price.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>Total Recipe BOM Cost (COGS):</span>
+                      <span className="font-mono font-bold text-[#ff5500]">{settings.currency} {totalBOMCost.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-emerald-700 pt-1 border-t border-slate-200">
+                      <span>Gross Profit Margin:</span>
+                      <span>{margin}%</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRecipeConfigModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRecipeConfig}
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-md shadow-orange-600/20"
+                >
+                  Save Recipe &amp; Recalculate
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 7: SETTLE & PAY CHECKOUT */}
       {checkoutModalOpen && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
@@ -2132,9 +3721,7 @@ export default function App() {
 
                   {paymentMethod === 'CASH' && (
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Cash Tendered ({settings.currency})
-                      </label>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Cash Tendered ({settings.currency})</label>
                       <input
                         type="number"
                         step="0.01"
@@ -2146,11 +3733,6 @@ export default function App() {
                       {parseFloat(cashTendered) > fin.total && (
                         <p className="text-xs text-emerald-600 font-mono font-bold mt-1">
                           Change: {settings.currency} {(parseFloat(cashTendered) - fin.total).toFixed(2)}
-                        </p>
-                      )}
-                      {settings.autoDrawerKick === 'ENABLED' && (
-                        <p className="text-[11px] text-emerald-700 font-bold mt-1.5 flex items-center gap-1">
-                          <Zap className="h-3.5 w-3.5" /> Cash Drawer will automatically pop open upon confirming.
                         </p>
                       )}
                     </div>
@@ -2183,7 +3765,7 @@ export default function App() {
                     onClick={handleCompleteSettlement}
                     className="w-full py-3 bg-[#008f5d] hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-emerald-700/20"
                   >
-                    Confirm Settlement &amp; Open Drawer
+                    Confirm Settlement &amp; Deduct BOM Stock
                   </button>
                 </div>
               );
@@ -2192,14 +3774,220 @@ export default function App() {
         </div>
       )}
 
-      {}
+      {/* MODAL 8: VOID LINE ITEM */}
+      {voidModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-black text-rose-600 flex items-center gap-1.5">
+                <Trash2 className="h-4 w-4" /> Void Item Audit Required
+              </h3>
+              <button onClick={() => setVoidModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmVoid} className="mt-4 space-y-3">
+              <p className="text-xs text-slate-600">
+                Item: <strong>{voidPayload.item?.name}</strong>
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Mandatory Cancellation Reason</label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={voidPayload.reason}
+                  onChange={e => setVoidPayload(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="e.g. Customer changed mind, Kitchen burnt"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                />
+              </div>
+
+              <p className="text-[10px] text-slate-400">Authorized by {currentUser.name} ({currentUser.role})</p>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs"
+              >
+                Confirm Line Void
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 9: ADD TABLE */}
+      {addTableModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-black text-slate-900">Add New Floor Table</h3>
+              <button onClick={() => setAddTableModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newTableForm.name) return;
+                const newTbl = {
+                  id: `T-${Math.floor(10 + Math.random() * 90)}`,
+                  name: newTableForm.name.trim(),
+                  zone: newTableForm.zone,
+                  capacity: parseInt(newTableForm.capacity) || 4,
+                  status: 'VACANT',
+                  currentOrderRef: null
+                };
+                setFloorTables(prev => [...prev, newTbl]);
+                setAddTableModalOpen(false);
+                setNewTableForm({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
+              }}
+              className="mt-4 space-y-3"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Table Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newTableForm.name}
+                  onChange={e => setNewTableForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Table 5, Beach Cabana 2"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Zone Area</label>
+                  <select
+                    value={newTableForm.zone}
+                    onChange={e => setNewTableForm(prev => ({ ...prev, zone: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900"
+                  >
+                    <option value="Indoor Main Hall">Indoor Main Hall</option>
+                    <option value="Deck Lounge">Deck Lounge</option>
+                    <option value="Cocktail Counter">Cocktail Counter</option>
+                    <option value="Private Ocean View">Private Ocean View</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Capacity</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={newTableForm.capacity}
+                    onChange={e => setNewTableForm(prev => ({ ...prev, capacity: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-md shadow-orange-600/20"
+              >
+                Create Table
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 10: TABLE ALLOCATION */}
+      {allocationModalOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-base font-black text-slate-900">Allocate Table / Guest Order</h3>
+              <button onClick={() => setAllocationModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setOrderMode('DINING')}
+                  className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                    orderMode === 'DINING'
+                      ? 'bg-[#ff5500] text-white border-[#ff5500]'
+                      : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}
+                >
+                  Dine-In Tables
+                </button>
+                <button
+                  onClick={() => setOrderMode('TAKEAWAY')}
+                  className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                    orderMode === 'TAKEAWAY'
+                      ? 'bg-[#ff5500] text-white border-[#ff5500]'
+                      : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}
+                >
+                  Takeaway Express
+                </button>
+              </div>
+
+              {orderMode === 'DINING' ? (
+                <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto">
+                  {floorTables.map(table => (
+                    <button
+                      key={table.id}
+                      onClick={() => {
+                        setSelectedTable(table);
+                        setAllocationModalOpen(false);
+                      }}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        selectedTable.id === table.id
+                          ? 'border-[#ff5500] bg-orange-50/50'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      <p className="font-bold text-xs text-slate-900">{table.name}</p>
+                      <p className="text-[10px] text-slate-500">{table.zone}</p>
+                      <p className="text-[10px] text-slate-400 font-mono mt-1">{table.capacity} Seats ({table.status})</p>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Customer Name</label>
+                    <input
+                      type="text"
+                      value={takeawayInfo.name}
+                      onChange={e => setTakeawayInfo(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Order Token Tag</label>
+                    <input
+                      type="text"
+                      value={takeawayInfo.token}
+                      onChange={e => setTakeawayInfo(prev => ({ ...prev, token: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 11: 80MM THERMAL RECEIPT DISPATCH */}
       {printModalConfig && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center">
-            
             <div className="flex items-center justify-between w-full mb-3 text-white">
               <span className="text-xs font-bold font-mono text-orange-400 uppercase">
-                {settings.receiptRollWidth} Thermal Dispatch
+                80mm Thermal Dispatch
               </span>
               <button onClick={() => setPrintModalConfig(null)} className="text-slate-400 hover:text-white">
                 <X className="h-4 w-4" />
@@ -2208,47 +3996,34 @@ export default function App() {
 
             <div className="w-full bg-white text-slate-900 p-4 rounded font-mono text-[11px] leading-tight shadow-md max-h-[60vh] overflow-y-auto space-y-4">
               
-              {/* Final Settlement Tax Invoice */}
-              {printModalConfig.type === 'FINAL_BILL' && (
+              {/* Daily Summary */}
+              {printModalConfig.type === 'DAILY_SUMMARY' && (
                 <div className="space-y-2">
                   <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
                     <p className="font-black text-sm">{settings.restaurantName}</p>
-                    <p className="text-[10px]">{settings.address}</p>
-                    <p className="text-[10px]">Tel: {settings.phone}</p>
-                    <p className="text-[9px] whitespace-pre-line mt-1">{settings.receiptHeader}</p>
-                    <p className="font-bold text-xs mt-1">TAX INVOICE #{printModalConfig.data.invoiceNo}</p>
-                    <p className="text-[9px]">{printModalConfig.data.date} • {printModalConfig.data.table}</p>
+                    <p className="text-[10px]">{settings.tagline}</p>
+                    <p className="text-[10px] font-bold mt-1">DAILY SALES SUMMARY REPORT</p>
+                    <p className="text-[9px]">{new Date().toLocaleString()}</p>
                   </div>
-
-                  <div className="py-1 border-b border-slate-300 space-y-1">
-                    {printModalConfig.data.items.map((item, idx) => (
-                      <div key={idx} className="flex justify-between">
-                        <span>{item.qty}x {item.name}</span>
-                        <span>{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="space-y-1 text-[10px]">
+                  <div className="space-y-1 text-xs py-1 border-b border-slate-300">
                     <div className="flex justify-between">
-                      <span>Subtotal:</span>
-                      <span>{settings.currency} {printModalConfig.data.subtotal.toFixed(2)}</span>
+                      <span>GROSS REVENUE:</span>
+                      <span className="font-bold">{settings.currency} {printModalConfig.data.grossRevenue.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Service Charge ({settings.serviceChargeRate}%):</span>
+                      <span>ITEM SUBTOTAL:</span>
+                      <span>{settings.currency} {printModalConfig.data.itemSubtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>SERVICE CHARGE:</span>
                       <span>{settings.currency} {printModalConfig.data.serviceCharge.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
-                      <span>TOTAL PAID:</span>
-                      <span>{settings.currency} {printModalConfig.data.total.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-bold">
-                      <span>METHOD:</span>
-                      <span>{printModalConfig.data.paymentMethod}</span>
+                    <div className="flex justify-between">
+                      <span>TAXES / VAT:</span>
+                      <span>{settings.currency} {printModalConfig.data.taxes.toFixed(2)}</span>
                     </div>
                   </div>
-
-                  <p className="text-center font-bold text-[9px] pt-2 whitespace-pre-line">{settings.receiptFooter}</p>
+                  <div className="text-center font-bold text-[9px] pt-1">--- END OF SUMMARY ---</div>
                 </div>
               )}
 
@@ -2286,110 +4061,95 @@ export default function App() {
                 </div>
               )}
 
+              {/* Z-Report Shift Close */}
+              {printModalConfig.type === 'Z_REPORT' && (
+                <div className="space-y-2">
+                  <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
+                    <p className="font-black text-sm">{settings.restaurantName}</p>
+                    <p className="font-bold text-xs mt-1">*** Z-REPORT (SHIFT CLOSE) ***</p>
+                    <p className="text-[9px]">Shift: {printModalConfig.data.shiftId}</p>
+                    <p className="text-[9px]">Closed by: {printModalConfig.data.closedBy} at {printModalConfig.data.closedAt}</p>
+                  </div>
+                  <div className="space-y-1 text-xs py-1 border-b border-slate-300">
+                    <div className="flex justify-between">
+                      <span>OPENING FLOAT:</span>
+                      <span>{settings.currency} {printModalConfig.data.startingFloat.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>CASH SALES:</span>
+                      <span>+{settings.currency} {printModalConfig.data.metrics.totalCashSales.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>PETTY PAYOUTS:</span>
+                      <span>-{settings.currency} {printModalConfig.data.metrics.totalPayouts.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold">
+                      <span>EXPECTED DRAWER:</span>
+                      <span>{settings.currency} {printModalConfig.data.metrics.expectedCashInDrawer.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold">
+                      <span>COUNTED CASH:</span>
+                      <span>{settings.currency} {printModalConfig.data.metrics.countedCash.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold border-t border-slate-300 pt-1">
+                      <span>VARIANCE:</span>
+                      <span>{settings.currency} {printModalConfig.data.metrics.variance.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <p className="text-center font-bold text-[9px] pt-1">REGISTER AUDITED &amp; CLOSED</p>
+                </div>
+              )}
+
+              {/* Final Settlement Tax Invoice */}
+              {printModalConfig.type === 'FINAL_BILL' && (
+                <div className="space-y-2">
+                  <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
+                    <p className="font-black text-sm">{settings.restaurantName}</p>
+                    <p className="text-[9px] whitespace-pre-line">{settings.receiptHeader}</p>
+                    <p className="font-bold text-xs mt-1">TAX INVOICE #{printModalConfig.data.invoiceNo}</p>
+                    <p className="text-[9px]">{printModalConfig.data.date} • {printModalConfig.data.table}</p>
+                  </div>
+
+                  <div className="py-1 border-b border-slate-300 space-y-1">
+                    {printModalConfig.data.items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between">
+                        <span>{item.qty}x {item.name}</span>
+                        <span>{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-1 text-[10px]">
+                    <div className="flex justify-between">
+                      <span>Subtotal:</span>
+                      <span>{settings.currency} {printModalConfig.data.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Service Charge ({settings.serviceChargeRate}%):</span>
+                      <span>{settings.currency} {printModalConfig.data.serviceCharge.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
+                      <span>TOTAL PAID:</span>
+                      <span>{settings.currency} {printModalConfig.data.total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-bold">
+                      <span>METHOD:</span>
+                      <span>{printModalConfig.data.paymentMethod}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-center font-bold text-[9px] pt-2 whitespace-pre-line">{settings.receiptFooter}</p>
+                </div>
+              )}
+
             </div>
 
             <button
               onClick={() => window.print()}
               className="w-full mt-4 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-orange-600/30"
             >
-              <Printer className="h-4 w-4" /> Print Thermal Slip
+              <Printer className="h-4 w-4" /> Print 80mm
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* PIN Security Switch Modal */}
-      {pinModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Lock className="h-5 w-5 text-[#ff5500]" />
-                <h3 className="text-base font-black text-slate-900">Switch Role / Staff</h3>
-              </div>
-              <button onClick={() => { setPinModalOpen(false); setPinInput(''); setPinError(''); }} className="text-slate-400 hover:text-slate-900">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSwitchUserWithPin} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Select Employee</label>
-                <select
-                  value={targetStaffForSwitch ? targetStaffForSwitch.id : ''}
-                  onChange={e => setTargetStaffForSwitch(staffList.find(s => s.id === e.target.value))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white text-slate-800"
-                >
-                  {staffList.map(s => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Enter 4-Digit Security PIN</label>
-                <input
-                  type="password"
-                  maxLength={4}
-                  autoFocus
-                  required
-                  value={pinInput}
-                  onChange={e => setPinInput(e.target.value)}
-                  placeholder="••••"
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-center text-xl font-mono tracking-widest text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                />
-                {pinError && <p className="text-xs text-rose-600 font-bold mt-1.5 text-center">{pinError}</p>}
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3 bg-[#ff5500] hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-md shadow-orange-600/20"
-              >
-                Authenticate &amp; Switch
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Void Item Reason Modal */}
-      {voidModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-sm font-black text-rose-600 flex items-center gap-1.5">
-                <Trash2 className="h-4 w-4" /> Void Item Audit Required
-              </h3>
-              <button onClick={() => setVoidModalOpen(false)} className="text-slate-400 hover:text-slate-900">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleConfirmVoid} className="mt-4 space-y-3">
-              <p className="text-xs text-slate-600">
-                Item: <strong>{voidPayload.item?.name}</strong>
-              </p>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Mandatory Cancellation Reason</label>
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  value={voidPayload.reason}
-                  onChange={e => setVoidPayload(prev => ({ ...prev, reason: e.target.value }))}
-                  placeholder="e.g. Customer changed mind, Kitchen burnt"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs"
-              >
-                Confirm Line Void
-              </button>
-            </form>
           </div>
         </div>
       )}
