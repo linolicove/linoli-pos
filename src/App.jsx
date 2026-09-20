@@ -48,7 +48,8 @@ import {
   Edit3,
   Filter,
   History,
-  ShieldAlert
+  ShieldAlert,
+  ChevronDown
 } from 'lucide-react';
 
 const ROLE_PERMISSIONS = {
@@ -83,6 +84,18 @@ const INITIAL_RAW_INVENTORY = [
   { id: 'ing_mint', name: 'Garden Fresh Mint', category: 'Produce', stock: 850, unit: 'g', cost: 1.50, threshold: 200 },
   { id: 'ing_soda', name: 'Sparkling Soda Water', category: 'Beverages', stock: 9500, unit: 'ml', cost: 0.15, threshold: 2000 },
   { id: 'ing_lion_lager', name: 'Lion Lager 625ml', category: 'Bar Supplies', stock: 54, unit: 'pcs', cost: 650.00, threshold: 15 }
+];
+
+const PREDEFINED_MENU_CATEGORIES = [
+  'Rice & Noodles',
+  'Mains & Grills',
+  'Starters',
+  'Seafood Specials',
+  'Cocktails',
+  'Beer & Wine',
+  'Hot Coffee',
+  'Fresh Juices & Smoothies',
+  'Desserts'
 ];
 
 const INITIAL_MENU_ITEMS = [
@@ -198,8 +211,15 @@ const INITIAL_FLOOR_TABLES = [
   { id: 'VIP-01', name: 'VIP Cabana 1', zone: 'Private Ocean View', capacity: 8, status: 'VACANT', currentOrderRef: null }
 ];
 
+// Reliable Local Calendar Date Formatter (YYYY-MM-DD)
+const getLocalDateStr = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function App() {
-  // Navigation & User State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginPinInput, setLoginPinInput] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -209,7 +229,6 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(INITIAL_STAFF[0]);
   const [staffList, setStaffList] = useState(INITIAL_STAFF);
 
-  // System Configuration State
   const [settings, setSettings] = useState({
     restaurantName: 'Linoli Cove Midigama',
     tagline: 'RESTAURANT & BAR',
@@ -233,22 +252,20 @@ export default function App() {
   const [usbStatusMessage, setUsbStatusMessage] = useState('');
   const [settingsNotice, setSettingsNotice] = useState(null);
 
-  // Date Filter State for Reports
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = useMemo(() => getLocalDateStr(), []);
   const [reportDateFilter, setReportDateFilter] = useState({
     preset: 'Today',
     startDate: todayStr,
     endDate: todayStr
   });
 
-  // Data Collections
   const [inventory, setInventory] = useState(INITIAL_RAW_INVENTORY);
   const [menuItems, setMenuItems] = useState(INITIAL_MENU_ITEMS);
   const [floorTables, setFloorTables] = useState(INITIAL_FLOOR_TABLES);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [menuSearchQuery, setMenuSearchQuery] = useState('');
+  const [adminCategoryFilter, setAdminCategoryFilter] = useState('All');
 
-  // POS Working Ticket State
   const [orderMode, setOrderMode] = useState('DINING');
   const [selectedTable, setSelectedTable] = useState(INITIAL_FLOOR_TABLES[1]);
   const [takeawayInfo, setTakeawayInfo] = useState({ name: 'Walk-in Guest', phone: '', token: 'TK-102' });
@@ -256,7 +273,6 @@ export default function App() {
   const [cart, setCart] = useState([]);
   const [editingOrderId, setEditingOrderId] = useState(null);
 
-  // Surcharges on Active Ticket
   const [serviceChargeActive, setServiceChargeActive] = useState(true);
   const [taxActive, setTaxActive] = useState(false);
   const [discountPercent, setDiscountPercent] = useState(0);
@@ -282,13 +298,12 @@ export default function App() {
     }
   ]);
 
-  // Settled Transactions History - Permanently retained across all sessions
   const [transactions, setTransactions] = useState([
     {
       invoiceNo: 'INV-8801',
       orderRef: 'ORD-0998',
-      date: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD
-      dateTime: new Date().toLocaleDateString('en-US') + ' 13:10:45',
+      date: getLocalDateStr(),
+      dateTime: new Date().toLocaleDateString() + ' 13:10:45',
       table: 'Table 2',
       mode: 'DINING',
       cashier: 'System Administrator',
@@ -306,7 +321,6 @@ export default function App() {
     }
   ]);
 
-  // Comprehensive Change & Forensic Audit Logs
   const [auditLogs, setAuditLogs] = useState([
     {
       id: 'AUD-001',
@@ -319,7 +333,6 @@ export default function App() {
     }
   ]);
 
-  // Cancelled Tickets / Voids Audit Log
   const [cancelledTickets, setCancelledTickets] = useState([
     {
       id: 'VOID-301',
@@ -362,11 +375,13 @@ export default function App() {
   const [addStaffModalOpen, setAddStaffModalOpen] = useState(false);
   const [newStaffForm, setNewStaffForm] = useState({ name: '', role: 'Cashier', pin: '', email: '' });
 
+  // Add Item Modal Form State with scroll-down category support
   const [addItemModalOpen, setAddItemModalOpen] = useState(false);
   const [newDishForm, setNewDishForm] = useState({
     name: '',
     department: 'Kitchen',
-    category: 'Mains & Grills',
+    category: 'Rice & Noodles',
+    customCategory: '',
     price: '',
     prepTime: '10m',
     description: '',
@@ -386,12 +401,10 @@ export default function App() {
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidPayload, setVoidPayload] = useState({ item: null, reason: '' });
 
-  // State for Editing Active Bills inside Billing Section
   const [editBillModalOpen, setEditBillModalOpen] = useState(false);
   const [activeOrderEditing, setActiveOrderEditing] = useState(null);
   const [selectedDishToAdd, setSelectedDishToAdd] = useState('');
 
-  // Inventory & Stock Intake Modals
   const [addInventoryModalOpen, setAddInventoryModalOpen] = useState(false);
   const [newInventoryForm, setNewInventoryForm] = useState({
     name: '',
@@ -411,7 +424,6 @@ export default function App() {
     newCost: ''
   });
 
-  // Dedicated Recipe Configurator Modal
   const [recipeConfigModalOpen, setRecipeConfigModalOpen] = useState(false);
   const [editingDishForRecipe, setEditingDishForRecipe] = useState(null);
   const [currentRecipeIngredients, setCurrentRecipeIngredients] = useState([]);
@@ -536,7 +548,7 @@ export default function App() {
       setPairedUsbDevice(device);
       setUsbStatusMessage(`Paired with ${device.productName || 'Thermal Printer'}`);
     } catch (err) {
-      console.warn('USB Pairing cancelled or error:', err);
+      console.warn('USB Pairing notice:', err);
       setUsbStatusMessage('Printer driver ready via OS print spooler.');
     }
   };
@@ -676,7 +688,7 @@ export default function App() {
         try {
           window.print();
         } catch (err) {
-          console.warn('Auto-print dialog trigger notice:', err);
+          console.warn('Auto-print dialog notice:', err);
         }
       }, 500);
       return () => clearTimeout(timer);
@@ -764,7 +776,8 @@ export default function App() {
 
   const handleDeleteActiveBillByAdmin = (orderId, tableName, tableId) => {
     if (currentUser.role !== 'Administrator') {
-      alert('Permission Denied: Only Administrators can delete active orders.');
+      setSettingsNotice({ title: 'Permission Denied', detail: 'Only Administrators can cancel active bills.' });
+      setTimeout(() => setSettingsNotice(null), 3500);
       return;
     }
 
@@ -778,11 +791,15 @@ export default function App() {
       orderId,
       `Active unsettled bill for "${tableName}" was permanently deleted by Administrator ${currentUser.name}`
     );
+
+    setSettingsNotice({ title: 'Bill Cancelled', detail: `Order ${orderId} was removed by ${currentUser.name}` });
+    setTimeout(() => setSettingsNotice(null), 3500);
   };
 
   const handleDeleteSettledTransactionByAdmin = (invoiceNo) => {
     if (currentUser.role !== 'Administrator') {
-      alert('Permission Denied: Only Administrators can delete finalized transactions.');
+      setSettingsNotice({ title: 'Permission Denied', detail: 'Only Administrators can delete finalized transactions.' });
+      setTimeout(() => setSettingsNotice(null), 3500);
       return;
     }
 
@@ -794,9 +811,13 @@ export default function App() {
       invoiceNo,
       `Finalized tax transaction "${invoiceNo}" (${targetTx?.total ? settings.currency + ' ' + targetTx.total.toFixed(2) : ''}) was permanently deleted by Administrator ${currentUser.name}`
     );
+
+    setSettingsNotice({ title: 'Transaction Deleted', detail: `Invoice ${invoiceNo} removed from ledger.` });
+    setTimeout(() => setSettingsNotice(null), 3500);
   };
 
   const handleCompleteSettlement = () => {
+    const isDirectPOS = !settlingOrder;
     const targetOrder = settlingOrder || {
       orderId: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
       mode: orderMode,
@@ -838,11 +859,13 @@ export default function App() {
       return item;
     }));
 
+    // Guaranteed local calendar date stamp (e.g. 2026-09-21)
+    const localDate = getLocalDateStr();
     const newInvoice = {
       invoiceNo: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
       orderRef: targetOrder.orderId,
-      date: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD for clean filtering
-      dateTime: new Date().toLocaleString(),
+      date: localDate,
+      dateTime: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       table: targetOrder.tableName,
       mode: targetOrder.mode,
       cashier: currentUser.name,
@@ -867,7 +890,11 @@ export default function App() {
 
     // Keep all previous transactions intact and prepend new settled invoice
     setTransactions(prev => [newInvoice, ...prev]);
-    setActiveOrders(prev => prev.filter(o => o.orderId !== targetOrder.orderId));
+
+    // Remove from active queue if settling an existing order
+    if (settlingOrder) {
+      setActiveOrders(prev => prev.filter(o => o.orderId !== targetOrder.orderId));
+    }
 
     if (targetOrder.tableId) {
       setFloorTables(prev => prev.map(t => t.id === targetOrder.tableId ? { ...t, status: 'VACANT', currentOrderRef: null } : t));
@@ -882,7 +909,8 @@ export default function App() {
       data: newInvoice
     });
 
-    if (editingOrderId === targetOrder.orderId) {
+    // Clear cart if settled directly from POS
+    if (isDirectPOS || editingOrderId === targetOrder.orderId) {
       setCart([]);
       setEditingOrderId(null);
     }
@@ -915,12 +943,16 @@ export default function App() {
     e.preventDefault();
     if (!newDishForm.name.trim() || !newDishForm.price) return;
 
+    const finalCategory = newDishForm.category === 'CUSTOM'
+      ? (newDishForm.customCategory.trim() || 'General')
+      : newDishForm.category;
+
     const newItemId = `dish_${Date.now()}`;
     const dishItem = {
       id: newItemId,
       name: newDishForm.name.trim(),
       department: newDishForm.department,
-      category: newDishForm.category || 'Mains & Grills',
+      category: finalCategory,
       price: parseFloat(newDishForm.price) || 0,
       prepTime: newDishForm.prepTime || '10m',
       description: newDishForm.description || '',
@@ -933,13 +965,16 @@ export default function App() {
     setNewDishForm({
       name: '',
       department: 'Kitchen',
-      category: 'Mains & Grills',
+      category: 'Rice & Noodles',
+      customCategory: '',
       price: '',
       prepTime: '10m',
       description: '',
       imageUrl: '',
       recipeIngredients: []
     });
+
+    recordAuditLog('MENU_ITEM_CREATED', newItemId, `Created "${dishItem.name}" in category "${finalCategory}"`);
   };
 
   const handleCreateInventoryItem = (e) => {
@@ -966,6 +1001,7 @@ export default function App() {
       cost: '',
       threshold: ''
     });
+    recordAuditLog('INVENTORY_CREATED', newItem.id, `Created inventory item "${newItem.name}"`);
   };
 
   const handleReceiveStock = (e) => {
@@ -995,6 +1031,7 @@ export default function App() {
       invoiceRef: '',
       newCost: ''
     });
+    recordAuditLog('STOCK_INTAKE', receiveStockForm.ingredientId, `Received ${qtyToAdd} units via GRN: ${receiveStockForm.invoiceRef || 'N/A'}`);
   };
 
   const handleOpenRecipeConfig = (dish) => {
@@ -1017,6 +1054,7 @@ export default function App() {
       return dish;
     }));
 
+    recordAuditLog('RECIPE_UPDATED', editingDishForRecipe.id, `Updated recipe BOM for "${editingDishForRecipe.name}"`);
     setRecipeConfigModalOpen(false);
     setEditingDishForRecipe(null);
   };
@@ -1036,6 +1074,7 @@ export default function App() {
     setStaffList(prev => [...prev, newStaff]);
     setAddStaffModalOpen(false);
     setNewStaffForm({ name: '', role: 'Cashier', pin: '', email: '' });
+    recordAuditLog('STAFF_CREATED', newStaff.id, `Created employee "${newStaff.name}" (${newStaff.role})`);
   };
 
   const handleCloseShift = () => {
@@ -1054,7 +1093,7 @@ export default function App() {
     });
 
     setCurrentShift({
-      shiftId: `SHIFT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(10 + Math.random() * 90)}`,
+      shiftId: `SHIFT-${getLocalDateStr().replace(/-/g, '')}-${Math.floor(10 + Math.random() * 90)}`,
       openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       openedBy: currentUser.name,
       startingFloat: 15000.00,
@@ -1063,17 +1102,18 @@ export default function App() {
     });
 
     setDenominations({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
+    recordAuditLog('SHIFT_CLOSED', closedShift.shiftId, `Closed shift by ${currentUser.name}`);
   };
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      if (!reportDateFilter.startDate && !reportDateFilter.endDate) return true;
-      const txDate = t.date || (t.dateTime ? t.dateTime.slice(0, 10) : todayStr);
+      if (reportDateFilter.preset === 'All Time') return true;
+      const txDate = t.date ? t.date.slice(0, 10) : getLocalDateStr();
       if (reportDateFilter.startDate && txDate < reportDateFilter.startDate) return false;
       if (reportDateFilter.endDate && txDate > reportDateFilter.endDate) return false;
       return true;
     });
-  }, [transactions, reportDateFilter, todayStr]);
+  }, [transactions, reportDateFilter]);
 
   const salesMetrics = useMemo(() => {
     let grossRevenue = 0;
@@ -1154,7 +1194,7 @@ export default function App() {
       setCurrentUser(found);
       setIsAuthenticated(true);
       setLoginPinInput('');
-      setCart([]); // Fresh session buffer for new login
+      setCart([]);
       const allowed = ROLE_PERMISSIONS[found.role] || [];
       setActiveTab(allowed.includes('pos') ? 'pos' : (allowed[0] || 'pos'));
     } else {
@@ -1175,7 +1215,7 @@ export default function App() {
       setLoginPinInput(target.pin);
       setCurrentUser(target);
       setIsAuthenticated(true);
-      setCart([]); // Fresh session buffer
+      setCart([]);
       const allowed = ROLE_PERMISSIONS[target.role] || [];
       setActiveTab(allowed.includes('pos') ? 'pos' : (allowed[0] || 'pos'));
     }
@@ -1185,7 +1225,6 @@ export default function App() {
     return (
       <div className="flex min-h-screen w-full items-center justify-center bg-[#070b14] p-4 font-sans select-none antialiased">
         <div className="w-full max-w-[420px] rounded-[32px] border border-[#1b253b] bg-[#0c1424]/95 p-8 shadow-2xl shadow-black/80 backdrop-blur-md">
-          {/* Brand Logo Header */}
           <div className="flex flex-col items-center text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-[#ff4500] to-[#ff6a00] text-2xl font-black text-white shadow-lg shadow-orange-600/40">
               LC
@@ -1200,7 +1239,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Quick PIN Pad */}
           <div className="mt-6 space-y-4">
             <div className="flex flex-col items-center">
               <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-2">
@@ -1224,7 +1262,6 @@ export default function App() {
               <p className="text-center text-xs font-bold text-rose-500">{loginError}</p>
             )}
 
-            {/* Numeric Keypad Grid */}
             <div className="grid grid-cols-3 gap-2 pt-1">
               {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
                 <button
@@ -1272,7 +1309,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Fast Role Switch ("Tap to fill") */}
           <div className="mt-6 border-t border-zinc-800/80 pt-4">
             <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-2.5">
               <span>FAST ROLE SWITCH</span>
@@ -1298,8 +1334,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full bg-[#0b0f19] text-zinc-100 font-sans select-none overflow-hidden antialiased">
-
-      {/* Floating System Notice Toast */}
       {settingsNotice && (
         <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-emerald-400">
           <div className="p-2 bg-emerald-700 rounded-xl">
@@ -1315,7 +1349,6 @@ export default function App() {
       {/* SIDEBAR NAVIGATION */}
       <aside className="w-64 bg-[#060813] border-r border-zinc-800/80 flex flex-col justify-between shrink-0 z-20 overflow-y-auto">
         <div>
-          {/* Logo Header */}
           <div className="p-5 pb-4 flex items-center justify-between border-b border-zinc-900">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-[#ff5500] text-white font-black text-xl flex items-center justify-center shadow-lg shadow-orange-600/30">
@@ -1332,7 +1365,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Navigation Links with Role Filtering */}
           <nav className="p-3 space-y-1">
             {[
               { id: 'pos', name: 'POS Terminal', icon: Monitor, badge: cart.reduce((a, b) => a + b.qty, 0) },
@@ -1377,7 +1409,6 @@ export default function App() {
               );
             })}
 
-            {/* ADMINISTRATION SECTION */}
             <div className="pt-4 pb-1.5 px-3">
               <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
                 ADMINISTRATION
@@ -1457,7 +1488,6 @@ export default function App() {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 text-slate-900">
-
         {/* Top Header */}
         <header className="h-14 px-6 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 shadow-sm z-10">
           <div className="flex items-center gap-4">
@@ -1551,15 +1581,15 @@ export default function App() {
                             if (preset === 'Yesterday') {
                               const y = new Date();
                               y.setDate(y.getDate() - 1);
-                              start = y.toISOString().slice(0, 10);
+                              start = getLocalDateStr(y);
                               end = start;
                             } else if (preset === 'Last 7 Days') {
                               const d7 = new Date();
                               d7.setDate(d7.getDate() - 7);
-                              start = d7.toISOString().slice(0, 10);
+                              start = getLocalDateStr(d7);
                               end = todayStr;
                             } else if (preset === 'This Month') {
-                              start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+                              start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
                               end = todayStr;
                             } else if (preset === 'All Time') {
                               start = '2020-01-01';
@@ -1646,7 +1676,7 @@ export default function App() {
                     </h3>
                     <div className="space-y-3">
                       {Object.keys(salesMetrics.paymentMethods).length === 0 ? (
-                        <p className="text-xs text-slate-400 italic">No payments collected yet today.</p>
+                        <p className="text-xs text-slate-400 italic">No payments collected yet in selected period.</p>
                       ) : (
                         Object.entries(salesMetrics.paymentMethods).map(([method, data]) => (
                           <div key={method} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
@@ -1740,10 +1770,10 @@ export default function App() {
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-sm font-black text-slate-900 uppercase">Paid Invoices Ledger</h3>
-                    <p className="text-[11px] text-slate-400">All transactions are permanently retained across sessions. (Admin only can delete)</p>
+                    <p className="text-[11px] text-slate-400">All transactions are permanently recorded and date-filtered. (Admin only can delete)</p>
                   </div>
                   <span className="text-xs font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-xl">
-                    {filteredTransactions.length} Filtered Transactions
+                    {filteredTransactions.length} Records Shown
                   </span>
                 </div>
                 <div className="overflow-x-auto">
@@ -1783,7 +1813,7 @@ export default function App() {
                               <button
                                 onClick={() => handleDeleteSettledTransactionByAdmin(t.invoiceNo)}
                                 className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 border border-rose-200 transition-colors"
-                                title="Admin only: Permanently delete transaction"
+                                title="Admin only: Delete transaction"
                               >
                                 <Trash2 className="h-3 w-3" /> Delete
                               </button>
@@ -1807,7 +1837,7 @@ export default function App() {
                       Comprehensive Activity &amp; Change Audit Log
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      Every transaction, active ticket item addition, modification, quantity edit, void, or admin deletion is tracked.
+                      Every transaction, active ticket item modification, quantity edit, line void, or admin deletion is tracked.
                     </p>
                   </div>
                   <span className="text-xs font-mono font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-xl">
@@ -1988,7 +2018,6 @@ export default function App() {
                 </div>
               </div>
             )}
-
           </div>
         )}
 
@@ -2925,7 +2954,6 @@ export default function App() {
 
                       <div className="pt-2 border-t border-slate-100 space-y-2">
                         <div className="grid grid-cols-2 gap-2 text-xs">
-                          {/* EDIT / UPDATE ITEMS BUTTON */}
                           <button
                             onClick={() => handleOpenEditActiveBill(order)}
                             className="py-1.5 bg-orange-50 hover:bg-orange-100 text-[#ff5500] border border-orange-200 rounded-lg font-bold flex items-center justify-center gap-1 transition-colors"
@@ -2964,7 +2992,6 @@ export default function App() {
                             <DollarSign className="h-3.5 w-3.5" /> Settle Bill
                           </button>
 
-                          {/* ADMIN ONLY DELETE ACTIVE BILL BUTTON */}
                           {currentUser.role === 'Administrator' && (
                             <button
                               onClick={() => handleDeleteActiveBillByAdmin(order.orderId, order.tableName, order.tableId)}
@@ -2984,22 +3011,39 @@ export default function App() {
           </div>
         )}
 
-        {/* VIEW 11: MENU MANAGEMENT */}
+        {/* VIEW 11: MENU MANAGEMENT (WITH SCROLL-DOWN CATEGORY SELECTOR) */}
         {activeTab === 'menu_admin' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-black text-slate-900">Menu Management &amp; Recipe Configurator</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Add new dishes and beverages, upload food photos, configure preparation departments, and link ingredient recipes.
+                  Add new dishes and beverages, select categories via scroll-down menu, upload food photos, and link ingredient recipes.
                 </p>
               </div>
-              <button
-                onClick={() => setAddItemModalOpen(true)}
-                className="px-4 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-orange-600/20"
-              >
-                <Plus className="h-4 w-4" /> Add New Menu Item
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Category Filter Dropdown for Menu Admin */}
+                <div className="relative">
+                  <select
+                    value={adminCategoryFilter}
+                    onChange={e => setAdminCategoryFilter(e.target.value)}
+                    className="appearance-none pl-3 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-[#ff5500] shadow-sm cursor-pointer"
+                  >
+                    <option value="All">All Categories</option>
+                    {categoriesList.filter(c => c !== 'All').map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="h-3.5 w-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
+                <button
+                  onClick={() => setAddItemModalOpen(true)}
+                  className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-orange-600/20"
+                >
+                  <Plus className="h-4 w-4" /> Add New Menu Item
+                </button>
+              </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
@@ -3016,61 +3060,67 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {menuItems.map(item => {
-                    const { cogs } = calculateDishAvailability(item.recipe);
-                    return (
-                      <tr key={item.id} className="hover:bg-slate-50/70">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-3">
-                            {item.imageUrl ? (
-                              <img
-                                src={item.imageUrl}
-                                alt={item.name}
-                                className="h-10 w-10 rounded-xl object-cover border border-slate-200 shadow-sm shrink-0"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                }}
-                              />
-                            ) : (
-                              <div className="h-10 w-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 font-bold text-[10px] shrink-0">
-                                NO PIC
+                  {menuItems
+                    .filter(item => adminCategoryFilter === 'All' || item.category === adminCategoryFilter)
+                    .map(item => {
+                      const { cogs } = calculateDishAvailability(item.recipe);
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/70">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3">
+                              {item.imageUrl ? (
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.name}
+                                  className="h-10 w-10 rounded-xl object-cover border border-slate-200 shadow-sm shrink-0"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <div className="h-10 w-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 font-bold text-[10px] shrink-0">
+                                  NO PIC
+                                </div>
+                              )}
+                              <div>
+                                <p className="font-extrabold text-slate-900">{item.name}</p>
+                                <span className="text-[10px] text-slate-400 line-clamp-1">{item.description}</span>
                               </div>
-                            )}
-                            <div>
-                              <p className="font-extrabold text-slate-900">{item.name}</p>
-                              <span className="text-[10px] text-slate-400 line-clamp-1">{item.description}</span>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
-                          }`}>
-                            {item.department}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 font-medium">{item.category}</td>
-                        <td className="py-3 px-4 font-mono font-bold text-[#ff5500]">{settings.currency} {item.price.toFixed(2)}</td>
-                        <td className="py-3 px-4 font-mono text-slate-500">{settings.currency} {cogs.toFixed(2)}</td>
-                        <td className="py-3 px-4 text-[11px] text-slate-600">
-                          {item.recipe && item.recipe.length > 0 ? (
-                            <span>{item.recipe.length} raw supplies linked</span>
-                          ) : (
-                            <span className="text-amber-600 italic">No recipe linked</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => setMenuItems(prev => prev.filter(m => m.id !== item.id))}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100"
-                            title="Delete Item"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
+                            }`}>
+                              {item.department}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-600 font-medium">
+                            <span className="px-2 py-0.5 bg-slate-100 rounded text-[11px] font-bold text-slate-800">
+                              {item.category}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono font-bold text-[#ff5500]">{settings.currency} {item.price.toFixed(2)}</td>
+                          <td className="py-3 px-4 font-mono text-slate-500">{settings.currency} {cogs.toFixed(2)}</td>
+                          <td className="py-3 px-4 text-[11px] text-slate-600">
+                            {item.recipe && item.recipe.length > 0 ? (
+                              <span>{item.recipe.length} raw supplies linked</span>
+                            ) : (
+                              <span className="text-amber-600 italic">No recipe linked</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => setMenuItems(prev => prev.filter(m => m.id !== item.id))}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100"
+                              title="Delete Item"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -3220,7 +3270,6 @@ export default function App() {
                     onChange={e => setSettings(prev => ({ ...prev, currency: e.target.value }))}
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold font-mono text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">E.g. Rs., $, €, LKR, AED</p>
                 </div>
 
                 <div>
@@ -3233,7 +3282,6 @@ export default function App() {
                     onChange={e => setSettings(prev => ({ ...prev, serviceChargeRate: parseFloat(e.target.value) || 0 }))}
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">Applied to table bills when active</p>
                 </div>
 
                 <div>
@@ -3245,39 +3293,6 @@ export default function App() {
                     value={settings.taxRate}
                     onChange={e => setSettings(prev => ({ ...prev, taxRate: parseFloat(e.target.value) || 0 }))}
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Government sales tax or VAT rate</p>
-                </div>
-              </div>
-            </div>
-
-            {/* RECEIPT CUSTOMIZATION */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-indigo-500" />
-                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
-                  Thermal Receipt Customization
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Receipt Header Text</label>
-                  <textarea
-                    rows={3}
-                    value={settings.receiptHeader}
-                    onChange={e => setSettings(prev => ({ ...prev, receiptHeader: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Receipt Footer Text</label>
-                  <textarea
-                    rows={3}
-                    value={settings.receiptFooter}
-                    onChange={e => setSettings(prev => ({ ...prev, receiptFooter: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#ff5500] focus:bg-white"
                   />
                 </div>
               </div>
@@ -3300,33 +3315,6 @@ export default function App() {
                 </span>
               </div>
 
-              {/* USB Device Card */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="px-2.5 py-1 bg-amber-100 text-amber-800 text-[11px] font-black rounded-lg">
-                    USB
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">Thermal Printer Direct Connection</p>
-                    <p className="text-[11px] text-slate-500">
-                      Connect directly via WebUSB for zero-latency ESC/POS slip dispatch and solenoid kick.
-                    </p>
-                    {usbStatusMessage && (
-                      <p className="text-[11px] font-mono text-indigo-600 mt-0.5">{usbStatusMessage}</p>
-                    )}
-                  </div>
-                </div>
-
-                <button
-                  onClick={handlePairUsbPrinter}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shrink-0"
-                >
-                  <Usb className="h-4 w-4" />
-                  <span>Pair USB Thermal Printer</span>
-                </button>
-              </div>
-
-              {/* Hardware Parameters Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">Receipt Roll Width</label>
@@ -3353,54 +3341,6 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1">Drawer Kick Trigger</label>
-                  <select
-                    value={settings.drawerKickTrigger || 'CASH_ONLY'}
-                    onChange={e => setSettings(prev => ({ ...prev, drawerKickTrigger: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  >
-                    <option value="CASH_ONLY">Cash Payments Only</option>
-                    <option value="ALL">All Payments (Cash &amp; Card)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1">RJ11/RJ12 Pinout</label>
-                  <select
-                    value={settings.drawerPinout || 'PIN_2'}
-                    onChange={e => setSettings(prev => ({ ...prev, drawerPinout: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  >
-                    <option value="PIN_2">Pin 2 / ESC p 0 (Epson, Rongta, Xprinter)</option>
-                    <option value="PIN_5">Pin 5 / ESC p 1 (Star Micronics, Custom)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1">Chime Sound (Web Audio)</label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSettings(prev => ({ ...prev, chimeAudio: !prev.chimeAudio }))}
-                      className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
-                        settings.chimeAudio
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                          : 'bg-slate-100 border-slate-200 text-slate-500'
-                      }`}
-                    >
-                      {settings.chimeAudio ? 'Chime ON' : 'Chime OFF'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={playCashRegisterChime}
-                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1"
-                    >
-                      <Volume2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">Hardware Diagnostic</label>
                   <button
                     type="button"
@@ -3414,7 +3354,6 @@ export default function App() {
             </div>
           </div>
         )}
-
       </main>
 
       {/* MODAL 1: PIN AUTHENTICATION / SWITCH */}
@@ -3546,14 +3485,14 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL 3: ADD NEW DISH WITH PHOTO */}
+      {/* MODAL 3: ADD NEW DISH WITH SCROLL-DOWN CATEGORY DROPDOWN */}
       {addItemModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-xl p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <h3 className="text-base font-black text-slate-900">Add New Menu Dish / Drink</h3>
-                <p className="text-xs text-slate-500">Configure item details, price in {settings.currency}, and link recipe BOM.</p>
+                <p className="text-xs text-slate-500">Configure item details, price in {settings.currency}, select category, and link recipe BOM.</p>
               </div>
               <button onClick={() => setAddItemModalOpen(false)} className="text-slate-400 hover:text-slate-900">
                 <X className="h-5 w-5" />
@@ -3602,14 +3541,35 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
-                  <input
-                    type="text"
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category (Scroll Down Menu)</label>
+                  <select
                     value={newDishForm.category}
                     onChange={e => setNewDishForm(prev => ({ ...prev, category: e.target.value }))}
-                    placeholder="e.g. Rice & Noodles, Mains, Cocktails"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                  />
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 font-semibold focus:outline-none focus:border-[#ff5500]"
+                  >
+                    {PREDEFINED_MENU_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                    {/* Preserve existing custom categories if any */}
+                    {categoriesList
+                      .filter(c => c !== 'All' && !PREDEFINED_MENU_CATEGORIES.includes(c))
+                      .map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))
+                    }
+                    <option value="CUSTOM">+ Add New Custom Category...</option>
+                  </select>
+
+                  {newDishForm.category === 'CUSTOM' && (
+                    <input
+                      type="text"
+                      required
+                      value={newDishForm.customCategory}
+                      onChange={e => setNewDishForm(prev => ({ ...prev, customCategory: e.target.value }))}
+                      placeholder="Enter new category name..."
+                      className="w-full mt-2 px-3 py-1.5 border border-orange-300 rounded-xl text-xs bg-orange-50/50 text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                    />
+                  )}
                 </div>
               </div>
 
@@ -4242,13 +4202,13 @@ export default function App() {
                     </div>
                     {fin.service > 0 && (
                       <div className="flex justify-between text-emerald-700 font-medium">
-                        <span>Service Charge ({settings.serviceChargeRate}%)</span>
+                        <span>Service Charge ({settings.serviceChargeRate}%):</span>
                         <span className="font-mono">+{settings.currency} {fin.service.toFixed(2)}</span>
                       </div>
                     )}
                     {fin.tax > 0 && (
                       <div className="flex justify-between text-indigo-700 font-medium">
-                        <span>Taxes ({settings.taxRate}%)</span>
+                        <span>Taxes ({settings.taxRate}%):</span>
                         <span className="font-mono">+{settings.currency} {fin.tax.toFixed(2)}</span>
                       </div>
                     )}
