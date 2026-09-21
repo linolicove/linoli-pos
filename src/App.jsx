@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Monitor,
   Flame,
@@ -53,6 +53,7 @@ import {
   HardDrive,
   Mail
 } from 'lucide-react';
+import { syncToCloud, subscribeToCloud } from './firebase'; // <-- ADD THIS LINE
 
 const ROLE_PERMISSIONS = {
   Administrator: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'cancelled', 'staff', 'settings'],
@@ -386,7 +387,110 @@ export default function App() {
   const [editingDishForRecipe, setEditingDishForRecipe] = useState(null);
   const [currentRecipeIngredients, setCurrentRecipeIngredients] = useState([]);
   const [tempIngredientSelect, setTempIngredientSelect] = useState({ ingredientId: '', amount: '' });
+ // Refs to track previous data and prevent re-upload loops
+  const prevOrdersRef = useRef('');
+  const prevTransRef = useRef('');
+  const prevTablesRef = useRef('');
+  const prevAuditsRef = useRef('');
 
+  // ============================================================
+  // 1. REAL-TIME CLOUD LISTENERS (Midigama <-> Australia)
+  // ============================================================
+  useEffect(() => {
+    // 1. Receive incoming active orders
+    const unsubOrders = subscribeToCloud('active_orders', (remoteOrders) => {
+      if (Array.isArray(remoteOrders)) {
+        const serialized = JSON.stringify(remoteOrders);
+        if (prevOrdersRef.current === serialized) return;
+        prevOrdersRef.current = serialized;
+        setActiveOrders(remoteOrders);
+        localStorage.setItem('linoli_active_orders', serialized);
+      }
+    });
+
+    // 2. Receive incoming settled transactions
+    const unsubTrans = subscribeToCloud('transactions', (remoteTrans) => {
+      if (Array.isArray(remoteTrans)) {
+        const serialized = JSON.stringify(remoteTrans);
+        if (prevTransRef.current === serialized) return;
+        prevTransRef.current = serialized;
+        setTransactions(remoteTrans);
+        localStorage.setItem('linoli_transactions', serialized);
+      }
+    });
+
+    // 3. Receive incoming table occupancy / floor status
+    const unsubTables = subscribeToCloud('floor_tables', (remoteTables) => {
+      if (Array.isArray(remoteTables)) {
+        const serialized = JSON.stringify(remoteTables);
+        if (prevTablesRef.current === serialized) return;
+        prevTablesRef.current = serialized;
+        setFloorTables(remoteTables);
+        localStorage.setItem('linoli_floor_tables', serialized);
+      }
+    });
+
+    // 4. Receive incoming audit trail activity logs
+    const unsubAudits = subscribeToCloud('audit_logs', (remoteAudits) => {
+      if (Array.isArray(remoteAudits)) {
+        const serialized = JSON.stringify(remoteAudits);
+        if (prevAuditsRef.current === serialized) return;
+        prevAuditsRef.current = serialized;
+        setAuditLogs(remoteAudits);
+        localStorage.setItem('linoli_audit_logs', serialized);
+      }
+    });
+
+    return () => {
+      if (typeof unsubOrders === 'function') unsubOrders();
+      if (typeof unsubTrans === 'function') unsubTrans();
+      if (typeof unsubTables === 'function') unsubTables();
+      if (typeof unsubAudits === 'function') unsubAudits();
+    };
+  }, []);
+
+  // ============================================================
+  // 2. BROADCAST LOCAL CHANGES UP TO FIREBASE
+  // ============================================================
+  useEffect(() => {
+    if (activeOrders !== undefined) {
+      const current = JSON.stringify(activeOrders);
+      if (current !== prevOrdersRef.current) {
+        prevOrdersRef.current = current;
+        syncToCloud('active_orders', activeOrders);
+      }
+    }
+  }, [activeOrders]);
+
+  useEffect(() => {
+    if (transactions !== undefined) {
+      const current = JSON.stringify(transactions);
+      if (current !== prevTransRef.current) {
+        prevTransRef.current = current;
+        syncToCloud('transactions', transactions);
+      }
+    }
+  }, [transactions]);
+
+  useEffect(() => {
+    if (floorTables !== undefined) {
+      const current = JSON.stringify(floorTables);
+      if (current !== prevTablesRef.current) {
+        prevTablesRef.current = current;
+        syncToCloud('floor_tables', floorTables);
+      }
+    }
+  }, [floorTables]);
+
+  useEffect(() => {
+    if (auditLogs !== undefined) {
+      const current = JSON.stringify(auditLogs);
+      if (current !== prevAuditsRef.current) {
+        prevAuditsRef.current = current;
+        syncToCloud('audit_logs', auditLogs);
+      }
+    }
+  }, [auditLogs]);
   const handleCreateStaff = (e) => {
     e.preventDefault();
     setStaffFormError('');
