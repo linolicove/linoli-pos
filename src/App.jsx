@@ -267,6 +267,9 @@ export default function App() {
     serviceChargeRate: 10,
     taxRate: 8,
     receiptRollWidth: '80mm',
+    receiptFontSize: '11px',
+    receiptFontFamily: 'monospace',
+    receiptMargin: '2mm',
     autoPrintOrder: true,
     autoPrintBill: true,
     autoDrawerKick: 'ENABLED',
@@ -337,6 +340,7 @@ export default function App() {
   const [pinError, setPinError] = useState('');
   const [addStaffModalOpen, setAddStaffModalOpen] = useState(false);
   const [newStaffForm, setNewStaffForm] = useState({ name: '', role: 'Cashier', pin: '', email: '' });
+  const [staffFormError, setStaffFormError] = useState('');
   const [addTableModalOpen, setAddTableModalOpen] = useState(false);
   const [newTableForm, setNewTableForm] = useState({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
   const [allocationModalOpen, setAllocationModalOpen] = useState(false);
@@ -368,6 +372,44 @@ export default function App() {
   const [editingDishForRecipe, setEditingDishForRecipe] = useState(null);
   const [currentRecipeIngredients, setCurrentRecipeIngredients] = useState([]);
   const [tempIngredientSelect, setTempIngredientSelect] = useState({ ingredientId: '', amount: '' });
+
+  const handleCreateStaff = (e) => {
+    e.preventDefault();
+    setStaffFormError('');
+    if (!newStaffForm.name.trim()) {
+      setStaffFormError('Staff name is required.');
+      return;
+    }
+    const cleanPin = newStaffForm.pin.trim();
+    if (!cleanPin || cleanPin.length !== 4 || !/^\d{4}$/.test(cleanPin)) {
+      setStaffFormError('PIN must be exactly 4 numeric digits.');
+      return;
+    }
+    if (staffList.some(s => s.pin === cleanPin)) {
+      setStaffFormError('This 4-digit PIN is already in use by another employee.');
+      return;
+    }
+
+    const nameParts = newStaffForm.name.trim().split(' ');
+    const initials = nameParts.length > 1
+      ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`.toUpperCase()
+      : newStaffForm.name.trim().substring(0, 2).toUpperCase();
+
+    const newStaff = {
+      id: `usr_${Date.now().toString().slice(-6)}`,
+      name: newStaffForm.name.trim(),
+      role: newStaffForm.role,
+      pin: cleanPin,
+      avatar: initials || 'ST',
+      email: newStaffForm.email.trim() || `${newStaffForm.name.trim().toLowerCase().replace(/\s+/g, '')}@linolicove.me`
+    };
+
+    setStaffList(prev => [...prev, newStaff]);
+    recordAuditLog('STAFF_CREATED', newStaff.id, `Created staff member ${newStaff.name} with role ${newStaff.role} (PIN: ${newStaff.pin})`);
+    setAddStaffModalOpen(false);
+    setNewStaffForm({ name: '', role: 'Cashier', pin: '', email: '' });
+    setStaffFormError('');
+  };
 
   // Backup & Restore Handlers
   const handleExportBackup = () => {
@@ -902,6 +944,35 @@ export default function App() {
         select:focus, option:focus, option:checked {
           color: #ff5500 !important;
           background-color: #fff7ed !important;
+        }
+
+        @media print {
+          @page {
+            margin: ${settings.receiptMargin || '2mm'};
+            size: auto;
+          }
+          body {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+          }
+          body * {
+            visibility: hidden !important;
+          }
+          #thermal-print-area, #thermal-print-area * {
+            visibility: visible !important;
+          }
+          #thermal-print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: ${settings.receiptMargin || '2mm'} !important;
+            box-shadow: none !important;
+            border: none !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+          }
         }
       `}</style>
 
@@ -3039,8 +3110,12 @@ export default function App() {
                       <td className="py-3 px-4 text-right">
                         {staffList.length > 1 && (
                           <button
-                            onClick={() => setStaffList(prev => prev.filter(s => s.id !== member.id))}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg"
+                            onClick={() => {
+                              setStaffList(prev => prev.filter(s => s.id !== member.id));
+                              recordAuditLog('STAFF_DELETED', member.id, `Removed staff member ${member.name} (${member.role})`);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors"
+                            title="Remove Employee"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -3245,6 +3320,7 @@ export default function App() {
                 </span>
               </div>
 
+              {}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Paper Roll Width</label>
@@ -3255,6 +3331,51 @@ export default function App() {
                   >
                     <option value="80mm">80mm Thermal Paper (Standard POS)</option>
                     <option value="58mm">58mm Thermal Paper (Compact)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Receipt Font Size</label>
+                  <select
+                    value={settings.receiptFontSize || '11px'}
+                    onChange={e => setSettings(prev => ({ ...prev, receiptFontSize: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="10px">10px - Compact (Fits More Items)</option>
+                    <option value="11px">11px - Standard (Recommended)</option>
+                    <option value="12px">12px - Medium Large</option>
+                    <option value="13px">13px - Large Text</option>
+                    <option value="14px">14px - Extra Bold &amp; Large</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Receipt Font Type</label>
+                  <select
+                    value={settings.receiptFontFamily || 'monospace'}
+                    onChange={e => setSettings(prev => ({ ...prev, receiptFontFamily: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="monospace">Monospace (Classic ESC/POS Receipt)</option>
+                    <option value="sans-serif">Sans-Serif (Modern Clean Helvetica/Arial)</option>
+                    <option value="serif">Serif (Classic Traditional)</option>
+                  </select>
+                </div>
+              </div>
+
+              {}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Thermal Slip Margins</label>
+                  <select
+                    value={settings.receiptMargin || '2mm'}
+                    onChange={e => setSettings(prev => ({ ...prev, receiptMargin: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="0mm">0mm - Full Width (Edge-to-Edge)</option>
+                    <option value="2mm">2mm - Standard Thermal Margin</option>
+                    <option value="4mm">4mm - Comfortable Margin</option>
+                    <option value="6mm">6mm - Wide Margin</option>
                   </select>
                 </div>
 
@@ -4154,14 +4275,23 @@ export default function App() {
           <div className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center">
             <div className="flex items-center justify-between w-full mb-3 text-white">
               <span className="text-xs font-bold font-mono text-orange-400 uppercase">
-                80mm Thermal Dispatch
+                {settings.receiptRollWidth || '80mm'} Thermal Dispatch ({settings.receiptFontSize || '11px'})
               </span>
               <button onClick={() => setPrintModalConfig(null)} className="text-slate-400 hover:text-white">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="w-full bg-white text-slate-900 p-4 rounded font-mono text-[11px] leading-tight shadow-md max-h-[60vh] overflow-y-auto space-y-4">
+            {}
+            <div
+              id="thermal-print-area"
+              style={{
+                fontSize: settings.receiptFontSize || '11px',
+                fontFamily: settings.receiptFontFamily || 'monospace',
+                padding: settings.receiptMargin || '2mm'
+              }}
+              className="w-full bg-white text-slate-900 rounded leading-tight shadow-md max-h-[60vh] overflow-y-auto space-y-4"
+            >
               
               {/* 2-Slip Order Dispatch: KOT & BOT */}
               {printModalConfig.type === 'KOT_BOT_DISPATCH' && (
@@ -4602,6 +4732,114 @@ export default function App() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {}
+      {/* MODAL: ADD NEW STAFF MEMBER */}
+      {addStaffModalOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-[#ff5500]" />
+                <h3 className="text-base font-black text-slate-900">Add New Staff Member</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddStaffModalOpen(false);
+                  setStaffFormError('');
+                  setNewStaffForm({ name: '', role: 'Cashier', pin: '', email: '' });
+                }}
+                className="text-slate-400 hover:text-slate-900"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateStaff} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newStaffForm.name}
+                  onChange={e => setNewStaffForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Kasun Fernando"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Role / Access Level</label>
+                  <select
+                    value={newStaffForm.role}
+                    onChange={e => setNewStaffForm(prev => ({ ...prev, role: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                  >
+                    {Object.keys(ROLE_PERMISSIONS).map(role => (
+                      <option key={role} value={role} style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>
+                        {role}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">4-Digit Security PIN</label>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    required
+                    value={newStaffForm.pin}
+                    onChange={e => setNewStaffForm(prev => ({ ...prev, pin: e.target.value }))}
+                    placeholder="e.g. 4321"
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-sm font-mono font-bold text-slate-900 tracking-widest focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email Address (Optional)</label>
+                <input
+                  type="email"
+                  value={newStaffForm.email}
+                  onChange={e => setNewStaffForm(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="e.g. kasun@linolicove.me"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              {staffFormError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-semibold text-center">
+                  {staffFormError}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddStaffModalOpen(false);
+                    setStaffFormError('');
+                    setNewStaffForm({ name: '', role: 'Cashier', pin: '', email: '' });
+                  }}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all"
+                >
+                  Save Employee
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
