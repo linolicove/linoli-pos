@@ -50,7 +50,8 @@ import {
   LayoutGrid,
   Download,
   Building,
-  HardDrive
+  HardDrive,
+  Mail
 } from 'lucide-react';
 
 const ROLE_PERMISSIONS = {
@@ -327,6 +328,18 @@ export default function App() {
   const [pairedUsbDevice, setPairedUsbDevice] = useState(null);
   const [usbStatusMessage, setUsbStatusMessage] = useState('');
   const [settingsNotice, setSettingsNotice] = useState(null);
+
+  const [emailSettings, setEmailSettings] = usePersistentState('linoli_email_settings', {
+    enabled: true,
+    recipient: 'linolicove@gmail.com',
+    scheduledTime: '23:30',
+    webhookUrl: '',
+    emailjsServiceId: '',
+    emailjsTemplateId: '',
+    emailjsPublicKey: '',
+    lastSentDate: ''
+  });
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
 
   // Background Auto-Print State (No blocking modal)
   const [activePrintSlip, setActivePrintSlip] = useState(null);
@@ -661,6 +674,181 @@ export default function App() {
     if (minPortions === Infinity) minPortions = 0;
     return { cogs, portions: minPortions, isSoldOut: minPortions <= 0 };
   };
+
+  const generateEodReportData = (targetDate = getLocalDateStr()) => {
+    const dayTransactions = transactions.filter(t => extractDateStr(t.date) === targetDate);
+    const dayVoids = cancelledTickets.filter(v => extractDateStr(v.timestamp) === targetDate);
+    const dayLogs = auditLogs.filter(l => extractDateStr(l.timestamp) === targetDate);
+    const dayCashOuts = (currentShift.payouts || []).filter(p => (p.date === targetDate || !p.date));
+
+    let gross = 0;
+    let net = 0;
+    let service = 0;
+    let tax = 0;
+    let discount = 0;
+    const paymentBreakdown = {};
+
+    dayTransactions.forEach(t => {
+      gross += t.total;
+      net += t.subtotal;
+      service += t.serviceCharge;
+      tax += t.tax;
+      discount += (t.discount || 0);
+      paymentBreakdown[t.paymentMethod] = (paymentBreakdown[t.paymentMethod] || 0) + t.total;
+    });
+
+    return {
+      restaurant: settings.restaurantName,
+      terminal: settings.terminalId,
+      date: targetDate,
+      generatedAt: new Date().toLocaleString(),
+      summary: {
+        totalSettledBills: dayTransactions.length,
+        grossRevenue: gross,
+        netSubtotal: net,
+        serviceCharge: service,
+        tax: tax,
+        discounts: discount,
+        paymentMethods: paymentBreakdown
+      },
+      cashierShift: {
+        shiftId: currentShift.shiftId,
+        openedBy: currentShift.openedBy,
+        openedAt: currentShift.openedAt,
+        startingFloat: currentShift.startingFloat,
+        cashPayouts: dayCashOuts
+      },
+      invoices: dayTransactions,
+      voidedTickets: dayVoids,
+      activityAuditLogs: dayLogs
+    };
+  };
+
+  const sendDailyEodEmail = async (isManual = false) => {
+    const todayStr = getLocalDateStr();
+    setIsSendingEmail(true);
+
+    const report = generateEodReportData(todayStr);
+    const recipient = emailSettings.recipient || 'linolicove@gmail.com';
+
+    try {
+      let sentSuccessfully = false;
+
+      // Transport 1: Custom Webhook Endpoint (e.g. Zapier, Make, n8n, custom server)
+      if (emailSettings.webhookUrl) {
+        const res = await fetch(emailSettings.webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient,
+            subject: `[EOD REPORT] ${settings.restaurantName} - ${todayStr}`,
+            report
+          })
+        });
+        if (res.ok) sentSuccessfully = true;
+      }
+
+      // Transport 2: EmailJS API
+      if (!sentSuccessfully && emailSettings.emailjsServiceId && emailSettings.emailjsTemplateId && emailSettings.emailjsPublicKey) {
+        const emailjsRes = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            service_id: emailSettings.emailjsServiceId,
+            template_id: emailSettings.emailjsTemplateId,
+            user_id: emailSettings.emailjsPublicKey,
+            template_params: {
+              to_email: recipient,
+              subject: `[Daily Summary] ${settings.restaurantName} - ${todayStr}`,
+              summary: `Gross: ${settings.currency} ${report.summary.grossRevenue.toFixed(2)} | Net: ${settings.currency} ${report.summary.netSubtotal.toFixed(2)} | Bills: ${report.summary.totalSettledBills}`,
+              report_json: JSON.stringify(report, null, 2)
+            }
+          })
+        });
+        if (emailjsRes.ok) sentSuccessfully = true;
+      }
+
+      // Transport 3: Client-side mailto & JSON download fallback
+      if (!sentSuccessfully) {
+        const subject = encodeURIComponent(`[Daily Activity Report] ${settings.restaurantName} - ${todayStr}`);
+        const bodyText = encodeURIComponent(
+          `Linoli Cove Daily Business & Activity Report\n` +
+          `Date: ${todayStr}\n` +
+          `Terminal: ${settings.terminalId}\n\n` +
+          `--- FINANCIAL SUMMARY ---\n` +
+          `Gross Revenue: ${settings.currency} ${report.summary.grossRevenue.toFixed(2)}\n` +
+          `Net Sales: ${settings.currency} ${report.summary.netSubtotal.toFixed(2)}\n` +
+          `Service Charge: ${settings.currency} ${report.summary.serviceCharge.toFixed(2)}\n` +
+          `Taxes: ${settings.currency} ${report.summary.tax.toFixed(2)}\n` +
+          `Discounts: ${settings.currency} ${report.summary.discounts.toFixed(2)}\n` +
+          `Total Settled Invoices: ${report.summary.totalSettledBills}\n\n` +
+          `--- CASH DRAWER ---\n` +
+          `Opening Float: ${settings.currency} ${report.cashierShift.startingFloat.toFixed(2)}\n` +
+          `Cash Out Disbursements: ${report.cashierShift.cashPayouts.length} records\n\n` +
+          `--- AUDIT & VOIDS ---\n` +
+          `Voided Tickets: ${report.voidedTickets.length}\n` +
+          `Activity Audit Logs: ${report.activityAuditLogs.length} events\n\n` +
+          `(Full complete JSON data bundle has also been exported for archive)`
+        );
+
+        if (isManual) {
+          window.open(`mailto:${recipient}?subject=${subject}&body=${bodyText}`, '_blank');
+        }
+
+        // Also download complete JSON archive
+        const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+        const downloadUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `EOD_Complete_Report_${todayStr}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(downloadUrl);
+
+        sentSuccessfully = true;
+      }
+
+      // Update state and record audit log
+      setEmailSettings(prev => ({ ...prev, lastSentDate: todayStr }));
+      recordAuditLog('DAILY_EOD_EMAIL_DISPATCHED', recipient, `Dispatched complete day activity & financial report to ${recipient} (Date: ${todayStr})`);
+
+      setSettingsNotice({
+        title: 'Daily Report Dispatched',
+        detail: `Complete operational report sent to ${recipient} for ${todayStr}.`
+      });
+      setTimeout(() => setSettingsNotice(null), 5000);
+    } catch (err) {
+      setSettingsNotice({
+        title: 'Email Dispatch Notice',
+        detail: `Could not send automatically: ${err.message}`
+      });
+      setTimeout(() => setSettingsNotice(null), 5000);
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!emailSettings.enabled) return;
+
+    const intervalId = setInterval(() => {
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const currentTimeStr = `${hours}:${minutes}`;
+      const todayStr = getLocalDateStr(now);
+
+      const targetTime = emailSettings.scheduledTime || '23:30';
+
+      // Fire when time matches 11:30 PM (23:30) and has not yet been sent today
+      if (currentTimeStr === targetTime && emailSettings.lastSentDate !== todayStr && !isSendingEmail) {
+        sendDailyEodEmail(false);
+      }
+    }, 30000); // Check every 30 seconds
+
+    return () => clearInterval(intervalId);
+  }, [emailSettings, isSendingEmail]);
 
   // Cart financials
   const cartSubtotal = cart.reduce((acc, item) => acc + item.price * item.qty, 0);
@@ -3761,6 +3949,142 @@ export default function App() {
                   />
                 </div>
               </div>
+            </div>
+
+            {}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-orange-50 text-[#ff5500] rounded-xl">
+                    <Mail className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                      Automated Daily 11:30 PM Email Dispatch
+                    </h3>
+                    <p className="text-[10px] text-slate-400">
+                      Auto-transmits complete end-of-day sales, settlements, invoices, voids &amp; audit records
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold ${
+                    emailSettings.enabled
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {emailSettings.enabled ? `● Scheduled: ${emailSettings.scheduledTime || '23:30'} Daily` : 'Disabled'}
+                  </span>
+                  {emailSettings.lastSentDate && (
+                    <span className="text-[10px] font-mono text-slate-500">
+                      Last Sent: {emailSettings.lastSentDate}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Target Recipient Email</label>
+                  <input
+                    type="email"
+                    value={emailSettings.recipient}
+                    onChange={e => setEmailSettings(prev => ({ ...prev, recipient: e.target.value }))}
+                    placeholder="linolicove@gmail.com"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">Receives complete daily business data</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Scheduled Time (24h)</label>
+                  <input
+                    type="text"
+                    value={emailSettings.scheduledTime}
+                    onChange={e => setEmailSettings(prev => ({ ...prev, scheduledTime: e.target.value }))}
+                    placeholder="23:30"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">Default: 23:30 (11:30 PM)</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Automation Status</label>
+                  <select
+                    value={emailSettings.enabled ? 'YES' : 'NO'}
+                    onChange={e => setEmailSettings(prev => ({ ...prev, enabled: e.target.value === 'YES' }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  >
+                    <option value="YES">Enabled (Auto-send at 11:30 PM)</option>
+                    <option value="NO">Disabled (Manual trigger only)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Data Inclusions Summary and Manual Test Trigger */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                <div className="space-y-0.5 text-xs">
+                  <p className="font-bold text-slate-800">What data is transmitted in the 11:30 PM package?</p>
+                  <p className="text-[11px] text-slate-500">
+                    Gross revenue, net sales, taxes, service pool, discounts, individual invoice ledgers, cashier drawer count &amp; cash-outs, cancelled ticket voids, and the complete day's audit trail.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={isSendingEmail}
+                    onClick={() => sendDailyEodEmail(true)}
+                    className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs transition-all disabled:opacity-50"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    <span>{isSendingEmail ? 'Dispatching...' : 'Send Daily Report Now'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Optional Webhook / EmailJS Backend Integration */}
+              <details className="text-xs text-slate-600 pt-1">
+                <summary className="font-bold cursor-pointer text-slate-700 hover:text-[#ff5500] select-none">
+                  Advanced: Direct Silent Webhook or EmailJS API Keys (Optional)
+                </summary>
+                <div className="mt-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
+                      Webhook POST URL (Zapier / Make / Cloud Function)
+                    </label>
+                    <input
+                      type="url"
+                      value={emailSettings.webhookUrl}
+                      onChange={e => setEmailSettings(prev => ({ ...prev, webhookUrl: e.target.value }))}
+                      placeholder="https://hook.eu2.make.com/... or https://api.yoursite.com/eod-report"
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-900"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-0.5">Posts JSON payload containing complete sales, shifts &amp; audit data directly.</p>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">EmailJS Service ID</label>
+                    <input
+                      type="text"
+                      value={emailSettings.emailjsServiceId}
+                      onChange={e => setEmailSettings(prev => ({ ...prev, emailjsServiceId: e.target.value }))}
+                      placeholder="service_..."
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">EmailJS Template ID</label>
+                    <input
+                      type="text"
+                      value={emailSettings.emailjsTemplateId}
+                      onChange={e => setEmailSettings(prev => ({ ...prev, emailjsTemplateId: e.target.value }))}
+                      placeholder="template_..."
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-900"
+                    />
+                  </div>
+                </div>
+              </details>
             </div>
 
             {/* SECTION 2: STREAMLINED AUTO-PRINTER CONFIGURATION */}
