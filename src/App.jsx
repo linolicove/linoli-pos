@@ -470,6 +470,32 @@ export default function App() {
     setReceiveStockForm({ ingredientId: '', quantity: '', supplier: '', invoiceRef: '', newCost: '' });
   };
 
+  const handleCreateTable = (e) => {
+    e.preventDefault();
+    if (!newTableForm.name.trim()) return;
+
+    const count = floorTables.length + 1;
+    const tableId = `T-${String(count).padStart(2, '0')}`;
+    const newTable = {
+      id: tableId,
+      name: newTableForm.name.trim(),
+      zone: newTableForm.zone || 'Indoor Main Hall',
+      capacity: parseInt(newTableForm.capacity) || 4,
+      status: 'VACANT',
+      currentOrderRef: null
+    };
+
+    setFloorTables(prev => [...prev, newTable]);
+    recordAuditLog(
+      'TABLE_CREATED',
+      newTable.id,
+      `Created table "${newTable.name}" in ${newTable.zone} with capacity of ${newTable.capacity} seats`
+    );
+
+    setAddTableModalOpen(false);
+    setNewTableForm({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
+  };
+
   // Backup & Restore Handlers
   const handleExportBackup = () => {
     const backupData = {
@@ -676,10 +702,23 @@ export default function App() {
     }
   };
 
+  const extractDateStr = (dateVal) => {
+    if (!dateVal) return '';
+    if (typeof dateVal !== 'string') return '';
+    if (dateVal.includes('T')) return dateVal.split('T')[0];
+    const firstToken = dateVal.split(' ')[0].replace(/,/g, '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(firstToken)) return firstToken;
+    const parts = firstToken.split('/');
+    if (parts.length === 3 && parts[2].length === 4) {
+      return `${parts[2]}-${String(parts[0]).padStart(2, '0')}-${String(parts[1]).padStart(2, '0')}`;
+    }
+    return firstToken;
+  };
+
   const filteredTransactions = useMemo(() => {
     if (!reportStartDate && !reportEndDate) return transactions;
     return transactions.filter(t => {
-      const tDate = t.date ? t.date.split(' ')[0] : '';
+      const tDate = extractDateStr(t.date);
       if (!tDate) return true;
       if (reportStartDate && tDate < reportStartDate) return false;
       if (reportEndDate && tDate > reportEndDate) return false;
@@ -699,6 +738,7 @@ export default function App() {
     let barItemsCount = 0;
     const paymentMethods = {};
     const itemSalesMap = {};
+    const ingredientUsageMap = {};
 
     filteredTransactions.forEach(t => {
       grossRevenue += t.total;
@@ -711,7 +751,7 @@ export default function App() {
       paymentMethods[t.paymentMethod].count += 1;
       paymentMethods[t.paymentMethod].total += t.total;
 
-      t.items.forEach(item => {
+      (t.items || []).forEach(item => {
         const isKitchen = item.department === 'Kitchen';
         if (isKitchen) {
           kitchenRevenue += (item.price * item.qty);
@@ -723,14 +763,33 @@ export default function App() {
 
         if (!itemSalesMap[item.name]) {
           itemSalesMap[item.name] = {
+            id: item.id,
             name: item.name,
             department: item.department || (isKitchen ? 'Kitchen' : 'Bar'),
+            category: item.category || 'General',
+            unitPrice: item.price || 0,
             sold: 0,
-            revenue: 0
+            revenue: 0,
+            cogs: item.cogs || 0
           };
         }
         itemSalesMap[item.name].sold += item.qty;
         itemSalesMap[item.name].revenue += (item.price * item.qty);
+
+        // Track raw ingredients consumed
+        const menuItemRef = menuItems.find(m => m.name === item.name || m.id === item.id);
+        if (menuItemRef?.recipe && Array.isArray(menuItemRef.recipe)) {
+          menuItemRef.recipe.forEach(r => {
+            const consumed = r.amount * item.qty;
+            if (!ingredientUsageMap[r.ingredientId]) {
+              ingredientUsageMap[r.ingredientId] = {
+                ingredientId: r.ingredientId,
+                totalConsumed: 0
+              };
+            }
+            ingredientUsageMap[r.ingredientId].totalConsumed += consumed;
+          });
+        }
       });
     });
 
@@ -748,9 +807,10 @@ export default function App() {
       barItemsCount,
       paymentMethods,
       topItems,
+      ingredientUsageMap,
       paidBillsCount: filteredTransactions.length
     };
-  }, [filteredTransactions]);
+  }, [filteredTransactions, menuItems]);
 
   const categoriesList = useMemo(() => {
     const cats = new Set(['All']);
@@ -860,8 +920,10 @@ export default function App() {
       mode: targetOrder.mode,
       cashier: currentUser.name,
       items: targetOrder.items.map(i => ({
+        id: i.id,
         name: i.name,
         department: i.department,
+        category: i.category || 'General',
         qty: i.qty,
         price: i.price
       })),
@@ -1361,11 +1423,10 @@ export default function App() {
                     return (
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2.5">
                         {filteredDishes.map(dish => {
-                          const { isSoldOut, portions } = calculateDishAvailability(dish.recipe);
+                          const { portions } = calculateDishAvailability(dish.recipe);
                           return (
                             <button
                               key={dish.id}
-                              disabled={isSoldOut}
                               onClick={() => {
                                 setCart(prev => {
                                   const existing = prev.find(i => i.id === dish.id);
@@ -1375,11 +1436,7 @@ export default function App() {
                                   return [...prev, { ...dish, cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
                                 });
                               }}
-                              className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
-                                isSoldOut
-                                  ? 'bg-slate-100 border-slate-200 opacity-40 cursor-not-allowed'
-                                  : 'bg-white border-slate-200 hover:border-[#ff5500] hover:shadow-sm active:scale-95'
-                              }`}
+                              className="p-3 rounded-xl border text-left flex flex-col justify-between transition-all bg-white border-slate-200 hover:border-[#ff5500] hover:shadow-sm active:scale-95"
                             >
                               <div>
                                 <span className={`text-[8px] font-black px-1 py-0.2 rounded uppercase ${
@@ -1391,7 +1448,9 @@ export default function App() {
                               </div>
                               <div className="mt-2 flex justify-between items-center text-[10px]">
                                 <span className="font-mono font-bold text-[#ff5500]">{settings.currency} {dish.price.toFixed(0)}</span>
-                                <span className="text-slate-400">{portions} left</span>
+                                <span className={portions <= 0 ? 'text-amber-600 font-bold' : 'text-slate-400'}>
+                                  {portions <= 0 ? '0 in stock' : `${portions} left`}
+                                </span>
                               </div>
                             </button>
                           );
@@ -1404,12 +1463,11 @@ export default function App() {
                     return (
                       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
                         {filteredDishes.map(dish => {
-                          const { isSoldOut, portions } = calculateDishAvailability(dish.recipe);
+                          const { portions } = calculateDishAvailability(dish.recipe);
                           return (
                             <div
                               key={dish.id}
                               onClick={() => {
-                                if (isSoldOut) return;
                                 setCart(prev => {
                                   const existing = prev.find(i => i.id === dish.id);
                                   if (existing) {
@@ -1418,9 +1476,7 @@ export default function App() {
                                   return [...prev, { ...dish, cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
                                 });
                               }}
-                              className={`p-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors ${
-                                isSoldOut ? 'opacity-40 cursor-not-allowed' : ''
-                              }`}
+                              className="p-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors"
                             >
                               <div className="flex items-center gap-3">
                                 <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
@@ -1434,7 +1490,9 @@ export default function App() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-4">
-                                <span className="text-xs text-slate-500 font-mono">{portions} ready</span>
+                                <span className={`text-xs font-mono ${portions <= 0 ? 'text-amber-600 font-bold' : 'text-slate-500'}`}>
+                                  {portions <= 0 ? '0 ready' : `${portions} ready`}
+                                </span>
                                 <span className="font-mono font-bold text-sm text-[#ff5500]">{settings.currency} {dish.price.toFixed(2)}</span>
                                 <button className="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">+ Add</button>
                               </div>
@@ -1449,12 +1507,11 @@ export default function App() {
                   return (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
                       {filteredDishes.map(dish => {
-                        const { cogs, portions, isSoldOut } = calculateDishAvailability(dish.recipe);
+                        const { cogs, portions } = calculateDishAvailability(dish.recipe);
                         return (
                           <div
                             key={dish.id}
                             onClick={() => {
-                              if (isSoldOut) return;
                               setCart(prev => {
                                 const existing = prev.find(i => i.id === dish.id);
                                 if (existing) {
@@ -1463,11 +1520,7 @@ export default function App() {
                                 return [...prev, { ...dish, cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
                               });
                             }}
-                            className={`bg-white rounded-2xl border overflow-hidden flex flex-col justify-between transition-all ${
-                              isSoldOut
-                                ? 'border-slate-200 opacity-45 cursor-not-allowed'
-                                : 'border-slate-200 hover:border-[#ff5500] hover:shadow-md cursor-pointer active:scale-[0.99]'
-                            }`}
+                            className="bg-white rounded-2xl border border-slate-200 hover:border-[#ff5500] hover:shadow-md cursor-pointer active:scale-[0.99] overflow-hidden flex flex-col justify-between transition-all"
                           >
                             {dish.imageUrl ? (
                               <div className="relative h-28 w-full bg-slate-100 overflow-hidden shrink-0">
@@ -1505,9 +1558,9 @@ export default function App() {
                             </div>
 
                             <div className="p-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] bg-slate-50/50">
-                              {isSoldOut ? (
-                                <span className="text-rose-600 font-bold flex items-center gap-1 text-[10px]">
-                                  <AlertTriangle className="h-3 w-3" /> SOLD OUT
+                              {portions <= 0 ? (
+                                <span className="text-amber-600 font-bold flex items-center gap-1 text-[10px]">
+                                  <AlertTriangle className="h-3 w-3" /> 0 ready
                                 </span>
                               ) : (
                                 <span className="text-emerald-700 font-semibold flex items-center gap-1 text-[10px]">
@@ -1955,7 +2008,7 @@ export default function App() {
         {activeTab === 'reports' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <div className="flex items-center gap-6 border-b border-slate-200 pb-3 text-xs font-bold overflow-x-auto">
-              {['Daily Overview', 'Sales Detail', 'KOT Report', 'BOT Report', 'Sales Summary', 'Food vs Beverage', 'Stock Usage', 'Audit Trail'].map(sub => (
+              {['Daily Overview', 'All Items Sales', 'Sales Detail', 'KOT Report', 'BOT Report', 'Sales Summary', 'Food vs Beverage', 'Stock Usage', 'Audit Trail'].map(sub => (
                 <button
                   key={sub}
                   onClick={() => setReportSubTab(sub)}
@@ -2090,7 +2143,326 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* All Items & Top Selling Menu Items Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
+                      Top &amp; All Sold Menu Items
+                    </h3>
+                    <span className="text-xs font-mono text-slate-500">{salesMetrics.topItems.length} Products Sold</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5">Menu Item</th>
+                          <th className="py-2.5">Area</th>
+                          <th className="py-2.5">Category</th>
+                          <th className="py-2.5 text-center">Portions Sold</th>
+                          <th className="py-2.5 text-right">Price</th>
+                          <th className="py-2.5 text-right">Total Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {salesMetrics.topItems.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-6 text-center text-slate-400 italic">No menu items sold in this period.</td>
+                          </tr>
+                        ) : (
+                          salesMetrics.topItems.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50">
+                              <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                              <td className="py-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
+                                }`}>
+                                  {item.department}
+                                </span>
+                              </td>
+                              <td className="py-3 text-slate-500">{item.category}</td>
+                              <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
+                              <td className="py-3 text-right font-mono text-slate-600">{settings.currency} {(item.unitPrice || 0).toFixed(2)}</td>
+                              <td className="py-3 text-right font-mono font-black text-slate-900">
+                                {settings.currency} {item.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </>
+            )}
+
+            {/* Subtab: All Items Sales */}
+            {reportSubTab === 'All Items Sales' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Itemized Menu Sales Report</h3>
+                    <p className="text-xs text-slate-500">Every menu item ordered within the selected date filter range</p>
+                  </div>
+                  <span className="text-xs font-mono font-bold px-3 py-1 bg-slate-100 rounded-xl text-slate-700">
+                    {salesMetrics.topItems.reduce((acc, i) => acc + i.sold, 0)} Total Portions
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Menu Item</th>
+                        <th className="py-2.5">Department</th>
+                        <th className="py-2.5">Category</th>
+                        <th className="py-2.5 text-center">Portions Sold</th>
+                        <th className="py-2.5 text-right">Selling Price</th>
+                        <th className="py-2.5 text-right">Total Revenue</th>
+                        <th className="py-2.5 text-right">% of Item Sales</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {salesMetrics.topItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-400 italic">No sales recorded for any items in this period.</td>
+                        </tr>
+                      ) : (
+                        salesMetrics.topItems.map((item, idx) => {
+                          const pct = salesMetrics.itemSubtotal > 0
+                            ? ((item.revenue / salesMetrics.itemSubtotal) * 100).toFixed(1)
+                            : '0.0';
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50">
+                              <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                              <td className="py-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
+                                }`}>
+                                  {item.department}
+                                </span>
+                              </td>
+                              <td className="py-3 text-slate-500">{item.category}</td>
+                              <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
+                              <td className="py-3 text-right font-mono text-slate-600">{settings.currency} {(item.unitPrice || 0).toFixed(2)}</td>
+                              <td className="py-3 text-right font-mono font-black text-slate-900">
+                                {settings.currency} {item.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="py-3 text-right font-mono text-slate-500">{pct}%</td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Subtab: KOT Report */}
+            {reportSubTab === 'KOT Report' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Kitchen Order Tickets (KOT) Production Report</h3>
+                    <p className="text-xs text-slate-500">Breakdown of all kitchen items prepped in the filtered period</p>
+                  </div>
+                  <span className="px-3 py-1 bg-rose-100 text-rose-800 text-xs font-bold rounded-xl">
+                    {salesMetrics.kitchenItemsCount} Kitchen Items • {settings.currency} {salesMetrics.kitchenRevenue.toFixed(2)}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Kitchen Dish</th>
+                        <th className="py-2.5">Category</th>
+                        <th className="py-2.5 text-center">Portions Prepared</th>
+                        <th className="py-2.5 text-right">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {salesMetrics.topItems.filter(i => i.department === 'Kitchen').length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-6 text-center text-slate-400 italic">No kitchen orders recorded in this date range.</td>
+                        </tr>
+                      ) : (
+                        salesMetrics.topItems.filter(i => i.department === 'Kitchen').map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                            <td className="py-3 text-slate-500">{item.category}</td>
+                            <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
+                            <td className="py-3 text-right font-mono font-bold text-slate-900">{settings.currency} {item.revenue.toFixed(2)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Subtab: BOT Report */}
+            {reportSubTab === 'BOT Report' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Bar Order Tickets (BOT) Dispense Report</h3>
+                    <p className="text-xs text-slate-500">Breakdown of all bar beverages, cocktails &amp; coffees served</p>
+                  </div>
+                  <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-xl">
+                    {salesMetrics.barItemsCount} Drinks Served • {settings.currency} {salesMetrics.barRevenue.toFixed(2)}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Beverage / Drink</th>
+                        <th className="py-2.5">Category</th>
+                        <th className="py-2.5 text-center">Glasses / Units</th>
+                        <th className="py-2.5 text-right">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {salesMetrics.topItems.filter(i => i.department === 'Bar').length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-6 text-center text-slate-400 italic">No bar beverage orders recorded in this date range.</td>
+                        </tr>
+                      ) : (
+                        salesMetrics.topItems.filter(i => i.department === 'Bar').map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                            <td className="py-3 text-slate-500">{item.category}</td>
+                            <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
+                            <td className="py-3 text-right font-mono font-bold text-slate-900">{settings.currency} {item.revenue.toFixed(2)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Subtab: Sales Summary */}
+            {reportSubTab === 'Sales Summary' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4 max-w-2xl">
+                <h3 className="text-base font-black text-slate-900 uppercase">Executive Financial Summary</h3>
+                <div className="space-y-2.5 text-xs divide-y divide-slate-100">
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Total Settled Invoices</span>
+                    <span className="font-mono font-bold text-slate-900">{salesMetrics.paidBillsCount}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Average Order Value (AOV)</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      {settings.currency} {salesMetrics.paidBillsCount > 0 ? (salesMetrics.grossRevenue / salesMetrics.paidBillsCount).toFixed(2) : '0.00'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Net Food &amp; Beverage Subtotal</span>
+                    <span className="font-mono font-bold text-slate-900">{settings.currency} {salesMetrics.itemSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Service Charge Pool ({settings.serviceChargeRate}%)</span>
+                    <span className="font-mono font-bold text-emerald-600">+{settings.currency} {salesMetrics.serviceCharge.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Statutory Taxes / VAT ({settings.taxRate}%)</span>
+                    <span className="font-mono font-bold text-slate-900">+{settings.currency} {salesMetrics.taxes.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Total Discounts Deducted</span>
+                    <span className="font-mono font-bold text-rose-600">-{settings.currency} {salesMetrics.discounts.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-3 text-sm font-black text-slate-900 border-t-2 border-slate-900">
+                    <span>Total Gross Revenue</span>
+                    <span className="font-mono text-base text-[#ff5500]">{settings.currency} {salesMetrics.grossRevenue.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Subtab: Food vs Beverage */}
+            {reportSubTab === 'Food vs Beverage' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-rose-600 uppercase tracking-wider">Food / Kitchen (KOT)</span>
+                    <h3 className="text-3xl font-black font-mono text-slate-900 mt-2">
+                      {settings.currency} {salesMetrics.kitchenRevenue.toFixed(2)}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {((salesMetrics.kitchenRevenue / (salesMetrics.itemSubtotal || 1)) * 100).toFixed(1)}% of total menu sales
+                    </p>
+                  </div>
+                  <div className="mt-6 pt-4 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-700">Total Kitchen Portions: {salesMetrics.kitchenItemsCount}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Beverages / Bar (BOT)</span>
+                    <h3 className="text-3xl font-black font-mono text-slate-900 mt-2">
+                      {settings.currency} {salesMetrics.barRevenue.toFixed(2)}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {((salesMetrics.barRevenue / (salesMetrics.itemSubtotal || 1)) * 100).toFixed(1)}% of total menu sales
+                    </p>
+                  </div>
+                  <div className="mt-6 pt-4 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-700">Total Bar Drinks: {salesMetrics.barItemsCount}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Subtab: Stock Usage */}
+            {reportSubTab === 'Stock Usage' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Raw Ingredient Depletion &amp; Usage</h3>
+                    <p className="text-xs text-slate-500">Calculated through dish recipes for all sold orders in this period</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Raw Material</th>
+                        <th className="py-2.5">Category</th>
+                        <th className="py-2.5 text-center">Depleted (Used)</th>
+                        <th className="py-2.5 text-center">Remaining In Stock</th>
+                        <th className="py-2.5 text-right">Unit Cost</th>
+                        <th className="py-2.5 text-right">Total Depletion Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {inventory.map(ing => {
+                        const used = salesMetrics.ingredientUsageMap[ing.id]?.totalConsumed || 0;
+                        const cost = used * ing.cost;
+                        return (
+                          <tr key={ing.id} className="hover:bg-slate-50">
+                            <td className="py-3 font-bold text-slate-900">{ing.name}</td>
+                            <td className="py-3 text-slate-500">{ing.category}</td>
+                            <td className="py-3 text-center font-mono font-bold text-slate-800">
+                              {used > 0 ? `${used.toFixed(1)} ${ing.unit}` : '-'}
+                            </td>
+                            <td className="py-3 text-center font-mono text-slate-600">{ing.stock} {ing.unit}</td>
+                            <td className="py-3 text-right font-mono text-slate-500">{settings.currency} {ing.cost.toFixed(2)}</td>
+                            <td className="py-3 text-right font-mono font-black text-slate-900">
+                              {cost > 0 ? `${settings.currency} ${cost.toFixed(2)}` : '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
 
             {/* Sales Detail Subtab with Admin Deletion */}
@@ -2453,6 +2825,18 @@ export default function App() {
                       >
                         {isOccupied ? 'Open Order' : 'Seat Table'}
                       </button>
+                      {currentUser.role === 'Administrator' && !isOccupied && floorTables.length > 1 && (
+                        <button
+                          onClick={() => {
+                            setFloorTables(prev => prev.filter(t => t.id !== tbl.id));
+                            recordAuditLog('TABLE_DELETED', tbl.id, `Admin removed table ${tbl.name} (${tbl.id})`);
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors"
+                          title="Admin: Delete Table"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -4287,20 +4671,55 @@ export default function App() {
                   </div>
 
                   {paymentMethod === 'CASH' && (
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Cash Tendered ({settings.currency})</label>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-bold text-slate-700">Cash Tendered ({settings.currency})</label>
+                        <button
+                          type="button"
+                          onClick={() => setCashTendered(fin.total.toFixed(2))}
+                          className="text-[10px] font-bold text-[#ff5500] hover:underline"
+                        >
+                          Exact Amount
+                        </button>
+                      </div>
                       <input
                         type="number"
                         step="0.01"
                         value={cashTendered}
                         onChange={e => setCashTendered(e.target.value)}
                         placeholder={fin.total.toFixed(2)}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-slate-900 font-mono text-sm"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-slate-900 font-mono text-sm focus:outline-none focus:border-[#ff5500]"
                       />
-                      {parseFloat(cashTendered) > fin.total && (
-                        <p className="text-xs text-emerald-600 font-mono font-bold mt-1">
-                          Change Due: {settings.currency} {(parseFloat(cashTendered) - fin.total).toFixed(2)}
-                        </p>
+
+                      {/* Quick cash denomination shortcuts */}
+                      <div className="flex gap-1.5 overflow-x-auto pt-0.5">
+                        {[
+                          Math.ceil(fin.total / 100) * 100,
+                          Math.ceil(fin.total / 500) * 500,
+                          Math.ceil(fin.total / 1000) * 1000,
+                          5000
+                        ]
+                          .filter((val, idx, arr) => val >= fin.total && arr.indexOf(val) === idx)
+                          .slice(0, 3)
+                          .map(val => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setCashTendered(val.toString())}
+                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-mono font-bold transition-colors"
+                            >
+                              {settings.currency} {val}
+                            </button>
+                          ))}
+                      </div>
+
+                      {parseFloat(cashTendered) >= fin.total && (
+                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-mono font-bold text-emerald-800 flex justify-between items-center">
+                          <span>Balance / Change to Return:</span>
+                          <span className="text-sm text-emerald-700">
+                            {settings.currency} {(parseFloat(cashTendered) - fin.total).toFixed(2)}
+                          </span>
+                        </div>
                       )}
                     </div>
                   )}
@@ -4476,14 +4895,54 @@ export default function App() {
                   ))}
                 </div>
                 <div className="space-y-1 text-[10px]">
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span>{settings.currency} {(activePrintSlip.data.subtotal || 0).toFixed(2)}</span>
+                  </div>
+                  {activePrintSlip.data.discount > 0 && (
+                    <div className="flex justify-between text-rose-600">
+                      <span>Discount ({activePrintSlip.data.discountPercent || 0}%):</span>
+                      <span>-{settings.currency} {activePrintSlip.data.discount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {activePrintSlip.data.serviceCharge > 0 && (
+                    <div className="flex justify-between">
+                      <span>Service Charge ({settings.serviceChargeRate}%):</span>
+                      <span>+{settings.currency} {activePrintSlip.data.serviceCharge.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {activePrintSlip.data.tax > 0 && (
+                    <div className="flex justify-between">
+                      <span>Taxes ({settings.taxRate}%):</span>
+                      <span>+{settings.currency} {activePrintSlip.data.tax.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
-                    <span>TOTAL PAID:</span>
+                    <span>TOTAL AMOUNT DUE:</span>
                     <span>{settings.currency} {activePrintSlip.data.total.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold">
-                    <span>METHOD:</span>
+                    <span>PAYMENT METHOD:</span>
                     <span>{activePrintSlip.data.paymentMethod}</span>
                   </div>
+
+                  {/* Cash Given & Change Breakdown */}
+                  {activePrintSlip.data.paymentMethod === 'CASH' && (
+                    <div className="pt-1.5 mt-1 border-t border-dashed border-slate-800 space-y-1">
+                      <div className="flex justify-between text-[10px] font-bold">
+                        <span>CASH TENDERED (GIVEN):</span>
+                        <span>
+                          {settings.currency} {(activePrintSlip.data.cashTendered !== undefined ? activePrintSlip.data.cashTendered : activePrintSlip.data.total).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs font-black">
+                        <span>BALANCE / CHANGE DUE:</span>
+                        <span>
+                          {settings.currency} {(activePrintSlip.data.changeDue || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <p className="text-center font-bold text-[9px] pt-2 whitespace-pre-line">{settings.receiptFooter}</p>
               </div>
@@ -5204,6 +5663,97 @@ export default function App() {
                   className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs transition-all"
                 >
                   Confirm Intake
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {}
+      {addTableModalOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Grid className="h-5 w-5 text-[#ff5500]" />
+                <h3 className="text-base font-black text-slate-900">Add New Floor Table</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddTableModalOpen(false);
+                  setNewTableForm({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
+                }}
+                className="text-slate-400 hover:text-slate-900"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateTable} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Table Name / Identifier</label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={newTableForm.name}
+                  onChange={e => setNewTableForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Table 6, Cabana 2, Bar Seat 03"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Floor Zone</label>
+                  <select
+                    value={newTableForm.zone}
+                    onChange={e => setNewTableForm(prev => ({ ...prev, zone: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                  >
+                    <option value="Indoor Main Hall">Indoor Main Hall</option>
+                    <option value="Deck Lounge">Deck Lounge</option>
+                    <option value="Cocktail Counter">Cocktail Counter</option>
+                    <option value="Private Ocean View">Private Ocean View</option>
+                    <option value="Beachfront Garden">Beachfront Garden</option>
+                    <option value="Rooftop Terrace">Rooftop Terrace</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Seating Capacity</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    required
+                    value={newTableForm.capacity}
+                    onChange={e => setNewTableForm(prev => ({ ...prev, capacity: e.target.value }))}
+                    placeholder="4"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddTableModalOpen(false);
+                    setNewTableForm({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
+                  }}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all"
+                >
+                  Create Table
                 </button>
               </div>
             </form>
