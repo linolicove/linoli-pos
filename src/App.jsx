@@ -392,7 +392,7 @@ export default function App() {
   const prevTransRef = useRef('');
   const prevTablesRef = useRef('');
   const prevAuditsRef = useRef('');
-
+  const prevMenuRef = useRef(''); // <-- ADD THIS
   // ============================================================
   // 1. REAL-TIME CLOUD LISTENERS (Midigama <-> Australia)
   // ============================================================
@@ -440,12 +440,22 @@ export default function App() {
         localStorage.setItem('linoli_audit_logs', serialized);
       }
     });
-
+  // 5. Receive incoming menu items (dish additions, edits, pricing)
+    const unsubMenu = subscribeToCloud('menu_items', (remoteMenu) => {
+      if (Array.isArray(remoteMenu)) {
+        const serialized = JSON.stringify(remoteMenu);
+        if (prevMenuRef.current === serialized) return;
+        prevMenuRef.current = serialized;
+        setMenuItems(remoteMenu);
+        localStorage.setItem('linoli_menu_items', serialized);
+      }
+    });
     return () => {
       if (typeof unsubOrders === 'function') unsubOrders();
       if (typeof unsubTrans === 'function') unsubTrans();
       if (typeof unsubTables === 'function') unsubTables();
       if (typeof unsubAudits === 'function') unsubAudits();
+      if (typeof unsubMenu === 'function') unsubMenu();
     };
   }, []);
 
@@ -491,6 +501,17 @@ export default function App() {
       }
     }
   }, [auditLogs]);
+
+  useEffect(() => {
+    if (menuItems !== undefined && menuItems.length > 0) {
+      const current = JSON.stringify(menuItems);
+      if (current !== prevMenuRef.current) {
+        prevMenuRef.current = current;
+        syncToCloud('menu_items', menuItems);
+      }
+    }
+  }, [menuItems]);
+  
   const handleCreateStaff = (e) => {
     e.preventDefault();
     setStaffFormError('');
