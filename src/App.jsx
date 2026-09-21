@@ -1,7 +1,4 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
 import {
   Monitor,
   Flame,
@@ -42,26 +39,19 @@ import {
   Layers,
   FileSpreadsheet,
   Coffee,
-  HardDrive,
-  CloudCheck,
-  Cloud,
-  Menu,
-  LayoutGrid,
-  ShoppingBag,
-  Building,
-  Zap,
-  Volume2,
   Coins,
+  Usb,
+  Volume2,
+  Zap,
+  ShoppingBag,
   Upload,
+  Menu,
+  Edit3,
+  LayoutGrid,
   Download,
-  Edit3
+  Building,
+  HardDrive
 } from 'lucide-react';
-
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 const ROLE_PERMISSIONS = {
   Administrator: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'cancelled', 'staff', 'settings'],
@@ -210,6 +200,28 @@ const INITIAL_FLOOR_TABLES = [
   { id: 'VIP-01', name: 'VIP Cabana 1', zone: 'Private Ocean View', capacity: 8, status: 'VACANT', currentOrderRef: null }
 ];
 
+function usePersistentState(key, initialValue) {
+  const [state, setState] = useState(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored !== null ? JSON.parse(stored) : initialValue;
+    } catch (e) {
+      console.warn(`LocalStorage read error for ${key}:`, e);
+      return initialValue;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch (e) {
+      console.warn(`LocalStorage write error for ${key}:`, e);
+    }
+  }, [key, state]);
+
+  return [state, setState];
+}
+
 const getLocalDateStr = (d = new Date()) => {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -218,9 +230,6 @@ const getLocalDateStr = (d = new Date()) => {
 };
 
 export default function App() {
-  const [cloudUser, setCloudUser] = useState(null);
-  const [isCloudConnected, setIsCloudConnected] = useState(false);
-
   // Authentication & Navigation
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginPinInput, setLoginPinInput] = useState('');
@@ -228,22 +237,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('pos');
   const [reportSubTab, setReportSubTab] = useState('Daily Overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [posViewMode, setPosViewMode] = useState('grid');
+  const [posViewMode, setPosViewMode] = useState('grid'); // 'grid' | 'compact' | 'list'
   const [adminMenuCategory, setAdminMenuCategory] = useState('All');
 
-  // Core Data Collections (Synchronized with cloud storage)
-  const [staffList, setStaffList] = useState(INITIAL_STAFF);
+  // Persistent collections
+  const [staffList, setStaffList] = usePersistentState('linoli_staff_list', INITIAL_STAFF);
   const [currentUser, setCurrentUser] = useState(INITIAL_STAFF[0]);
-  const [inventory, setInventory] = useState(INITIAL_RAW_INVENTORY);
-  const [menuItems, setMenuItems] = useState(INITIAL_MENU_ITEMS);
-  const [floorTables, setFloorTables] = useState(INITIAL_FLOOR_TABLES);
-  const [activeOrders, setActiveOrders] = useState([]);
-  const [transactions, setTransactions] = useState([]);
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [cancelledTickets, setCancelledTickets] = useState([]);
+  const [inventory, setInventory] = usePersistentState('linoli_inventory', INITIAL_RAW_INVENTORY);
+  const [menuItems, setMenuItems] = usePersistentState('linoli_menu_items', INITIAL_MENU_ITEMS);
+  const [floorTables, setFloorTables] = usePersistentState('linoli_floor_tables', INITIAL_FLOOR_TABLES);
+  const [activeOrders, setActiveOrders] = usePersistentState('linoli_active_orders', []);
+  const [transactions, setTransactions] = usePersistentState('linoli_transactions', []);
+  const [auditLogs, setAuditLogs] = usePersistentState('linoli_audit_logs', []);
+  const [cancelledTickets, setCancelledTickets] = usePersistentState('linoli_cancelled_tickets', []);
 
   // System Settings
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = usePersistentState('linoli_system_settings', {
     restaurantName: 'Linoli Cove Midigama',
     tagline: 'RESTAURANT & BAR',
     legalName: 'Linoli Cove Leisure (Pvt) Ltd',
@@ -272,7 +281,7 @@ export default function App() {
   });
 
   // Shifts state
-  const [currentShift, setCurrentShift] = useState({
+  const [currentShift, setCurrentShift] = usePersistentState('linoli_current_shift', {
     shiftId: `SHIFT-${getLocalDateStr().replace(/-/g, '')}-01`,
     openedAt: '09:00 AM',
     openedBy: 'Marco Rossi',
@@ -281,45 +290,73 @@ export default function App() {
     payouts: []
   });
 
-  const [shiftHistory, setShiftHistory] = useState([]);
+  const [shiftHistory, setShiftHistory] = usePersistentState('linoli_shift_history', []);
   const [denominations, setDenominations] = useState({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
+  const [payoutForm, setPayoutForm] = useState({ amount: '', reason: '' });
 
-  // POS Working Ticket & Order State
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [menuSearchQuery, setMenuSearchQuery] = useState('');
+  const [cashOutForm, setCashOutForm] = useState({
+    amount: '',
+    category: 'Supplier / Vendor',
+    reason: '',
+    recipient: ''
+  });
+  const [cashOutApprovalModal, setCashOutApprovalModal] = useState({
+    open: false,
+    item: null,
+    managerPin: '',
+    error: ''
+  });
+
+  // POS State
   const [orderMode, setOrderMode] = useState('DINING');
   const [selectedTable, setSelectedTable] = useState(INITIAL_FLOOR_TABLES[0]);
   const [takeawayInfo, setTakeawayInfo] = useState({ name: 'Walk-in Guest', phone: '', token: 'TK-101' });
   const [guestCount, setGuestCount] = useState(2);
   const [cart, setCart] = useState([]);
-
-  // Surcharges & Discounts
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [menuSearchQuery, setMenuSearchQuery] = useState('');
   const [serviceChargeActive, setServiceChargeActive] = useState(true);
   const [taxActive, setTaxActive] = useState(false);
   const [discountPercent, setDiscountPercent] = useState(0);
 
-  // Print & Settlement States
+  // Date Filter State for Reports
+  const [reportStartDate, setReportStartDate] = useState(getLocalDateStr());
+  const [reportEndDate, setReportEndDate] = useState(getLocalDateStr());
+
+  // Hardware State
+  const [pairedUsbDevice, setPairedUsbDevice] = useState(null);
+  const [usbStatusMessage, setUsbStatusMessage] = useState('');
+  const [settingsNotice, setSettingsNotice] = useState(null);
+
+  // Background Auto-Print State (No blocking modal)
   const [activePrintSlip, setActivePrintSlip] = useState(null);
   const [printNotice, setPrintNotice] = useState(null);
+  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [settlingOrder, setSettlingOrder] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [cashTendered, setCashTendered] = useState('');
-  const [settingsNotice, setSettingsNotice] = useState(null);
-
-  // Modal & Form States
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [targetStaffForSwitch, setTargetStaffForSwitch] = useState(null);
+  const [pinError, setPinError] = useState('');
   const [addStaffModalOpen, setAddStaffModalOpen] = useState(false);
   const [newStaffForm, setNewStaffForm] = useState({ name: '', role: 'Cashier', pin: '', email: '' });
   const [staffFormError, setStaffFormError] = useState('');
-
-  const [addInventoryModalOpen, setAddInventoryModalOpen] = useState(false);
-  const [newInventoryForm, setNewInventoryForm] = useState({ name: '', category: 'Dry Goods', stock: '', unit: 'g', cost: '', threshold: '' });
-
-  const [receiveStockModalOpen, setReceiveStockModalOpen] = useState(false);
-  const [receiveStockForm, setReceiveStockForm] = useState({ ingredientId: '', quantity: '', supplier: '', invoiceRef: '', newCost: '' });
-
   const [addTableModalOpen, setAddTableModalOpen] = useState(false);
   const [newTableForm, setNewTableForm] = useState({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
+  const [allocationModalOpen, setAllocationModalOpen] = useState(false);
+  const [voidModalOpen, setVoidModalOpen] = useState(false);
+  const [voidPayload, setVoidPayload] = useState({ item: null, reason: '' });
 
+  // Bill Editing Modal (Billing queue)
+  const [editBillModalOpen, setEditBillModalOpen] = useState(false);
+  const [editingBill, setEditingBill] = useState(null);
+
+  // Inventory & Recipe Modals
+  const [addInventoryModalOpen, setAddInventoryModalOpen] = useState(false);
+  const [newInventoryForm, setNewInventoryForm] = useState({ name: '', category: 'Dry Goods', stock: '', unit: 'g', cost: '', threshold: '' });
+  const [receiveStockModalOpen, setReceiveStockModalOpen] = useState(false);
+  const [receiveStockForm, setReceiveStockForm] = useState({ ingredientId: '', quantity: '', supplier: '', invoiceRef: '', newCost: '' });
   const [addItemModalOpen, setAddItemModalOpen] = useState(false);
   const [newDishForm, setNewDishForm] = useState({
     name: '',
@@ -332,249 +369,10 @@ export default function App() {
     imageUrl: '',
     recipeIngredients: []
   });
-
-  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
-  const [voidModalOpen, setVoidModalOpen] = useState(false);
-  const [voidPayload, setVoidPayload] = useState({ item: null, reason: '' });
-
-  const [editBillModalOpen, setEditBillModalOpen] = useState(false);
-  const [editingBill, setEditingBill] = useState(null);
-
-  // Date Filter & Shifts State
-  const [reportStartDate, setReportStartDate] = useState(getLocalDateStr());
-  const [reportEndDate, setReportEndDate] = useState(getLocalDateStr());
-
-  const [cashOutForm, setCashOutForm] = useState({ amount: '', category: 'Supplier / Vendor', reason: '', recipient: '' });
-  const [cashOutApprovalModal, setCashOutApprovalModal] = useState({ open: false, item: null, managerPin: '', error: '' });
-  const [allocationModalOpen, setAllocationModalOpen] = useState(false);
-
-  // Recipe Configuration State
+  const [recipeConfigModalOpen, setRecipeConfigModalOpen] = useState(false);
   const [editingDishForRecipe, setEditingDishForRecipe] = useState(null);
   const [currentRecipeIngredients, setCurrentRecipeIngredients] = useState([]);
   const [tempIngredientSelect, setTempIngredientSelect] = useState({ ingredientId: '', amount: '' });
-  const [recipeConfigModalOpen, setRecipeConfigModalOpen] = useState(false);
-
-  const handleExportBackup = () => {
-    const backupData = {
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      restaurant: settings.restaurantName,
-      settings,
-      menuItems,
-      inventory,
-      floorTables,
-      staffList,
-      transactions,
-      auditLogs,
-      cancelledTickets
-    };
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `LinoliCove_Backup_${getLocalDateStr()}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-    recordAuditLog('DATABASE_BACKUP_EXPORTED', 'SYSTEM', 'Exported full JSON system backup');
-  };
-
-  const handleImportBackup = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target.result);
-        if (data.menuItems) setMenuItems(data.menuItems);
-        if (data.inventory) setInventory(data.inventory);
-        if (data.floorTables) setFloorTables(data.floorTables);
-        if (data.staffList) setStaffList(data.staffList);
-        if (data.transactions) setTransactions(data.transactions);
-        if (data.settings) setSettings(data.settings);
-        recordAuditLog('DATABASE_RESTORED', 'SYSTEM', `Restored database backup from ${file.name}`);
-        setSettingsNotice({
-          title: 'Database Restored',
-          detail: `Backup data from ${file.name} imported successfully.`
-        });
-        setTimeout(() => setSettingsNotice(null), 3500);
-      } catch (err) {
-        console.error('Backup restore error:', err);
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.warn('Cloud authentication fallback notice:', err);
-      }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      setCloudUser(user);
-      setIsCloudConnected(!!user);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!cloudUser) return;
-
-    // 1. Transactions Live Sync
-    const unsubTransactions = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'transactions'),
-      snapshot => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map(d => d.data());
-          list.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-          setTransactions(list);
-        }
-      },
-      err => console.warn('Transactions sync notice:', err)
-    );
-
-    // 2. Active Orders Live Sync
-    const unsubOrders = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'active_orders'),
-      snapshot => {
-        const list = snapshot.docs.map(d => d.data());
-        setActiveOrders(list);
-      },
-      err => console.warn('Orders sync notice:', err)
-    );
-
-    // 3. Menu Items Live Sync
-    const unsubMenu = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'menu_items'),
-      snapshot => {
-        if (!snapshot.empty) {
-          setMenuItems(snapshot.docs.map(d => d.data()));
-        } else {
-          // Seed defaults if brand-new cloud database
-          INITIAL_MENU_ITEMS.forEach(m => {
-            setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'menu_items', m.id), m).catch(console.warn);
-          });
-        }
-      },
-      err => console.warn('Menu sync notice:', err)
-    );
-
-    // 4. Raw Inventory Live Sync
-    const unsubInventory = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'inventory'),
-      snapshot => {
-        if (!snapshot.empty) {
-          setInventory(snapshot.docs.map(d => d.data()));
-        } else {
-          INITIAL_RAW_INVENTORY.forEach(ing => {
-            setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', ing.id), ing).catch(console.warn);
-          });
-        }
-      },
-      err => console.warn('Inventory sync notice:', err)
-    );
-
-    // 5. Floor Tables Live Sync
-    const unsubTables = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'floor_tables'),
-      snapshot => {
-        if (!snapshot.empty) {
-          const tables = snapshot.docs.map(d => d.data());
-          tables.sort((a, b) => (a.id > b.id ? 1 : -1));
-          setFloorTables(tables);
-        } else {
-          INITIAL_FLOOR_TABLES.forEach(tbl => {
-            setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'floor_tables', tbl.id), tbl).catch(console.warn);
-          });
-        }
-      },
-      err => console.warn('Tables sync notice:', err)
-    );
-
-    // 6. Staff List Live Sync
-    const unsubStaff = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'staff_members'),
-      snapshot => {
-        if (!snapshot.empty) {
-          setStaffList(snapshot.docs.map(d => d.data()));
-        } else {
-          INITIAL_STAFF.forEach(staff => {
-            setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'staff_members', staff.id), staff).catch(console.warn);
-          });
-        }
-      },
-      err => console.warn('Staff sync notice:', err)
-    );
-
-    // 7. System Settings Live Sync
-    const unsubSettings = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'system_settings'),
-      snapshot => {
-        if (!snapshot.empty) {
-          const cloudConfig = snapshot.docs.find(d => d.id === 'general_config')?.data();
-          if (cloudConfig) setSettings(cloudConfig);
-        }
-      },
-      err => console.warn('Settings sync notice:', err)
-    );
-
-    // 8. Audit Logs Live Sync
-    const unsubLogs = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'audit_logs'),
-      snapshot => {
-        const list = snapshot.docs.map(d => d.data());
-        list.sort((a, b) => (b.timestamp > a.timestamp ? 1 : -1));
-        setAuditLogs(list);
-      },
-      err => console.warn('Audit logs sync notice:', err)
-    );
-
-    // 9. Cancelled Tickets Live Sync
-    const unsubCancelled = onSnapshot(
-      collection(db, 'artifacts', appId, 'public', 'data', 'cancelled_tickets'),
-      snapshot => {
-        const list = snapshot.docs.map(d => d.data());
-        setCancelledTickets(list);
-      },
-      err => console.warn('Cancelled tickets sync notice:', err)
-    );
-
-    return () => {
-      unsubTransactions();
-      unsubOrders();
-      unsubMenu();
-      unsubInventory();
-      unsubTables();
-      unsubStaff();
-      unsubSettings();
-      unsubLogs();
-      unsubCancelled();
-    };
-  }, [cloudUser]);
-
-  const recordAuditLog = (action, targetRef, details) => {
-    const newLog = {
-      id: `LOG-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
-      timestamp: new Date().toLocaleString(),
-      action,
-      targetRef,
-      staff: currentUser.name,
-      role: currentUser.role,
-      details
-    };
-    setAuditLogs(prev => [newLog, ...prev]);
-
-    if (cloudUser) {
-      setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'audit_logs', newLog.id), newLog).catch(console.warn);
-    }
-  };
 
   const handleCreateStaff = (e) => {
     e.preventDefault();
@@ -608,9 +406,6 @@ export default function App() {
     };
 
     setStaffList(prev => [...prev, newStaff]);
-    if (cloudUser) {
-      setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'staff_members', newStaff.id), newStaff).catch(console.warn);
-    }
     recordAuditLog('STAFF_CREATED', newStaff.id, `Created staff member ${newStaff.name} with role ${newStaff.role} (PIN: ${newStaff.pin})`);
     setAddStaffModalOpen(false);
     setNewStaffForm({ name: '', role: 'Cashier', pin: '', email: '' });
@@ -632,9 +427,6 @@ export default function App() {
     };
 
     setInventory(prev => [...prev, newItem]);
-    if (cloudUser) {
-      setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', newItem.id), newItem).catch(console.warn);
-    }
     recordAuditLog(
       'INVENTORY_ITEM_CREATED',
       newItem.id,
@@ -657,16 +449,16 @@ export default function App() {
     const newStock = Number((oldStock + qtyToAdd).toFixed(2));
     const newCost = receiveStockForm.newCost ? parseFloat(receiveStockForm.newCost) : (targetItem?.cost || 0);
 
-    const updatedItem = {
-      ...targetItem,
-      stock: newStock,
-      cost: !isNaN(newCost) && newCost > 0 ? newCost : targetItem.cost
-    };
-
-    setInventory(prev => prev.map(item => item.id === receiveStockForm.ingredientId ? updatedItem : item));
-    if (cloudUser) {
-      setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', updatedItem.id), updatedItem).catch(console.warn);
-    }
+    setInventory(prev => prev.map(item => {
+      if (item.id === receiveStockForm.ingredientId) {
+        return {
+          ...item,
+          stock: newStock,
+          cost: !isNaN(newCost) && newCost > 0 ? newCost : item.cost
+        };
+      }
+      return item;
+    }));
 
     recordAuditLog(
       'STOCK_RECEIVED',
@@ -694,9 +486,6 @@ export default function App() {
     };
 
     setFloorTables(prev => [...prev, newTable]);
-    if (cloudUser) {
-      setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'floor_tables', newTable.id), newTable).catch(console.warn);
-    }
     recordAuditLog(
       'TABLE_CREATED',
       newTable.id,
@@ -707,19 +496,112 @@ export default function App() {
     setNewTableForm({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
   };
 
-  // Direct push-to-print trigger (Compatible with all browsers: Chrome, Safari, Firefox, Edge, iOS, Android)
+  // Backup & Restore Handlers
+  const handleExportBackup = () => {
+    const backupData = {
+      app: 'Linoli Cove POS & ERP',
+      version: '2.5.0',
+      exportedAt: new Date().toISOString(),
+      exportedBy: currentUser.name,
+      settings,
+      staffList,
+      inventory,
+      menuItems,
+      floorTables,
+      activeOrders,
+      transactions,
+      auditLogs,
+      cancelledTickets,
+      currentShift,
+      shiftHistory
+    };
+    const jsonStr = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `linoli_cove_backup_${getLocalDateStr()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    recordAuditLog('BACKUP_EXPORTED', 'DATABASE', `Full system backup file downloaded by ${currentUser.name}`);
+    setSettingsNotice({
+      title: 'Backup Downloaded Successfully',
+      detail: 'All menus, staff, inventory, invoices & audit records exported to JSON.'
+    });
+    setTimeout(() => setSettingsNotice(null), 4000);
+  };
+
+  const handleImportBackup = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target.result);
+        if (!parsed || (!parsed.settings && !parsed.menuItems)) {
+          setSettingsNotice({
+            title: 'Invalid Backup File',
+            detail: 'The selected file is not a valid Linoli Cove POS database backup.'
+          });
+          setTimeout(() => setSettingsNotice(null), 4500);
+          return;
+        }
+        if (parsed.settings) setSettings(parsed.settings);
+        if (parsed.staffList) setStaffList(parsed.staffList);
+        if (parsed.inventory) setInventory(parsed.inventory);
+        if (parsed.menuItems) setMenuItems(parsed.menuItems);
+        if (parsed.floorTables) setFloorTables(parsed.floorTables);
+        if (parsed.activeOrders) setActiveOrders(parsed.activeOrders);
+        if (parsed.transactions) setTransactions(parsed.transactions);
+        if (parsed.auditLogs) setAuditLogs(parsed.auditLogs);
+        if (parsed.cancelledTickets) setCancelledTickets(parsed.cancelledTickets);
+        if (parsed.currentShift) setCurrentShift(parsed.currentShift);
+        if (parsed.shiftHistory) setShiftHistory(parsed.shiftHistory);
+
+        recordAuditLog('BACKUP_RESTORED', file.name, `System restored from backup file by ${currentUser.name}`);
+        setSettingsNotice({
+          title: 'Database Restored Successfully',
+          detail: `System data loaded from ${file.name}. All records synchronized.`
+        });
+        setTimeout(() => setSettingsNotice(null), 4500);
+      } catch (err) {
+        setSettingsNotice({
+          title: 'Import Failed',
+          detail: `Could not parse backup JSON file: ${err.message}`
+        });
+        setTimeout(() => setSettingsNotice(null), 4500);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  useEffect(() => {
+    if (navigator.usb) {
+      navigator.usb.getDevices().then(devices => {
+        if (devices.length > 0) {
+          setPairedUsbDevice(devices[0]);
+          setUsbStatusMessage(`Auto-connected to ${devices[0].productName || 'USB Thermal Printer'}`);
+        }
+      }).catch(err => console.warn('WebUSB auto-detect notice:', err));
+    }
+  }, []);
+
+  // Direct push-to-print trigger (Dispatches immediately without opening any modal dialog)
   const triggerAutoPrint = (slipConfig, noticeText = 'Printing thermal receipt...') => {
     setActivePrintSlip(slipConfig);
     setPrintNotice({
       title: slipConfig.type === 'KOT_BOT_DISPATCH'
-        ? 'Order Sent • Printing KOT & BOT'
+        ? 'Order Sent • Auto-Printing KOT & BOT'
         : slipConfig.type === 'FINAL_BILL'
-        ? 'Bill Settled • Printing Tax Invoice'
+        ? 'Bill Settled • Auto-Printing Tax Invoice'
         : slipConfig.type === 'TEMP_BILL'
-        ? 'Printing Proforma Temp Bill'
+        ? 'Auto-Printing Proforma Temp Bill'
         : slipConfig.type === 'CASH_OUT_VOUCHER'
-        ? 'Printing Cash Out Voucher'
-        : 'Printing...',
+        ? 'Auto-Printing Cash Out Voucher'
+        : 'Auto-Printing...',
       detail: noticeText
     });
     setTimeout(() => setPrintNotice(null), 2500);
@@ -732,12 +614,25 @@ export default function App() {
         try {
           window.print();
         } catch (e) {
-          console.warn('Browser print notice:', e);
+          console.warn('Auto print spooler notice:', e);
         }
-      }, 70);
+      }, 50);
       return () => clearTimeout(timer);
     }
   }, [activePrintSlip]);
+
+  const recordAuditLog = (action, targetRef, details) => {
+    const newLog = {
+      id: `LOG-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+      timestamp: new Date().toLocaleString(),
+      action,
+      targetRef,
+      staff: currentUser.name,
+      role: currentUser.role,
+      details
+    };
+    setAuditLogs(prev => [newLog, ...prev]);
+  };
 
   const inventoryMap = useMemo(() => {
     const map = {};
@@ -952,16 +847,9 @@ export default function App() {
     };
 
     setActiveOrders(prev => [orderPayload, ...prev]);
-    if (cloudUser) {
-      setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'active_orders', newOrderId), orderPayload).catch(console.warn);
-    }
 
     if (orderMode === 'DINING') {
-      const updatedTable = { ...selectedTable, status: 'OCCUPIED', currentOrderRef: newOrderId };
-      setFloorTables(prev => prev.map(t => t.id === selectedTable.id ? updatedTable : t));
-      if (cloudUser) {
-        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'floor_tables', selectedTable.id), updatedTable).catch(console.warn);
-      }
+      setFloorTables(prev => prev.map(t => t.id === selectedTable.id ? { ...t, status: 'OCCUPIED', currentOrderRef: newOrderId } : t));
     }
 
     recordAuditLog('ORDER_DISPATCHED', newOrderId, `Dispatched order ${newOrderId} (${orderPayload.tableName}) with ${cart.length} items.`);
@@ -969,6 +857,7 @@ export default function App() {
     const kitchenItems = cart.filter(i => i.department === 'Kitchen');
     const barItems = cart.filter(i => i.department === 'Bar');
 
+    // Immediately auto-push KOT & BOT to thermal printer without modal popup
     triggerAutoPrint({
       type: 'KOT_BOT_DISPATCH',
       data: {
@@ -1015,12 +904,10 @@ export default function App() {
 
     setInventory(prev => prev.map(item => {
       if (deductions[item.id]) {
-        const updatedStock = Math.max(0, Number((item.stock - deductions[item.id]).toFixed(2)));
-        const updated = { ...item, stock: updatedStock };
-        if (cloudUser) {
-          setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory', item.id), updated).catch(console.warn);
-        }
-        return updated;
+        return {
+          ...item,
+          stock: Math.max(0, Number((item.stock - deductions[item.id]).toFixed(2)))
+        };
       }
       return item;
     }));
@@ -1054,17 +941,8 @@ export default function App() {
     setTransactions(prev => [newInvoice, ...prev]);
     setActiveOrders(prev => prev.filter(o => o.orderId !== targetOrder.orderId));
 
-    if (cloudUser) {
-      setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', newInvoice.invoiceNo), newInvoice).catch(console.warn);
-      deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'active_orders', targetOrder.orderId)).catch(console.warn);
-    }
-
     if (targetOrder.tableId) {
-      const vacantTable = { ...selectedTable, status: 'VACANT', currentOrderRef: null };
-      setFloorTables(prev => prev.map(t => t.id === targetOrder.tableId ? vacantTable : t));
-      if (cloudUser) {
-        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'floor_tables', targetOrder.tableId), vacantTable).catch(console.warn);
-      }
+      setFloorTables(prev => prev.map(t => t.id === targetOrder.tableId ? { ...t, status: 'VACANT', currentOrderRef: null } : t));
     }
 
     recordAuditLog('BILL_SETTLED', newInvoice.invoiceNo, `Settled ${newInvoice.invoiceNo} (${newInvoice.table}) for ${settings.currency} ${newInvoice.total.toFixed(2)} via ${paymentMethod}.`);
@@ -1073,6 +951,7 @@ export default function App() {
       if (settings.chimeAudio) playCashRegisterChime();
     }
 
+    // Immediately auto-push Final Tax Invoice to thermal printer without modal popup
     triggerAutoPrint({
       type: 'FINAL_BILL',
       data: newInvoice
@@ -1196,7 +1075,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-full bg-[#0b0f19] text-zinc-100 font-sans select-none overflow-hidden antialiased">
       
-      {/* Universal Cross-Browser Styles for Selects and Thermal Receipts */}
+      {/* Global CSS fix for select dropdowns & options to prevent white-on-white text */}
       <style>{`
         select, option {
           color: #0f172a !important;
@@ -1210,13 +1089,11 @@ export default function App() {
         @media print {
           @page {
             margin: ${settings.receiptMargin || '2mm'};
-            size: ${settings.receiptRollWidth === '58mm' ? '58mm auto' : '80mm auto'};
+            size: auto;
           }
-          html, body {
-            background: #ffffff !important;
+          body {
+            background-color: #ffffff !important;
             color: #000000 !important;
-            height: auto !important;
-            overflow: visible !important;
           }
           body * {
             visibility: hidden !important;
@@ -1228,17 +1105,13 @@ export default function App() {
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            width: ${settings.receiptRollWidth === '58mm' ? '58mm' : '80mm'} !important;
-            max-width: 100% !important;
+            width: 100% !important;
             margin: 0 !important;
             padding: ${settings.receiptMargin || '2mm'} !important;
             box-shadow: none !important;
             border: none !important;
             background: #ffffff !important;
             color: #000000 !important;
-            font-size: ${settings.receiptFontSize || '11px'} !important;
-            font-family: ${settings.receiptFontFamily || 'monospace'} !important;
-            line-height: 1.25 !important;
           }
         }
       `}</style>
@@ -1423,12 +1296,9 @@ export default function App() {
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider font-mono">
               TERMINAL: {settings.terminalId}
             </span>
-            {/* Live Cloud Storage Status Badge */}
-            <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-              isCloudConnected ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-            }`}>
-              <span className={`h-2 w-2 rounded-full ${isCloudConnected ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'}`} />
-              {isCloudConnected ? 'Cloud Synced (Multi-Device)' : 'Connecting Cloud...'}
+            <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-xs font-semibold">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+              Online
             </div>
           </div>
 
@@ -3729,14 +3599,24 @@ export default function App() {
               <div>
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
                   <Settings className="h-5 w-5 text-[#ff5500]" />
-                  System, Business &amp; Printer Settings
+                  System, Business &amp; Peripheral Settings
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">
-                  Manage company profile, tax rates, thermal roll layout (80mm/58mm), and cash drawer options across all browsers.
+                  Manage company identity, thermal printing options, automated cash drawer solenoid, and database backup files.
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportBackup}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors"
+                  title="Export complete system database to JSON file"
+                >
+                  <Download className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Download Backup</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -3892,16 +3772,17 @@ export default function App() {
                   </div>
                   <div>
                     <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
-                      Universal Thermal Printer Configuration
+                      Thermal Auto-Printer Configuration
                     </h3>
-                    <p className="text-[10px] text-slate-400">Works in any browser (Safari, Chrome, Firefox, Edge) with USB, Wi-Fi, or Bluetooth printers</p>
+                    <p className="text-[10px] text-slate-400">ESC/POS thermal slips for KOT, BOT, proforma bills &amp; tax invoices</p>
                   </div>
                 </div>
-                <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Universal Browser Spooler Ready
+                <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
+                  {pairedUsbDevice ? `USB: ${pairedUsbDevice.productName || 'Connected'}` : 'System Default Spooler'}
                 </span>
               </div>
 
+              {}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Paper Roll Width</label>
@@ -3944,6 +3825,7 @@ export default function App() {
                 </div>
               </div>
 
+              {}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Thermal Slip Margins</label>
@@ -3984,39 +3866,64 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Cross-Browser Diagnostic Card */}
+              {/* Hardware Pairing & Test Diagnostic */}
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 <div className="space-y-0.5">
-                  <p className="text-xs font-bold text-slate-800">Universal Thermal Printer Output Test</p>
+                  <p className="text-xs font-bold text-slate-800">Direct WebUSB Thermal Printer Connection</p>
                   <p className="text-[10px] text-slate-500">
-                    Works automatically with any default thermal printer setup in macOS, Windows, iOS, or Android without extra software.
+                    Pair once with your USB printer for fast ESC/POS output, or run via OS print spooler.
                   </p>
+                  {usbStatusMessage && (
+                    <p className="text-[10px] font-mono text-[#ff5500] mt-0.5">{usbStatusMessage}</p>
+                  )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerAutoPrint({
-                      type: 'TEMP_BILL',
-                      data: {
-                        table: 'TEST-PRINTER',
-                        server: currentUser.name,
-                        items: [
-                          { name: 'Diagnostic Test Print', qty: 1, price: 0.00 }
-                        ],
-                        subtotal: 0,
-                        discount: 0,
-                        service: 0,
-                        tax: 0,
-                        total: 0
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator.usb) {
+                        navigator.usb.requestDevice({ filters: [] }).then(dev => {
+                          setPairedUsbDevice(dev);
+                          setUsbStatusMessage(`Paired with ${dev.productName || 'USB Printer'}`);
+                        }).catch(err => {
+                          setUsbStatusMessage('Pairing cancelled or printer busy.');
+                        });
+                      } else {
+                        setUsbStatusMessage('WebUSB not supported; standard OS spooler active.');
                       }
-                    }, 'Diagnostic Slip');
-                  }}
-                  className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5"
-                >
-                  <Printer className="h-3.5 w-3.5" />
-                  <span>Test Print Slip</span>
-                </button>
+                    }}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                  >
+                    <Usb className="h-3.5 w-3.5" />
+                    <span>Pair USB Printer</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerAutoPrint({
+                        type: 'TEMP_BILL',
+                        data: {
+                          table: 'TEST-PRINTER',
+                          server: currentUser.name,
+                          items: [
+                            { name: 'Diagnostic Test Print', qty: 1, price: 0.00 }
+                          ],
+                          subtotal: 0,
+                          discount: 0,
+                          service: 0,
+                          tax: 0,
+                          total: 0
+                        }
+                      }, 'Diagnostic Slip');
+                    }}
+                    className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5"
+                  >
+                    <Printer className="h-3.5 w-3.5 text-slate-500" />
+                    <span>Test Slip</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -4270,7 +4177,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* SECTION 5: ADMIN FACTORY RESET / WIPE TEST DATA */}
+            {/* SECTION 6: ADMIN FACTORY RESET / WIPE TEST DATA */}
             {currentUser.role === 'Administrator' && (
               <div className="bg-rose-50/60 rounded-2xl border border-rose-200 p-6 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
