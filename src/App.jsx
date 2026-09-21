@@ -328,8 +328,9 @@ export default function App() {
   const [usbStatusMessage, setUsbStatusMessage] = useState('');
   const [settingsNotice, setSettingsNotice] = useState(null);
 
-  // Modals & Triggers
-  const [printModalConfig, setPrintModalConfig] = useState(null);
+  // Background Auto-Print State (No blocking modal)
+  const [activePrintSlip, setActivePrintSlip] = useState(null);
+  const [printNotice, setPrintNotice] = useState(null);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [settlingOrder, setSettlingOrder] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
@@ -562,19 +563,37 @@ export default function App() {
     }
   }, []);
 
-  // Auto-print invocation
+  // Direct push-to-print trigger (Dispatches immediately without opening any modal dialog)
+  const triggerAutoPrint = (slipConfig, noticeText = 'Printing thermal receipt...') => {
+    setActivePrintSlip(slipConfig);
+    setPrintNotice({
+      title: slipConfig.type === 'KOT_BOT_DISPATCH'
+        ? 'Order Sent • Auto-Printing KOT & BOT'
+        : slipConfig.type === 'FINAL_BILL'
+        ? 'Bill Settled • Auto-Printing Tax Invoice'
+        : slipConfig.type === 'TEMP_BILL'
+        ? 'Auto-Printing Proforma Temp Bill'
+        : slipConfig.type === 'CASH_OUT_VOUCHER'
+        ? 'Auto-Printing Cash Out Voucher'
+        : 'Auto-Printing...',
+      detail: noticeText
+    });
+    setTimeout(() => setPrintNotice(null), 2500);
+  };
+
+  // Instant print invocation as soon as slip data is staged
   useEffect(() => {
-    if (printModalConfig) {
+    if (activePrintSlip) {
       const timer = setTimeout(() => {
         try {
           window.print();
         } catch (e) {
-          console.warn('Silent print skipped:', e);
+          console.warn('Auto print spooler notice:', e);
         }
-      }, 400);
+      }, 50);
       return () => clearTimeout(timer);
     }
-  }, [printModalConfig]);
+  }, [activePrintSlip]);
 
   const recordAuditLog = (action, targetRef, details) => {
     const newLog = {
@@ -778,15 +797,15 @@ export default function App() {
     const kitchenItems = cart.filter(i => i.department === 'Kitchen');
     const barItems = cart.filter(i => i.department === 'Bar');
 
-    // Default to printing ONLY 2 slips: KOT & BOT
-    setPrintModalConfig({
+    // Immediately auto-push KOT & BOT to thermal printer without modal popup
+    triggerAutoPrint({
       type: 'KOT_BOT_DISPATCH',
       data: {
         order: orderPayload,
         kitchenItems,
         barItems
       }
-    });
+    }, `${orderPayload.tableName} • 2 Slips (KOT & BOT)`);
 
     setCart([]);
   };
@@ -870,10 +889,11 @@ export default function App() {
       if (settings.chimeAudio) playCashRegisterChime();
     }
 
-    setPrintModalConfig({
+    // Immediately auto-push Final Tax Invoice to thermal printer without modal popup
+    triggerAutoPrint({
       type: 'FINAL_BILL',
       data: newInvoice
-    });
+    }, `${newInvoice.table} • ${settings.currency} ${newInvoice.total.toFixed(2)}`);
 
     setSettlingOrder(null);
     setCheckoutModalOpen(false);
@@ -1874,7 +1894,7 @@ export default function App() {
                           {/* Print Proforma Temp Bill */}
                           <button
                             onClick={() => {
-                              setPrintModalConfig({
+                              triggerAutoPrint({
                                 type: 'TEMP_BILL',
                                 data: {
                                   table: order.tableName,
@@ -1886,7 +1906,7 @@ export default function App() {
                                   tax: fin.tax,
                                   total: fin.total
                                 }
-                              });
+                              }, `Proforma Bill for ${order.tableName}`);
                             }}
                             className="py-1.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-700 font-bold flex items-center justify-center gap-1"
                           >
@@ -2469,10 +2489,10 @@ export default function App() {
                     }
                   };
                   setShiftHistory(prev => [closedShift, ...prev]);
-                  setPrintModalConfig({
+                  triggerAutoPrint({
                     type: 'Z_REPORT',
                     data: closedShift
-                  });
+                  }, `Shift ${closedShift.shiftId} Closed`);
                 }}
                 className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs"
               >
@@ -2812,10 +2832,10 @@ export default function App() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          setPrintModalConfig({
+                                          triggerAutoPrint({
                                             type: 'CASH_OUT_VOUCHER',
                                             data: item
-                                          });
+                                          }, `Cash Out Ref ${item.id}`);
                                         }}
                                         className="p-1 text-slate-400 hover:text-slate-800 rounded hover:bg-slate-100"
                                         title="Print Cash Out Voucher"
@@ -3498,7 +3518,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      setPrintModalConfig({
+                      triggerAutoPrint({
                         type: 'TEMP_BILL',
                         data: {
                           table: 'TEST-PRINTER',
@@ -3512,7 +3532,7 @@ export default function App() {
                           tax: 0,
                           total: 0
                         }
-                      });
+                      }, 'Diagnostic Slip');
                     }}
                     className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5"
                   >
@@ -4327,211 +4347,227 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: 80MM THERMAL RECEIPT DISPATCH */}
-      {printModalConfig && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center">
-            <div className="flex items-center justify-between w-full mb-3 text-white">
-              <span className="text-xs font-bold font-mono text-orange-400 uppercase">
-                {settings.receiptRollWidth || '80mm'} Thermal Dispatch ({settings.receiptFontSize || '11px'})
-              </span>
-              <button onClick={() => setPrintModalConfig(null)} className="text-slate-400 hover:text-white">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {}
-            <div
-              id="thermal-print-area"
-              style={{
-                fontSize: settings.receiptFontSize || '11px',
-                fontFamily: settings.receiptFontFamily || 'monospace',
-                padding: settings.receiptMargin || '2mm'
-              }}
-              className="w-full bg-white text-slate-900 rounded leading-tight shadow-md max-h-[60vh] overflow-y-auto space-y-4"
-            >
-              
-              {/* 2-Slip Order Dispatch: KOT & BOT */}
-              {printModalConfig.type === 'KOT_BOT_DISPATCH' && (
-                <div className="space-y-4">
-                  {printModalConfig.data.kitchenItems.length > 0 && (
-                    <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
-                      <p className="font-black text-xs">** KITCHEN ORDER TICKET (KOT) **</p>
-                      <p className="font-bold text-xs mt-1">{printModalConfig.data.order.tableName}</p>
-                      <p className="text-[10px]">Time: {printModalConfig.data.order.sentAt}</p>
-                      <div className="text-left py-2 space-y-1">
-                        {printModalConfig.data.kitchenItems.map((item, idx) => (
-                          <div key={idx}>
-                            <p className="font-bold">{item.qty}x {item.name}</p>
-                            {item.notes && <p className="text-[10px] pl-2 italic">&gt; {item.notes}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {printModalConfig.data.barItems.length > 0 && (
-                    <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
-                      <p className="font-black text-xs">** BAR ORDER TICKET (BOT) **</p>
-                      <p className="font-bold text-xs mt-1">{printModalConfig.data.order.tableName}</p>
-                      <p className="text-[10px]">Time: {printModalConfig.data.order.sentAt}</p>
-                      <div className="text-left py-2 space-y-1">
-                        {printModalConfig.data.barItems.map((item, idx) => (
-                          <div key={idx}>
-                            <p className="font-bold">{item.qty}x {item.name}</p>
-                            {item.notes && <p className="text-[10px] pl-2 italic">&gt; {item.notes}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Temporary Proforma Bill */}
-              {printModalConfig.type === 'TEMP_BILL' && (
-                <div className="space-y-2">
-                  <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
-                    <p className="font-black text-sm">{settings.restaurantName}</p>
-                    <p className="font-bold text-xs mt-1">*** PROFORMA TEMPORARY BILL ***</p>
-                    <p className="text-[10px]">Table: {printModalConfig.data.table} • Server: {printModalConfig.data.server}</p>
-                    <p className="text-[9px]">{new Date().toLocaleString()}</p>
-                  </div>
-                  <div className="py-1 border-b border-slate-300 space-y-1">
-                    {printModalConfig.data.items.map((item, idx) => (
-                      <div key={idx} className="flex justify-between">
-                        <span>{item.qty}x {item.name}</span>
-                        <span>{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="space-y-1 text-[10px]">
-                    <div className="flex justify-between">
-                      <span>Subtotal:</span>
-                      <span>{settings.currency} {printModalConfig.data.subtotal.toFixed(2)}</span>
-                    </div>
-                    {printModalConfig.data.discount > 0 && (
-                      <div className="flex justify-between text-rose-600">
-                        <span>Discount:</span>
-                        <span>-{settings.currency} {printModalConfig.data.discount.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {printModalConfig.data.service > 0 && (
-                      <div className="flex justify-between">
-                        <span>Service Charge:</span>
-                        <span>+{settings.currency} {printModalConfig.data.service.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {printModalConfig.data.tax > 0 && (
-                      <div className="flex justify-between">
-                        <span>Taxes:</span>
-                        <span>+{settings.currency} {printModalConfig.data.tax.toFixed(2)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
-                      <span>ESTIMATED TOTAL:</span>
-                      <span>{settings.currency} {printModalConfig.data.total.toFixed(2)}</span>
-                    </div>
-                  </div>
-                  <p className="text-center text-[9px] italic pt-2">Not a tax invoice • For guest review only</p>
-                </div>
-              )}
-
-              {/* Final Settlement Tax Invoice */}
-              {printModalConfig.type === 'FINAL_BILL' && (
-                <div className="space-y-2">
-                  <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
-                    <p className="font-black text-sm">{settings.restaurantName}</p>
-                    <p className="text-[9px] whitespace-pre-line">{settings.receiptHeader}</p>
-                    <p className="font-bold text-xs mt-1">TAX INVOICE #{printModalConfig.data.invoiceNo}</p>
-                    <p className="text-[9px]">{printModalConfig.data.date} • {printModalConfig.data.table}</p>
-                  </div>
-                  <div className="py-1 border-b border-slate-300 space-y-1">
-                    {printModalConfig.data.items.map((item, idx) => (
-                      <div key={idx} className="flex justify-between">
-                        <span>{item.qty}x {item.name}</span>
-                        <span>{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="space-y-1 text-[10px]">
-                    <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
-                      <span>TOTAL PAID:</span>
-                      <span>{settings.currency} {printModalConfig.data.total.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-bold">
-                      <span>METHOD:</span>
-                      <span>{printModalConfig.data.paymentMethod}</span>
-                    </div>
-                  </div>
-                  <p className="text-center font-bold text-[9px] pt-2 whitespace-pre-line">{settings.receiptFooter}</p>
-                </div>
-              )}
-
-              {}
-              {printModalConfig.type === 'CASH_OUT_VOUCHER' && (
-                <div className="space-y-2">
-                  <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
-                    <p className="font-black text-sm">{settings.restaurantName}</p>
-                    <p className="font-bold text-xs mt-1">*** CASH OUT VOUCHER ***</p>
-                    <p className="text-[10px]">Ref: {printModalConfig.data.id} • Terminal: {settings.terminalId}</p>
-                    <p className="text-[9px]">{printModalConfig.data.date || getLocalDateStr()} {printModalConfig.data.createdAt || printModalConfig.data.time}</p>
-                  </div>
-
-                  <div className="py-2 border-b border-slate-300 space-y-1 text-xs">
-                    <div className="flex justify-between">
-                      <span className="font-bold">CATEGORY:</span>
-                      <span>{printModalConfig.data.category}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="font-bold">PAID TO:</span>
-                      <span>{printModalConfig.data.recipient || 'General Expense'}</span>
-                    </div>
-                    <div className="text-left pt-1">
-                      <span className="font-bold">DESCRIPTION:</span>
-                      <p className="italic text-[10px]">{printModalConfig.data.reason}</p>
-                    </div>
-                  </div>
-
-                  <div className="py-1 border-b border-slate-800 space-y-1 text-xs">
-                    <div className="flex justify-between font-black text-sm">
-                      <span>AMOUNT DISBURSED:</span>
-                      <span>{settings.currency} {(parseFloat(printModalConfig.data.amount) || 0).toFixed(2)}</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 text-[10px] space-y-3">
-                    <div className="flex justify-between">
-                      <span>Requested By: {printModalConfig.data.requestedBy}</span>
-                      <span>Approved By: {printModalConfig.data.approvedBy || 'Supervisor'}</span>
-                    </div>
-
-                    <div className="pt-4 border-t border-dotted border-slate-400 flex justify-between text-[9px]">
-                      <div>
-                        <p>___________________</p>
-                        <p>Cashier Signature</p>
-                      </div>
-                      <div className="text-right">
-                        <p>___________________</p>
-                        <p>Manager Signature</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="text-center text-[9px] italic pt-2">Official Cash Drawer Disbursement Voucher</p>
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={() => window.print()}
-              className="w-full mt-4 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs"
-            >
-              <Printer className="h-4 w-4" /> Print 80mm
-            </button>
+      {/* STREAMLINED NON-BLOCKING PRINT NOTIFICATION TOAST */}
+      {printNotice && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 backdrop-blur-md transition-all">
+          <div className="h-9 w-9 rounded-xl bg-orange-500/20 text-[#ff5500] flex items-center justify-center shrink-0">
+            <Printer className="h-5 w-5 animate-pulse" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-white">{printNotice.title}</p>
+            <p className="text-[10px] text-slate-400 font-mono mt-0.5">{printNotice.detail}</p>
           </div>
         </div>
       )}
+
+      {/* HIDDEN OFF-SCREEN THERMAL PRINT AREA (Visible ONLY to physical print engine) */}
+      <div
+        id="thermal-print-area"
+        style={{
+          fontSize: settings.receiptFontSize || '11px',
+          fontFamily: settings.receiptFontFamily || 'monospace',
+          padding: settings.receiptMargin || '2mm'
+        }}
+        className="hidden print:block w-full bg-white text-slate-900 leading-tight space-y-4"
+      >
+        {activePrintSlip && (
+          <>
+            {/* 2-Slip Order Dispatch: KOT & BOT */}
+            {activePrintSlip.type === 'KOT_BOT_DISPATCH' && (
+              <div className="space-y-4">
+                {activePrintSlip.data.kitchenItems?.length > 0 && (
+                  <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
+                    <p className="font-black text-xs">** KITCHEN ORDER TICKET (KOT) **</p>
+                    <p className="font-bold text-xs mt-1">{activePrintSlip.data.order.tableName}</p>
+                    <p className="text-[10px]">Time: {activePrintSlip.data.order.sentAt}</p>
+                    <div className="text-left py-2 space-y-1">
+                      {activePrintSlip.data.kitchenItems.map((item, idx) => (
+                        <div key={idx}>
+                          <p className="font-bold">{item.qty}x {item.name}</p>
+                          {item.notes && <p className="text-[10px] pl-2 italic">&gt; {item.notes}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {activePrintSlip.data.barItems?.length > 0 && (
+                  <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
+                    <p className="font-black text-xs">** BAR ORDER TICKET (BOT) **</p>
+                    <p className="font-bold text-xs mt-1">{activePrintSlip.data.order.tableName}</p>
+                    <p className="text-[10px]">Time: {activePrintSlip.data.order.sentAt}</p>
+                    <div className="text-left py-2 space-y-1">
+                      {activePrintSlip.data.barItems.map((item, idx) => (
+                        <div key={idx}>
+                          <p className="font-bold">{item.qty}x {item.name}</p>
+                          {item.notes && <p className="text-[10px] pl-2 italic">&gt; {item.notes}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Temporary Proforma Bill */}
+            {activePrintSlip.type === 'TEMP_BILL' && (
+              <div className="space-y-2">
+                <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
+                  <p className="font-black text-sm">{settings.restaurantName}</p>
+                  <p className="font-bold text-xs mt-1">*** PROFORMA TEMPORARY BILL ***</p>
+                  <p className="text-[10px]">Table: {activePrintSlip.data.table} • Server: {activePrintSlip.data.server}</p>
+                  <p className="text-[9px]">{new Date().toLocaleString()}</p>
+                </div>
+                <div className="py-1 border-b border-slate-300 space-y-1">
+                  {activePrintSlip.data.items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between">
+                      <span>{item.qty}x {item.name}</span>
+                      <span>{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1 text-[10px]">
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span>{settings.currency} {activePrintSlip.data.subtotal.toFixed(2)}</span>
+                  </div>
+                  {activePrintSlip.data.discount > 0 && (
+                    <div className="flex justify-between text-rose-600">
+                      <span>Discount:</span>
+                      <span>-{settings.currency} {activePrintSlip.data.discount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {activePrintSlip.data.service > 0 && (
+                    <div className="flex justify-between">
+                      <span>Service Charge:</span>
+                      <span>+{settings.currency} {activePrintSlip.data.service.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {activePrintSlip.data.tax > 0 && (
+                    <div className="flex justify-between">
+                      <span>Taxes:</span>
+                      <span>+{settings.currency} {activePrintSlip.data.tax.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
+                    <span>ESTIMATED TOTAL:</span>
+                    <span>{settings.currency} {activePrintSlip.data.total.toFixed(2)}</span>
+                  </div>
+                </div>
+                <p className="text-center text-[9px] italic pt-2">Not a tax invoice • For guest review only</p>
+              </div>
+            )}
+
+            {/* Final Settlement Tax Invoice */}
+            {activePrintSlip.type === 'FINAL_BILL' && (
+              <div className="space-y-2">
+                <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
+                  <p className="font-black text-sm">{settings.restaurantName}</p>
+                  <p className="text-[9px] whitespace-pre-line">{settings.receiptHeader}</p>
+                  <p className="font-bold text-xs mt-1">TAX INVOICE #{activePrintSlip.data.invoiceNo}</p>
+                  <p className="text-[9px]">{activePrintSlip.data.date} • {activePrintSlip.data.table}</p>
+                </div>
+                <div className="py-1 border-b border-slate-300 space-y-1">
+                  {activePrintSlip.data.items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between">
+                      <span>{item.qty}x {item.name}</span>
+                      <span>{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1 text-[10px]">
+                  <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
+                    <span>TOTAL PAID:</span>
+                    <span>{settings.currency} {activePrintSlip.data.total.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] font-bold">
+                    <span>METHOD:</span>
+                    <span>{activePrintSlip.data.paymentMethod}</span>
+                  </div>
+                </div>
+                <p className="text-center font-bold text-[9px] pt-2 whitespace-pre-line">{settings.receiptFooter}</p>
+              </div>
+            )}
+
+            {/* Cash Out Voucher */}
+            {activePrintSlip.type === 'CASH_OUT_VOUCHER' && (
+              <div className="space-y-2">
+                <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
+                  <p className="font-black text-sm">{settings.restaurantName}</p>
+                  <p className="font-bold text-xs mt-1">*** CASH OUT VOUCHER ***</p>
+                  <p className="text-[10px]">Ref: {activePrintSlip.data.id} • Terminal: {settings.terminalId}</p>
+                  <p className="text-[9px]">{activePrintSlip.data.date || getLocalDateStr()} {activePrintSlip.data.createdAt || activePrintSlip.data.time}</p>
+                </div>
+
+                <div className="py-2 border-b border-slate-300 space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-bold">CATEGORY:</span>
+                    <span>{activePrintSlip.data.category}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold">PAID TO:</span>
+                    <span>{activePrintSlip.data.recipient || 'General Expense'}</span>
+                  </div>
+                  <div className="text-left pt-1">
+                    <span className="font-bold">DESCRIPTION:</span>
+                    <p className="italic text-[10px]">{activePrintSlip.data.reason}</p>
+                  </div>
+                </div>
+
+                <div className="py-1 border-b border-slate-800 space-y-1 text-xs">
+                  <div className="flex justify-between font-black text-sm">
+                    <span>AMOUNT DISBURSED:</span>
+                    <span>{settings.currency} {(parseFloat(activePrintSlip.data.amount) || 0).toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 text-[10px] space-y-3">
+                  <div className="flex justify-between">
+                    <span>Requested By: {activePrintSlip.data.requestedBy}</span>
+                    <span>Approved By: {activePrintSlip.data.approvedBy || 'Supervisor'}</span>
+                  </div>
+
+                  <div className="pt-4 border-t border-dotted border-slate-400 flex justify-between text-[9px]">
+                    <div>
+                      <p>___________________</p>
+                      <p>Cashier Signature</p>
+                    </div>
+                    <div className="text-right">
+                      <p>___________________</p>
+                      <p>Manager Signature</p>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-center text-[9px] italic pt-2">Official Cash Drawer Disbursement Voucher</p>
+              </div>
+            )}
+
+            {/* Z-Report Shift Close */}
+            {activePrintSlip.type === 'Z_REPORT' && (
+              <div className="space-y-2">
+                <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
+                  <p className="font-black text-sm">{settings.restaurantName}</p>
+                  <p className="font-bold text-xs mt-1">*** Z-REPORT (SHIFT CLOSE) ***</p>
+                  <p className="text-[10px]">Shift: {activePrintSlip.data.shiftId}</p>
+                  <p className="text-[9px]">Closed by: {activePrintSlip.data.closedBy} at {activePrintSlip.data.closedAt}</p>
+                </div>
+                <div className="py-2 border-b border-slate-300 space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span>OPENING FLOAT:</span>
+                    <span>{settings.currency} {activePrintSlip.data.startingFloat.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>COUNTED CASH:</span>
+                    <span>{settings.currency} {activePrintSlip.data.metrics.countedCash.toFixed(2)}</span>
+                  </div>
+                </div>
+                <p className="text-center font-bold text-[9px] pt-1">REGISTER AUDITED &amp; CLOSED</p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       {}
       {cashOutApprovalModal.open && cashOutApprovalModal.item && (
