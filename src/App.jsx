@@ -411,6 +411,64 @@ export default function App() {
     setStaffFormError('');
   };
 
+  const handleCreateInventoryItem = (e) => {
+    e.preventDefault();
+    if (!newInventoryForm.name.trim() || !newInventoryForm.cost) return;
+
+    const newItem = {
+      id: `ing_${Date.now().toString().slice(-6)}`,
+      name: newInventoryForm.name.trim(),
+      category: newInventoryForm.category || 'Dry Goods',
+      stock: parseFloat(newInventoryForm.stock) || 0,
+      unit: newInventoryForm.unit || 'g',
+      cost: parseFloat(newInventoryForm.cost) || 0,
+      threshold: parseFloat(newInventoryForm.threshold) || 10
+    };
+
+    setInventory(prev => [...prev, newItem]);
+    recordAuditLog(
+      'INVENTORY_ITEM_CREATED',
+      newItem.id,
+      `Added raw material ${newItem.name} (${newItem.stock} ${newItem.unit} @ ${settings.currency} ${newItem.cost}/${newItem.unit})`
+    );
+
+    setAddInventoryModalOpen(false);
+    setNewInventoryForm({ name: '', category: 'Dry Goods', stock: '', unit: 'g', cost: '', threshold: '' });
+  };
+
+  const handleReceiveStock = (e) => {
+    e.preventDefault();
+    if (!receiveStockForm.ingredientId || !receiveStockForm.quantity) return;
+
+    const qtyToAdd = parseFloat(receiveStockForm.quantity);
+    if (isNaN(qtyToAdd) || qtyToAdd <= 0) return;
+
+    const targetItem = inventoryMap[receiveStockForm.ingredientId];
+    const oldStock = targetItem ? targetItem.stock : 0;
+    const newStock = Number((oldStock + qtyToAdd).toFixed(2));
+    const newCost = receiveStockForm.newCost ? parseFloat(receiveStockForm.newCost) : (targetItem?.cost || 0);
+
+    setInventory(prev => prev.map(item => {
+      if (item.id === receiveStockForm.ingredientId) {
+        return {
+          ...item,
+          stock: newStock,
+          cost: !isNaN(newCost) && newCost > 0 ? newCost : item.cost
+        };
+      }
+      return item;
+    }));
+
+    recordAuditLog(
+      'STOCK_RECEIVED',
+      receiveStockForm.ingredientId,
+      `Received ${qtyToAdd} ${targetItem?.unit || 'units'} of ${targetItem?.name || receiveStockForm.ingredientId}. Supplier: ${receiveStockForm.supplier || 'N/A'}. Invoice: ${receiveStockForm.invoiceRef || 'N/A'}`
+    );
+
+    setReceiveStockModalOpen(false);
+    setReceiveStockForm({ ingredientId: '', quantity: '', supplier: '', invoiceRef: '', newCost: '' });
+  };
+
   // Backup & Restore Handlers
   const handleExportBackup = () => {
     const backupData = {
@@ -4837,6 +4895,279 @@ export default function App() {
                   className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all"
                 >
                   Save Employee
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD NEW RAW MATERIAL */}
+      {addInventoryModalOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-[#ff5500]" />
+                <h3 className="text-base font-black text-slate-900">Add Raw Material to Inventory</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAddInventoryModalOpen(false)}
+                className="text-slate-400 hover:text-slate-900"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateInventoryItem} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Material / Ingredient Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newInventoryForm.name}
+                  onChange={e => setNewInventoryForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Single Malt Scotch, Fresh Lime"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                  <select
+                    value={newInventoryForm.category}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                  >
+                    <option value="Dry Goods">Dry Goods</option>
+                    <option value="Dairy & Eggs">Dairy &amp; Eggs</option>
+                    <option value="Meat">Meat</option>
+                    <option value="Poultry">Poultry</option>
+                    <option value="Seafood">Seafood</option>
+                    <option value="Beverages">Beverages</option>
+                    <option value="Bar Supplies">Bar Supplies</option>
+                    <option value="Bakery">Bakery</option>
+                    <option value="Produce">Produce</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Unit of Measure</label>
+                  <select
+                    value={newInventoryForm.unit}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, unit: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                  >
+                    <option value="g">Grams (g)</option>
+                    <option value="ml">Milliliters (ml)</option>
+                    <option value="pcs">Pieces (pcs)</option>
+                    <option value="kg">Kilograms (kg)</option>
+                    <option value="l">Liters (l)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Unit Cost ({settings.currency})</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={newInventoryForm.cost}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, cost: e.target.value }))}
+                    placeholder="e.g. 1.50"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Initial Stock</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    required
+                    value={newInventoryForm.stock}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, stock: e.target.value }))}
+                    placeholder="e.g. 5000"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Low Alert Level</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="1"
+                    required
+                    value={newInventoryForm.threshold}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, threshold: e.target.value }))}
+                    placeholder="e.g. 500"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAddInventoryModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all"
+                >
+                  Save Material
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RECEIVE STOCK INTAKE (GRN) */}
+      {receiveStockModalOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-emerald-600" />
+                <h3 className="text-base font-black text-slate-900">Receive Stock Intake (GRN)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReceiveStockModalOpen(false)}
+                className="text-slate-400 hover:text-slate-900"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleReceiveStock} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Select Material / Ingredient</label>
+                <select
+                  required
+                  value={receiveStockForm.ingredientId}
+                  onChange={e => {
+                    const id = e.target.value;
+                    const item = inventoryMap[id];
+                    setReceiveStockForm(prev => ({
+                      ...prev,
+                      ingredientId: id,
+                      newCost: item ? item.cost.toString() : ''
+                    }));
+                  }}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                >
+                  {inventory.map(item => (
+                    <option key={item.id} value={item.id} style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>
+                      {item.name} ({item.stock} {item.unit} available)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Qty Received ({inventoryMap[receiveStockForm.ingredientId]?.unit || 'units'})
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    required
+                    value={receiveStockForm.quantity}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, quantity: e.target.value }))}
+                    placeholder="e.g. 5000"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Updated Unit Cost ({settings.currency})
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={receiveStockForm.newCost}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, newCost: e.target.value }))}
+                    placeholder="Current cost"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Supplier / Vendor</label>
+                  <input
+                    type="text"
+                    value={receiveStockForm.supplier}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, supplier: e.target.value }))}
+                    placeholder="e.g. Colombo Central Market"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Invoice / Ref #</label>
+                  <input
+                    type="text"
+                    value={receiveStockForm.invoiceRef}
+                    onChange={e => setReceiveStockForm(prev => ({ ...prev, invoiceRef: e.target.value }))}
+                    placeholder="e.g. GRN-804"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              {receiveStockForm.ingredientId && receiveStockForm.quantity && (
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 space-y-1">
+                  <p className="font-bold flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                    Intake Projection:
+                  </p>
+                  <p>
+                    Material: <strong>{inventoryMap[receiveStockForm.ingredientId]?.name}</strong>
+                  </p>
+                  <p className="font-mono">
+                    Stock: {inventoryMap[receiveStockForm.ingredientId]?.stock} →{' '}
+                    <strong>
+                      {Number(((inventoryMap[receiveStockForm.ingredientId]?.stock || 0) + (parseFloat(receiveStockForm.quantity) || 0)).toFixed(2))}{' '}
+                      {inventoryMap[receiveStockForm.ingredientId]?.unit}
+                    </strong>
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReceiveStockModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs transition-all"
+                >
+                  Confirm Intake
                 </button>
               </div>
             </form>
