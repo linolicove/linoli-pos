@@ -230,48 +230,84 @@ const getLocalDateStr = (d = new Date()) => {
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
-// --- PDF MENU EXTRACTION HELPER ---
 const extractMenuFromPDF = async (file) => {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  let fullText = '';
+  const rawTokens = [];
 
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
+  // 1. Collect all non-empty text tokens across all pages
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
     const content = await page.getTextContent();
-    const strings = content.items.map(item => item.str);
-    fullText += strings.join(' ') + '\n';
+    for (let i = 0; i < content.items.length; i++) {
+      const str = (content.items[i].str || '').trim();
+      // Skip empty fragments and headers/footers
+      if (!str || str === '|' || str.startsWith('Page ') || str.includes('Linoli Cove POS Menu Import File')) {
+        continue;
+      }
+      rawTokens.push(str);
+    }
   }
 
-  // Split lines and search for dishes & prices
-  const lines = fullText.split(/\r?\n/).flatMap(l => l.split(/\s{2,}/));
   const parsedItems = [];
-  const priceRegex = /(?:Rs\.?|LKR|\$)?\s*([0-9]{2,5}(?:\.[0-9]{2})?)/i;
+  const priceRegex = /^(?:Rs\.?|LKR|\$)?\s*([0-9]{3,5}(?:\.[0-9]{2})?)$/i;
 
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.length < 3) return;
+  // 2. Scan through tokens finding prices and associating surrounding metadata
+  for (let i = 0; i < rawTokens.length; i++) {
+    const token = rawTokens[i];
+    const match = token.match(priceRegex);
 
-    const match = trimmed.match(priceRegex);
     if (match) {
       const priceVal = parseFloat(match[1]);
-      let name = trimmed.replace(match[0], '').replace(/[.\-_:]+$/, '').trim();
-      name = name.replace(/^[-•*]\s*/, '');
+      
+      // Look back for candidate item name and category
+      let name = '';
+      let category = 'Main Menu';
+      let department = 'Kitchen';
+
+      // Look back 1 and 2 steps
+      const prev1 = rawTokens[i - 1] || '';
+      const prev2 = rawTokens[i - 2] || '';
+      // Look forward 1 step
+      const next1 = rawTokens[i + 1] || '';
+
+      // Skip table header row labels
+      if (token.toLowerCase().includes('price') || prev1.toLowerCase().includes('item name')) {
+        continue;
+      }
+
+      // Check whether prev1 is category or item name
+      // If prev2 exists and isn't a known structural word, prev2 is likely Name and prev1 is Category
+      if (prev2 && !prev2.toLowerCase().includes('item name') && !prev2.toLowerCase().includes('price')) {
+        name = prev2;
+        category = prev1;
+      } else {
+        name = prev1;
+      }
+
+      // Check if next token designates the department (Kitchen/Bar)
+      if (next1 && (next1.toLowerCase() === 'kitchen' || next1.toLowerCase() === 'bar')) {
+        department = next1.charAt(0).toUpperCase() + next1.slice(1).toLowerCase();
+      }
+
+      // Clean cleanup formatting
+      name = name.replace(/^[|•\-\s]+|[|•\-\s]+$/g, '').trim();
+      category = category.replace(/^[|•\-\s]+|[|•\-\s]+$/g, '').trim();
 
       if (name.length >= 2 && !isNaN(priceVal) && priceVal > 0) {
         parsedItems.push({
-          id: `dish_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+          id: `dish_${Date.now()}_${Math.floor(Math.random() * 100000)}_${parsedItems.length}`,
           name: name,
-          department: 'Kitchen',
-          category: 'Main Menu',
+          department: department,
+          category: category || 'Main Menu',
           price: priceVal,
           prepTime: '15m',
           imageUrl: '',
-          description: 'Imported from PDF menu'
+          description: `Imported: ${category}`
         });
       }
     }
-  });
+  }
 
   return parsedItems;
 };
@@ -3933,7 +3969,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     ))}
                   </select>
                 </div>
-                
+
                 {/* PDF Menu Import Button */}
                 <label className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs shrink-0 cursor-pointer transition-colors">
                   <Upload className="h-4 w-4" />
