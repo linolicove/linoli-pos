@@ -394,8 +394,23 @@ export default function App() {
   const prevTablesRef = useRef('');
   const prevAuditsRef = useRef('');
   const prevMenuRef = useRef('');
-  const prevInventoryRef = useRef('');
-  const prevExpensesRef = useRef('');
+  const [expenses, setExpenses] = useState(() => {
+  try {
+    const local = localStorage.getItem('linoli_expenses');
+    return local ? JSON.parse(local) : [];
+  } catch (e) {
+    return [];
+  }
+  });
+
+  const [inventory, setInventory] = useState(() => {
+  try {
+    const local = localStorage.getItem('linoli_inventory');
+    return local ? JSON.parse(local) : [];
+  } catch (e) {
+    return [];
+  }
+  });
 
   // ============================================================
   // 1. REAL-TIME CLOUD LISTENERS (Download from Firebase)
