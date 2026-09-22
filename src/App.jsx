@@ -1869,9 +1869,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </header>
 
-        Replace that snippet in src/App.jsx with this updated block. It frames the entire header in a dark, high-contrast container (bg-slate-900), styles the unselected category tabs in dark slate (bg-slate-800), emphasizes selected items in orange (bg-[#ff5500]), and styles the scrollbar:
-
-JavaScript
 {/* VIEW 1: POS TERMINAL */}
         {activeTab === 'pos' && (
           <div className="flex-1 flex overflow-hidden">
