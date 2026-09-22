@@ -2141,10 +2141,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                               {/* Dish Title & Description / Category */}
                               <div className="p-3.5 pb-2.5 flex-1 flex flex-col justify-center">
-                                <h4 className="font-black text-xs text-slate-900 leading-snug line-clamp-2">
+                                <h4 className="font-black text-sm text-slate-950 leading-snug line-clamp-2 tracking-tight">
                                   {dish.name}
                                 </h4>
-                                <p className="text-[10px] text-slate-500 font-semibold mt-1 line-clamp-1">
+                                <p className="text-[11px] text-slate-600 font-bold mt-1 line-clamp-1 uppercase tracking-wide">
                                   {dish.category || dish.description || 'General Menu'}
                                 </p>
                               </div>
