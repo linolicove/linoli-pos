@@ -54,6 +54,10 @@ import {
   Mail
 } from 'lucide-react';
 import { syncToCloud, subscribeToCloud } from './firebase'; // <-- ADD THIS LINE
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure the worker for client-side PDF parsing
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 const ROLE_PERMISSIONS = {
   Administrator: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'cancelled', 'staff', 'settings'],
@@ -225,6 +229,51 @@ const getLocalDateStr = (d = new Date()) => {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+// --- PDF MENU EXTRACTION HELPER ---
+const extractMenuFromPDF = async (file) => {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const strings = content.items.map(item => item.str);
+    fullText += strings.join(' ') + '\n';
+  }
+
+  // Split lines and search for dishes & prices
+  const lines = fullText.split(/\r?\n/).flatMap(l => l.split(/\s{2,}/));
+  const parsedItems = [];
+  const priceRegex = /(?:Rs\.?|LKR|\$)?\s*([0-9]{2,5}(?:\.[0-9]{2})?)/i;
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.length < 3) return;
+
+    const match = trimmed.match(priceRegex);
+    if (match) {
+      const priceVal = parseFloat(match[1]);
+      let name = trimmed.replace(match[0], '').replace(/[.\-_:]+$/, '').trim();
+      name = name.replace(/^[-•*]\s*/, '');
+
+      if (name.length >= 2 && !isNaN(priceVal) && priceVal > 0) {
+        parsedItems.push({
+          id: `dish_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+          name: name,
+          department: 'Kitchen',
+          category: 'Main Menu',
+          price: priceVal,
+          prepTime: '15m',
+          imageUrl: '',
+          description: 'Imported from PDF menu'
+        });
+      }
+    }
+  });
+
+  return parsedItems;
 };
 
 export default function App() {
@@ -3884,6 +3933,38 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     ))}
                   </select>
                 </div>
+                
+                {/* PDF Menu Import Button */}
+                <label className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs shrink-0 cursor-pointer transition-colors">
+                  <Upload className="h-4 w-4" />
+                  <span>Import from PDF</span>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      try {
+                        const imported = await extractMenuFromPDF(file);
+                        if (imported.length === 0) {
+                          alert("No dishes with readable prices were detected. Ensure the PDF contains selectable text rather than flattened image scans.");
+                          return;
+                        }
+
+                        setMenuItems(prev => [...prev, ...imported]);
+                        recordAuditLog('MENU_IMPORTED', 'PDF', `Imported ${imported.length} items from ${file.name}`);
+                        alert(`Successfully imported ${imported.length} items from ${file.name}!`);
+                      } catch (err) {
+                        console.error("PDF Parsing error:", err);
+                        alert("Failed to parse PDF document. Please verify the file integrity.");
+                      } finally {
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                </label>
 
                 <button
                   onClick={() => setAddItemModalOpen(true)}
