@@ -1869,16 +1869,25 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </header>
 
-        {/* VIEW 1: POS TERMINAL */}
+        Replace that snippet in src/App.jsx with this updated block. It frames the entire header in a dark, high-contrast container (bg-slate-900), styles the unselected category tabs in dark slate (bg-slate-800), emphasizes selected items in orange (bg-[#ff5500]), and styles the scrollbar:
+
+JavaScript
+{/* VIEW 1: POS TERMINAL */}
         {activeTab === 'pos' && (
           <div className="flex-1 flex overflow-hidden">
             {/* Catalog Grid Area */}
             <div className="flex-1 flex flex-col p-5 overflow-hidden min-h-0">
               
-              {/* TOP BAR: CATEGORY SELECTOR + DENSITY SWITCHER + SEARCH */}
-              <div className="flex items-center gap-3 mb-3 shrink-0">
-                {/* CATEGORY SELECTOR BAR (EXPANDED HORIZONTAL SCROLL & BLOCK LETTERS) */}
-                <div className="flex-1 min-w-0 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-300">
+              {/* TOP BAR: HIGH-CONTRAST DARK DOCK FOR CATEGORIES & CONTROLS */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 mb-4 shrink-0 shadow-md flex items-center gap-3">
+                {/* CATEGORY SELECTOR BAR (EXPANDED HORIZONTAL SCROLL & HIGH VISIBILITY BLOCK LETTERS) */}
+                <div 
+                  className="flex-1 min-w-0 overflow-x-auto pb-1.5 pt-0.5 scrollbar-thin"
+                  style={{
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: '#475569 #1e293b'
+                  }}
+                >
                   <div className="flex items-center gap-2">
                     {categoriesList.map((cat) => {
                       const count = cat === 'All' 
@@ -1891,18 +1900,18 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           key={cat}
                           type="button"
                           onClick={() => setSelectedCategory(cat)}
-                          className={`px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider shrink-0 transition-all flex items-center gap-2 cursor-pointer shadow-xs ${
+                          className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-wider shrink-0 transition-all flex items-center gap-2 cursor-pointer shadow-xs ${
                             isSelected
-                              ? 'bg-[#ff5500] text-white shadow-orange-500/30'
-                              : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-200'
+                              ? 'bg-[#ff5500] text-white shadow-orange-500/40 ring-2 ring-[#ff5500]/50'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 hover:border-slate-600'
                           }`}
                         >
                           <span>{cat}</span>
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                               isSelected
-                                ? 'bg-black/25 text-white'
-                                : 'bg-slate-100 text-slate-600'
+                                ? 'bg-black/30 text-white'
+                                : 'bg-slate-900/80 text-slate-300 border border-slate-700/60'
                             }`}
                           >
                             {count}
@@ -1913,33 +1922,52 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 </div>
 
-                {/* Right controls: View Switcher & Search */}
+                {/* CONTROLS SEPARATOR */}
+                <div className="h-8 w-px bg-slate-800 shrink-0" />
+
+                {/* RIGHT CONTROLS: DENSITY SWITCHER + SEARCH */}
                 <div className="flex items-center gap-2 shrink-0">
                   {/* Density switcher */}
-                  <div className="flex items-center bg-white border border-slate-200 rounded-xl p-0.5">
+                  <div className="flex items-center bg-slate-800 border border-slate-700 rounded-xl p-0.5 shadow-inner">
                     <button
+                      type="button"
                       onClick={() => setPosViewMode('grid')}
-                      className={`p-1.5 rounded-lg transition-colors ${posViewMode === 'grid' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                        posViewMode === 'grid' 
+                          ? 'bg-[#ff5500] text-white shadow-xs' 
+                          : 'text-slate-400 hover:text-white'
+                      }`}
                       title="Visual Grid"
                     >
                       <LayoutGrid className="h-3.5 w-3.5" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => setPosViewMode('compact')}
-                      className={`p-1.5 rounded-lg transition-colors ${posViewMode === 'compact' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                        posViewMode === 'compact' 
+                          ? 'bg-[#ff5500] text-white shadow-xs' 
+                          : 'text-slate-400 hover:text-white'
+                      }`}
                       title="Compact Tiles"
                     >
                       <Grid className="h-3.5 w-3.5" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => setPosViewMode('list')}
-                      className={`p-1.5 rounded-lg transition-colors ${posViewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                        posViewMode === 'list' 
+                          ? 'bg-[#ff5500] text-white shadow-xs' 
+                          : 'text-slate-400 hover:text-white'
+                      }`}
                       title="Compact List"
                     >
                       <Layers className="h-3.5 w-3.5" />
                     </button>
                   </div>
 
+                  {/* Search Input */}
                   <div className="relative w-48">
                     <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
@@ -1947,7 +1975,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       value={menuSearchQuery}
                       onChange={e => setMenuSearchQuery(e.target.value)}
                       placeholder="Search 150+ items..."
-                      className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#ff5500]"
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#ff5500] focus:ring-1 focus:ring-[#ff5500]"
                     />
                   </div>
                 </div>
