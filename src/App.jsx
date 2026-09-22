@@ -396,6 +396,7 @@ export default function App() {
   const prevMenuRef = useRef('');
   const prevInventoryRef = useRef(''); // <-- ADD THIS
   const prevExpensesRef = useRef('');  // <-- ADD THIS
+  const prevShiftRef = useRef('');
   const [expenses, setExpenses] = useState(() => {
   try {
     const local = localStorage.getItem('linoli_expenses');
@@ -491,6 +492,17 @@ export default function App() {
       localStorage.setItem('linoli_expenses', serialized);
     }
   }); 
+  // 8. Receive incoming cashier shift updates
+const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
+  isCloudSynced.current = true;
+  if (remoteShift && typeof remoteShift === 'object') {
+    const serialized = JSON.stringify(remoteShift);
+    if (prevShiftRef.current === serialized) return;
+    prevShiftRef.current = serialized;
+    setCurrentShift(remoteShift);
+    localStorage.setItem('linoli_current_shift', serialized);
+  }
+});
   
     return () => {
       if (typeof unsubOrders === 'function') unsubOrders();
@@ -500,6 +512,7 @@ export default function App() {
       if (typeof unsubMenu === 'function') unsubMenu();
       if (typeof unsubInventory === 'function') unsubInventory();
       if (typeof unsubExpenses === 'function') unsubExpenses();
+      if (typeof unsubShift === 'function') unsubShift();
     };
   }, []);
 
@@ -581,6 +594,16 @@ export default function App() {
       }
     }
   }, [expenses]);
+  useEffect(() => {
+  if (!isCloudSynced.current) return;
+  if (currentShift !== undefined) {
+    const current = JSON.stringify(currentShift);
+    if (current !== prevShiftRef.current) {
+      prevShiftRef.current = current;
+      syncToCloud('current_shift', currentShift);
+    }
+  }
+  }, [currentShift]);
 
   const handleCreateStaff = (e) => {
     e.preventDefault();
@@ -3268,7 +3291,6 @@ export default function App() {
               </button>
             </div>
 
-            {}
             {(() => {
               const allPayouts = currentShift.payouts || [];
               const approvedPayouts = allPayouts.filter(p => p.status === 'APPROVED' || !p.status);
@@ -3276,18 +3298,28 @@ export default function App() {
               const totalApprovedCashOut = approvedPayouts.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
               const totalPendingCashOut = pendingPayouts.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
 
-              const shiftCashSales = filteredTransactions
-                .filter(t => t.paymentMethod === 'CASH')
-                .reduce((sum, t) => sum + t.total, 0);
+              const todayStr = getLocalDateStr();
+              let shiftCashSales = 0;
+              if (Array.isArray(transactions)) {
+                for (let i = 0; i < transactions.length; i++) {
+                  const t = transactions[i];
+                  if (t && t.paymentMethod === 'CASH' && extractDateStr(t.date) === todayStr) {
+                    shiftCashSales += Number(t.total) || 0;
+                  }
+                }
+              }
 
-              const countedCash = Object.entries(denominations).reduce(
-                (sum, [denom, count]) => sum + (Number(denom) * (Number(count) || 0)),
-                0
-              );
+              let countedCash = 0;
+              if (denominations && typeof denominations === 'object') {
+                const entries = Object.entries(denominations);
+                for (let j = 0; j < entries.length; j++) {
+                  const [denom, count] = entries[j];
+                  countedCash += Number(denom) * (Number(count) || 0);
+                }
+              }
 
-              const expectedCash = currentShift.startingFloat + shiftCashSales - totalApprovedCashOut;
-              const variance = countedCash - expectedCash;
-
+              const expectedCash = Number(((currentShift.startingFloat || 0) + shiftCashSales - totalApprovedCashOut).toFixed(2));
+              const variance = Number((countedCash - expectedCash).toFixed(2));
               return (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
