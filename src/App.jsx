@@ -1825,16 +1825,19 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       {/* MAIN CONTAINER */}
       <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 text-slate-900">
         
-        {/* Top Header Bar */}
+       {/* Top Header Bar */}
         <header className="h-14 px-6 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 shadow-xs z-10">
           <div className="flex items-center gap-4">
+            {/* ENLARGED HIGH-VISIBILITY MENU BUTTON */}
             <button
+              type="button"
               onClick={() => setSidebarOpen(true)}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-2 transition-colors"
+              className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white font-black text-xs uppercase tracking-wider flex items-center gap-2.5 transition-all shadow-md border border-slate-700 hover:border-slate-500 cursor-pointer active:scale-95"
             >
-              <Menu className="h-4 w-4 text-[#ff5500]" />
-              <span className="hidden sm:inline">Menu</span>
+              <Menu className="h-5 w-5 text-[#ff5500] stroke-[2.5]" />
+              <span className="font-extrabold text-xs tracking-wider text-white">Menu</span>
             </button>
+
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider font-mono">
               TERMINAL: {settings.terminalId}
             </span>
