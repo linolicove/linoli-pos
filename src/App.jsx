@@ -2260,7 +2260,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                            }}
                             className="h-6 w-6 rounded-md bg-white border border-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold hover:bg-slate-100 cursor-pointer"
                           >
-                          -
+                          <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </div>
