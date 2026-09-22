@@ -405,15 +405,6 @@ export default function App() {
   }
   });
 
-  const [inventory, setInventory] = useState(() => {
-  try {
-    const local = localStorage.getItem('linoli_inventory');
-    return local ? JSON.parse(local) : [];
-  } catch (e) {
-    return [];
-  }
-  });
-
   // ============================================================
   // 1. REAL-TIME CLOUD LISTENERS (Download from Firebase)
   // ============================================================
@@ -477,7 +468,7 @@ export default function App() {
         localStorage.setItem('linoli_menu_items', serialized);
       }
     });
-// 6. Receive raw inventory adjustments
+    // 6. Receive raw inventory adjustments
   const unsubInventory = subscribeToCloud('inventory', (remoteInv) => {
     isCloudSynced.current = true;
     if (Array.isArray(remoteInv)) {
