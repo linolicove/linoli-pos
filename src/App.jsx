@@ -230,6 +230,7 @@ const getLocalDateStr = (d = new Date()) => {
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
 const extractMenuFromPDF = async (file) => {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -456,6 +457,8 @@ export default function App() {
   const [receiveStockModalOpen, setReceiveStockModalOpen] = useState(false);
   const [receiveStockForm, setReceiveStockForm] = useState({ ingredientId: '', quantity: '', supplier: '', invoiceRef: '', newCost: '' });
   const [addItemModalOpen, setAddItemModalOpen] = useState(false);
+  const [editingMenuItem, setEditingMenuItem] = useState(null); // <-- ADD THIS
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);  // <-- ADD THIS
   const [newDishForm, setNewDishForm] = useState({
     name: '',
     department: 'Kitchen',
@@ -4080,16 +4083,33 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         <td className="py-3 px-4 font-mono font-bold text-[#ff5500]">{settings.currency} {item.price.toFixed(2)}</td>
                         <td className="py-3 px-4 font-mono text-slate-500">{settings.currency} {cogs.toFixed(2)}</td>
                         <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => {
-                              setMenuItems(prev => prev.filter(m => m.id !== item.id));
-                              recordAuditLog('DELETE_MENU_ITEM', item.id, `Removed ${item.name} from menu.`);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg"
-                            title="Delete Item"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingMenuItem({ ...item });
+                                setIsEditModalOpen(true);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                              title="Edit Item"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete "${item.name}" from the menu?`)) {
+                                  setMenuItems(prev => prev.filter(m => m.id !== item.id));
+                                  recordAuditLog('DELETE_MENU_ITEM', item.id, `Removed ${item.name} from menu.`);
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Delete Item"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -5132,51 +5152,45 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         </div>
       )}
 
-      {/* MODAL: ADD NEW MENU ITEM WITH INLINE RECIPE BOM */}
-      {addItemModalOpen && (
+      {/* EDIT MENU ITEM MODAL */}
+      {isEditModalOpen && editingMenuItem && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-base font-black text-slate-900">Add New Menu Dish / Drink</h3>
-              <button onClick={() => setAddItemModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Edit Dish / Item</h3>
+                <p className="text-xs text-slate-500">Update dish details, pricing, and category</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditModalOpen(false);
+                  setEditingMenuItem(null);
+                }}
+                className="text-slate-400 hover:text-slate-900 cursor-pointer"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <form
-              onSubmit={e => {
+              onSubmit={(e) => {
                 e.preventDefault();
-                if (!newDishForm.name.trim() || !newDishForm.price) return;
-                const finalCategory = newDishForm.category === 'CUSTOM'
-                  ? (newDishForm.customCategory.trim() || 'Specials')
-                  : newDishForm.category;
+                const priceNum = parseFloat(editingMenuItem.price);
+                if (!editingMenuItem.name.trim() || isNaN(priceNum) || priceNum <= 0) {
+                  alert('Please enter a valid item name and price.');
+                  return;
+                }
 
-                const newItem = {
-                  id: `dish_${Date.now()}`,
-                  name: newDishForm.name.trim(),
-                  department: newDishForm.department,
-                  category: finalCategory,
-                  price: parseFloat(newDishForm.price) || 0,
-                  prepTime: newDishForm.prepTime || '10m',
-                  description: newDishForm.description || '',
-                  imageUrl: newDishForm.imageUrl.trim() || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80',
-                  recipe: [...newDishForm.recipeIngredients]
-                };
+                setMenuItems(prev => prev.map(m => m.id === editingMenuItem.id ? {
+                  ...editingMenuItem,
+                  price: priceNum
+                } : m));
 
-                setMenuItems(prev => [newItem, ...prev]);
-                recordAuditLog('CREATE_MENU_ITEM', newItem.id, `Created new ${newItem.department} item: ${newItem.name} (${settings.currency} ${newItem.price})`);
-                setAddItemModalOpen(false);
-                setNewDishForm({
-                  name: '',
-                  department: 'Kitchen',
-                  category: 'Rice & Noodles',
-                  customCategory: '',
-                  price: '',
-                  prepTime: '10m',
-                  description: '',
-                  imageUrl: '',
-                  recipeIngredients: []
-                });
+                recordAuditLog('MENU_ITEM_UPDATED', editingMenuItem.id, `Updated ${editingMenuItem.name} to ${settings.currency} ${priceNum.toFixed(2)}`);
+
+                setIsEditModalOpen(false);
+                setEditingMenuItem(null);
               }}
               className="mt-4 space-y-4"
             >
@@ -5186,22 +5200,22 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   <input
                     type="text"
                     required
-                    value={newDishForm.name}
-                    onChange={e => setNewDishForm(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="e.g. Garlic Butter Prawns"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
+                    value={editingMenuItem.name}
+                    onChange={(e) => setEditingMenuItem(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Selling Price ({settings.currency})</label>
                   <input
                     type="number"
                     step="0.01"
+                    min="0"
                     required
-                    value={newDishForm.price}
-                    onChange={e => setNewDishForm(prev => ({ ...prev, price: e.target.value }))}
-                    placeholder="e.g. 2400.00"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono text-slate-900"
+                    value={editingMenuItem.price}
+                    onChange={(e) => setEditingMenuItem(prev => ({ ...prev, price: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                   />
                 </div>
               </div>
@@ -5210,204 +5224,102 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
                   <select
-                    value={newDishForm.department}
-                    onChange={e => setNewDishForm(prev => ({ ...prev, department: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 font-bold focus:outline-none focus:border-[#ff5500]"
-                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                    value={editingMenuItem.department || 'Kitchen'}
+                    onChange={(e) => setEditingMenuItem(prev => ({ ...prev, department: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white text-slate-900 focus:outline-none focus:border-[#ff5500] cursor-pointer"
                   >
-                    <option value="Kitchen" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Kitchen (Sends KOT)</option>
-                    <option value="Bar" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Bar (Sends BOT)</option>
+                    <option value="Kitchen">Kitchen (Sends KOT)</option>
+                    <option value="Bar">Bar (Sends BOT)</option>
                   </select>
                 </div>
+
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
-                  <select
-                    value={newDishForm.category}
-                    onChange={e => setNewDishForm(prev => ({ ...prev, category: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 font-bold focus:outline-none focus:border-[#ff5500]"
-                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-                  >
-                    <option value="Rice & Noodles" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Rice &amp; Noodles</option>
-                    <option value="Mains & Grills" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Mains &amp; Grills</option>
-                    <option value="Starters" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Starters</option>
-                    <option value="Seafood Specials" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Seafood Specials</option>
-                    <option value="Cocktails" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Cocktails</option>
-                    <option value="Beer & Wine" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Beer &amp; Wine</option>
-                    <option value="Hot Coffee" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Hot Coffee</option>
-                    <option value="Fresh Juices & Smoothies" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Fresh Juices &amp; Smoothies</option>
-                    <option value="Desserts" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Desserts</option>
-                    <option value="CUSTOM" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>+ Custom Category</option>
-                  </select>
+                  <input
+                    type="text"
+                    value={editingMenuItem.category || ''}
+                    onChange={(e) => setEditingMenuItem(prev => ({ ...prev, category: e.target.value }))}
+                    placeholder="e.g. Rice & Curry, Kottu, Starters"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                  />
                 </div>
               </div>
 
-              {newDishForm.category === 'CUSTOM' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Enter Custom Category</label>
-                  <input
-                    type="text"
-                    value={newDishForm.customCategory}
-                    onChange={e => setNewDishForm(prev => ({ ...prev, customCategory: e.target.value }))}
-                    placeholder="e.g. Sri Lankan Curries"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900"
-                  />
-                </div>
-              )}
-
-              {/* Dedicated Image Upload Dropzone (No URL required) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Dish Photo (Upload File)</label>
-                {newDishForm.imageUrl ? (
-                  <div className="rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/50 p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={newDishForm.imageUrl}
-                        alt="Preview"
-                        className="h-14 w-14 rounded-xl object-cover border border-slate-200 shadow-xs"
+                <label className="block text-xs font-bold text-slate-700 mb-1">Prep Time</label>
+                <input
+                  type="text"
+                  value={editingMenuItem.prepTime || '10m'}
+                  onChange={(e) => setEditingMenuItem(prev => ({ ...prev, prepTime: e.target.value }))}
+                  placeholder="e.g. 10m"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Photo (Upload File or Enter URL)</label>
+                <div className="space-y-2">
+                  <div className="flex gap-2 items-center">
+                    <label className="cursor-pointer px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors">
+                      <Upload className="h-4 w-4" />
+                      <span>Upload Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = ev => {
+                              if (ev.target?.result) {
+                                setEditingMenuItem(prev => ({ ...prev, imageUrl: ev.target.result }));
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
                       />
-                      <div>
-                        <p className="text-xs font-bold text-slate-800">Photo Attached</p>
-                        <p className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                          <Check className="h-3 w-3" /> Ready for Menu &amp; POS cards
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="cursor-pointer px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs shadow-xs transition-colors">
-                        <span>Change</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={e => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onload = ev => {
-                                if (ev.target?.result) {
-                                  setNewDishForm(prev => ({ ...prev, imageUrl: ev.target.result }));
-                                }
-                              };
-                              reader.readAsDataURL(file);
-                            }
-                          }}
-                        />
-                      </label>
+                    </label>
+
+                    {editingMenuItem.imageUrl && (
                       <button
                         type="button"
-                        onClick={() => setNewDishForm(prev => ({ ...prev, imageUrl: '' }))}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
+                        onClick={() => setEditingMenuItem(prev => ({ ...prev, imageUrl: '' }))}
+                        className="p-2 text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 hover:bg-rose-50 transition-colors"
                         title="Remove Photo"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
-                    </div>
+                    )}
                   </div>
-                ) : (
-                  <label className="cursor-pointer border-2 border-dashed border-slate-300 hover:border-[#ff5500] hover:bg-orange-50/20 bg-slate-50/80 rounded-2xl p-4 flex flex-col items-center justify-center gap-2 transition-all group">
-                    <div className="h-10 w-10 rounded-full bg-white shadow-xs border border-slate-200 flex items-center justify-center text-slate-400 group-hover:text-[#ff5500] transition-colors">
-                      <Upload className="h-5 w-5" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-xs font-bold text-slate-800 group-hover:text-[#ff5500] transition-colors">
-                        Click to Upload Dish Photo
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Supports JPG, PNG, WEBP from your device</p>
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onload = ev => {
-                            if (ev.target?.result) {
-                              setNewDishForm(prev => ({ ...prev, imageUrl: ev.target.result }));
-                            }
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                  </label>
-                )}
-              </div>
 
-              {/* Inline Recipe BOM builder */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <BookOpen className="h-3.5 w-3.5 text-[#ff5500]" /> Link Recipe Ingredients (BOM)
-                </span>
-                <div className="flex gap-2">
-                  <select id="newDishIngSelect" className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white">
-                    {inventory.map(ing => (
-                      <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
-                    ))}
-                  </select>
                   <input
-                    id="newDishIngAmount"
-                    type="number"
-                    min="0.1"
-                    step="any"
-                    placeholder="Qty/portion"
-                    className="w-28 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono bg-white"
+                    type="url"
+                    value={editingMenuItem.imageUrl || ''}
+                    onChange={(e) => setEditingMenuItem(prev => ({ ...prev, imageUrl: e.target.value }))}
+                    placeholder="https://..."
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none"
                   />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sel = document.getElementById('newDishIngSelect');
-                      const amtInput = document.getElementById('newDishIngAmount');
-                      const ingId = sel?.value;
-                      const amt = parseFloat(amtInput?.value);
-                      if (!ingId || isNaN(amt) || amt <= 0) return;
-                      setNewDishForm(prev => ({
-                        ...prev,
-                        recipeIngredients: [...prev.recipeIngredients, { ingredientId: ingId, amount: amt }]
-                      }));
-                      if (amtInput) amtInput.value = '';
-                    }}
-                    className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold"
-                  >
-                    + Add
-                  </button>
                 </div>
-
-                {newDishForm.recipeIngredients.length > 0 && (
-                  <div className="space-y-1 max-h-28 overflow-y-auto">
-                    {newDishForm.recipeIngredients.map((r, i) => (
-                      <div key={i} className="flex justify-between items-center text-xs p-1.5 bg-white rounded-lg border border-slate-200">
-                        <span className="font-bold">{inventoryMap[r.ingredientId]?.name || r.ingredientId}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-slate-500">{r.amount} {inventoryMap[r.ingredientId]?.unit}</span>
-                          <button
-                            type="button"
-                            onClick={() => setNewDishForm(prev => ({ ...prev, recipeIngredients: prev.recipeIngredients.filter((_, idx) => idx !== i) }))}
-                            className="text-slate-400 hover:text-rose-600"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setAddItemModalOpen(false)}
-                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                  onClick={() => {
+                    setIsEditModalOpen(false);
+                    setEditingMenuItem(null);
+                  }}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-200 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer"
                 >
-                  Save &amp; Add to Menu
+                  Save Changes
                 </button>
               </div>
             </form>
