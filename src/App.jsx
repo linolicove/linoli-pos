@@ -394,6 +394,8 @@ export default function App() {
   const prevTablesRef = useRef('');
   const prevAuditsRef = useRef('');
   const prevMenuRef = useRef('');
+  const prevInventoryRef = useRef('');
+  const prevExpensesRef = useRef('');
 
   // ============================================================
   // 1. REAL-TIME CLOUD LISTENERS (Download from Firebase)
@@ -458,13 +460,38 @@ export default function App() {
         localStorage.setItem('linoli_menu_items', serialized);
       }
     });
+// 6. Receive raw inventory adjustments
+  const unsubInventory = subscribeToCloud('inventory', (remoteInv) => {
+    isCloudSynced.current = true;
+    if (Array.isArray(remoteInv)) {
+      const serialized = JSON.stringify(remoteInv);
+      if (prevInventoryRef.current === serialized) return;
+      prevInventoryRef.current = serialized;
+      setInventory(remoteInv);
+      localStorage.setItem('linoli_inventory', serialized);
+    }
+  });
 
+  // 7. Receive recorded cash expenses
+  const unsubExpenses = subscribeToCloud('expenses', (remoteExp) => {
+    isCloudSynced.current = true;
+    if (Array.isArray(remoteExp)) {
+      const serialized = JSON.stringify(remoteExp);
+      if (prevExpensesRef.current === serialized) return;
+      prevExpensesRef.current = serialized;
+      setExpenses(remoteExp);
+      localStorage.setItem('linoli_expenses', serialized);
+    }
+  }); 
+  
     return () => {
       if (typeof unsubOrders === 'function') unsubOrders();
       if (typeof unsubTrans === 'function') unsubTrans();
       if (typeof unsubTables === 'function') unsubTables();
       if (typeof unsubAudits === 'function') unsubAudits();
       if (typeof unsubMenu === 'function') unsubMenu();
+      if (typeof unsubInventory === 'function') unsubInventory();
+      if (typeof unsubExpenses === 'function') unsubExpenses();
     };
   }, []);
 
@@ -525,6 +552,27 @@ export default function App() {
       }
     }
   }, [menuItems]);
+  useEffect(() => {
+    if (!isCloudSynced.current) return;
+    if (inventory !== undefined && inventory.length > 0) {
+      const current = JSON.stringify(inventory);
+      if (current !== prevInventoryRef.current) {
+        prevInventoryRef.current = current;
+        syncToCloud('inventory', inventory);
+      }
+    }
+  }, [inventory]);
+
+  useEffect(() => {
+    if (!isCloudSynced.current) return;
+    if (expenses !== undefined) {
+      const current = JSON.stringify(expenses);
+      if (current !== prevExpensesRef.current) {
+        prevExpensesRef.current = current;
+        syncToCloud('expenses', expenses);
+      }
+    }
+  }, [expenses]);
 
   const handleCreateStaff = (e) => {
     e.preventDefault();
