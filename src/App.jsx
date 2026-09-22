@@ -394,6 +394,8 @@ export default function App() {
   const prevTablesRef = useRef('');
   const prevAuditsRef = useRef('');
   const prevMenuRef = useRef('');
+  const prevInventoryRef = useRef(''); // <-- ADD THIS
+  const prevExpensesRef = useRef('');  // <-- ADD THIS
   const [expenses, setExpenses] = useState(() => {
   try {
     const local = localStorage.getItem('linoli_expenses');
