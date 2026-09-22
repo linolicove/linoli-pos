@@ -1875,34 +1875,45 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             {/* Catalog Grid Area */}
             <div className="flex-1 flex flex-col p-5 overflow-hidden min-h-0">
               
-              {/* Category selector and search */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4 shrink-0">
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-2xl">
-                  {categoriesList.map(cat => {
-                    const count = cat === 'All'
-                      ? menuItems.length
-                      : menuItems.filter(m => m.category === cat).length;
-                    return (
-                      <button
-                        key={cat}
-                        onClick={() => setSelectedCategory(cat)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                          selectedCategory === cat
-                            ? 'bg-[#ff5500] text-white shadow-sm shadow-orange-600/20'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        <span>{cat}</span>
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                          selectedCategory === cat ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          {count}
-                        </span>
-                      </button>
-                    );
-                  })}
+              {/* TOP BAR: CATEGORY SELECTOR + DENSITY SWITCHER + SEARCH */}
+              <div className="flex items-center gap-3 mb-3 shrink-0">
+                {/* CATEGORY SELECTOR BAR (EXPANDED HORIZONTAL SCROLL & BLOCK LETTERS) */}
+                <div className="flex-1 min-w-0 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-300">
+                  <div className="flex items-center gap-2">
+                    {categoriesList.map((cat) => {
+                      const count = cat === 'All' 
+                        ? menuItems.length 
+                        : menuItems.filter(m => m.category === cat).length;
+                      const isSelected = selectedCategory === cat;
+
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setSelectedCategory(cat)}
+                          className={`px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider shrink-0 transition-all flex items-center gap-2 cursor-pointer shadow-xs ${
+                            isSelected
+                              ? 'bg-[#ff5500] text-white shadow-orange-500/30'
+                              : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-200'
+                          }`}
+                        >
+                          <span>{cat}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                              isSelected
+                                ? 'bg-black/25 text-white'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
+                {/* Right controls: View Switcher & Search */}
                 <div className="flex items-center gap-2 shrink-0">
                   {/* Density switcher */}
                   <div className="flex items-center bg-white border border-slate-200 rounded-xl p-0.5">
