@@ -2081,75 +2081,93 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     );
                   }
 
-                  // Default Visual Grid
+                  // Default Visual Grid with High-Contrast Canvas & Divided Cards
                   return (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
-                      {filteredDishes.map(dish => {
-                        const { cogs, portions } = calculateDishAvailability(dish.recipe);
-                        return (
-                          <div
-                            key={dish.id}
-                            onClick={() => {
-                              setCart(prev => {
-                                const existing = prev.find(i => i.id === dish.id);
-                                if (existing) {
-                                  return prev.map(i => i.id === dish.id ? { ...i, qty: i.qty + 1 } : i);
-                                }
-                                return [...prev, { ...dish, cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
-                              });
-                            }}
-                            className="bg-white rounded-2xl border border-slate-200 hover:border-[#ff5500] hover:shadow-md cursor-pointer active:scale-[0.99] overflow-hidden flex flex-col justify-between transition-all"
-                          >
-                            {dish.imageUrl ? (
-                              <div className="relative h-28 w-full bg-slate-100 overflow-hidden shrink-0">
-                                <img
-                                  src={dish.imageUrl}
-                                  alt={dish.name}
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                />
-                                <span className={`absolute top-2 left-2 text-[9px] font-black px-2 py-0.5 rounded shadow-xs text-white ${
-                                  dish.department === 'Bar' ? 'bg-indigo-600' : 'bg-rose-600'
-                                }`}>
-                                  {dish.department}
-                                </span>
-                                <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-lg bg-black/75 backdrop-blur-xs text-white font-mono font-black text-xs">
-                                  {settings.currency} {dish.price.toFixed(2)}
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="p-3 pb-0 flex justify-between items-start">
-                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
-                                  dish.department === 'Bar' ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'
-                                }`}>
-                                  {dish.department}
-                                </span>
-                                <span className="text-xs font-mono font-bold text-[#ff5500]">
-                                  {settings.currency} {dish.price.toFixed(2)}
-                                </span>
-                              </div>
-                            )}
+                    <div className="bg-slate-100/80 p-3.5 rounded-3xl border border-slate-200/90 shadow-inner">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
+                        {filteredDishes.map(dish => {
+                          const { cogs, portions } = calculateDishAvailability(dish.recipe);
+                          const isInCart = cart.some(i => i.id === dish.id);
 
-                            <div className="p-3.5 pb-2">
-                              <h4 className="font-extrabold text-xs text-slate-900 leading-tight">{dish.name}</h4>
-                              <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">{dish.description}</p>
-                            </div>
-
-                            <div className="p-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] bg-slate-50/50">
-                              {portions <= 0 ? (
-                                <span className="text-amber-600 font-bold flex items-center gap-1 text-[10px]">
-                                  <AlertTriangle className="h-3 w-3" /> 0 ready
-                                </span>
+                          return (
+                            <div
+                              key={dish.id}
+                              onClick={() => {
+                                setCart(prev => {
+                                  const existing = prev.find(i => i.id === dish.id);
+                                  if (existing) {
+                                    return prev.map(i => i.id === dish.id ? { ...i, qty: i.qty + 1 } : i);
+                                  }
+                                  return [...prev, { ...dish, cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
+                                });
+                              }}
+                              className={`bg-white rounded-2xl border-2 cursor-pointer active:scale-[0.98] overflow-hidden flex flex-col justify-between transition-all duration-150 shadow-xs hover:shadow-md hover:-translate-y-0.5 ${
+                                isInCart
+                                  ? 'border-[#ff5500] ring-2 ring-[#ff5500]/25 shadow-orange-500/15'
+                                  : 'border-slate-300 hover:border-slate-400'
+                              }`}
+                            >
+                              {dish.imageUrl ? (
+                                <div className="relative h-28 w-full bg-slate-100 overflow-hidden shrink-0 border-b border-slate-200">
+                                  <img
+                                    src={dish.imageUrl}
+                                    alt={dish.name}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                  />
+                                  <span className={`absolute top-2 left-2 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded shadow-xs text-white ${
+                                    dish.department === 'Bar' ? 'bg-indigo-600' : 'bg-rose-600'
+                                  }`}>
+                                    {dish.department}
+                                  </span>
+                                  <span className="absolute bottom-2 right-2 px-2.5 py-0.5 rounded-lg bg-black/80 backdrop-blur-xs text-white font-mono font-black text-xs shadow-xs">
+                                    {settings.currency} {dish.price.toFixed(2)}
+                                  </span>
+                                </div>
                               ) : (
-                                <span className="text-emerald-700 font-semibold flex items-center gap-1 text-[10px]">
-                                  <CheckCircle2 className="h-3 w-3" /> {portions} ready
-                                </span>
+                                <div className="p-3 pb-0 flex justify-between items-start">
+                                  <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                                    dish.department === 'Bar'
+                                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  }`}>
+                                    {dish.department}
+                                  </span>
+                                  <span className="text-xs font-mono font-black text-[#ff5500]">
+                                    {settings.currency} {dish.price.toFixed(2)}
+                                  </span>
+                                </div>
                               )}
-                              <span className="text-slate-400 font-mono text-[10px]">BOM: {settings.currency} {cogs.toFixed(0)}</span>
+
+                              {/* Dish Title & Description / Category */}
+                              <div className="p-3.5 pb-2.5 flex-1 flex flex-col justify-center">
+                                <h4 className="font-black text-xs text-slate-900 leading-snug line-clamp-2">
+                                  {dish.name}
+                                </h4>
+                                <p className="text-[10px] text-slate-500 font-semibold mt-1 line-clamp-1">
+                                  {dish.category || dish.description || 'General Menu'}
+                                </p>
+                              </div>
+
+                              {/* Card Bottom: Readiness & BOM Status */}
+                              <div className="p-3 pt-2 border-t border-slate-200/90 flex items-center justify-between text-[11px] bg-slate-50/70">
+                                {portions <= 0 ? (
+                                  <span className="text-amber-600 font-bold flex items-center gap-1 text-[10px]">
+                                    <AlertTriangle className="h-3 w-3" /> 0 ready
+                                  </span>
+                                ) : (
+                                  <span className="text-emerald-700 font-bold flex items-center gap-1 text-[10px]">
+                                    <CheckCircle2 className="h-3 w-3" /> {portions} ready
+                                  </span>
+                                )}
+                                <span className="text-slate-500 font-mono font-bold text-[10px]">
+                                  BOM: {settings.currency} {cogs.toFixed(0)}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })()}
