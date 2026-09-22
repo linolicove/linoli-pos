@@ -4030,90 +4030,90 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   {menuItems
                     .filter(item => adminMenuCategory === 'All' || item.category === adminMenuCategory)
                     .map(item => {
-                    const { cogs } = calculateDishAvailability(item.recipe);
-                    return (
-                      <tr key={item.id} className="hover:bg-slate-50/70">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-3">
-                            <label className="relative group cursor-pointer shrink-0" title="Click to upload/change photo">
-                              {item.imageUrl ? (
-                                <img src={item.imageUrl} alt={item.name} className="h-11 w-11 rounded-xl object-cover border border-slate-200 group-hover:opacity-75 transition-opacity" />
-                              ) : (
-                                <div className="h-11 w-11 rounded-xl bg-orange-50 border border-orange-200 flex flex-col items-center justify-center text-orange-600 font-bold text-[9px] group-hover:bg-orange-100 transition-colors">
-                                  <Upload className="h-3.5 w-3.5 mb-0.5" />
-                                  <span>ADD</span>
-                                </div>
-                              )}
-                              <span className="absolute inset-0 bg-black/40 text-white rounded-xl text-[9px] font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                Change
-                              </span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={e => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    const reader = new FileReader();
-                                    reader.onload = ev => {
-                                      if (ev.target?.result) {
-                                        setMenuItems(prev => prev.map(m => m.id === item.id ? { ...m, imageUrl: ev.target.result } : m));
-                                        recordAuditLog('UPDATE_DISH_PHOTO', item.id, `Uploaded new photo for ${item.name}`);
-                                      }
-                                    };
-                                    reader.readAsDataURL(file);
+                      const { cogs } = calculateDishAvailability(item.recipe);
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/70">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3">
+                              <label className="relative group cursor-pointer shrink-0" title="Click to upload/change photo">
+                                {item.imageUrl ? (
+                                  <img src={item.imageUrl} alt={item.name} className="h-11 w-11 rounded-xl object-cover border border-slate-200 group-hover:opacity-75 transition-opacity" />
+                                ) : (
+                                  <div className="h-11 w-11 rounded-xl bg-orange-50 border border-orange-200 flex flex-col items-center justify-center text-orange-600 font-bold text-[9px] group-hover:bg-orange-100 transition-colors">
+                                    <Upload className="h-3.5 w-3.5 mb-0.5" />
+                                    <span>ADD</span>
+                                  </div>
+                                )}
+                                <span className="absolute inset-0 bg-black/40 text-white rounded-xl text-[9px] font-bold flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                  Change
+                                </span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={e => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      const reader = new FileReader();
+                                      reader.onload = ev => {
+                                        if (ev.target?.result) {
+                                          setMenuItems(prev => prev.map(m => m.id === item.id ? { ...m, imageUrl: ev.target.result } : m));
+                                          recordAuditLog('UPDATE_DISH_PHOTO', item.id, `Uploaded new photo for ${item.name}`);
+                                        }
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }
+                                  }}
+                                />
+                              </label>
+                              <div>
+                                <p className="font-extrabold text-slate-900">{item.name}</p>
+                                <span className="text-[10px] text-slate-400 line-clamp-1">{item.description}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
+                            }`}>
+                              {item.department}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-600 font-medium">{item.category}</td>
+                          <td className="py-3 px-4 font-mono font-bold text-[#ff5500]">{settings.currency} {item.price.toFixed(2)}</td>
+                          <td className="py-3 px-4 font-mono text-slate-500">{settings.currency} {cogs.toFixed(2)}</td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingMenuItem({ ...item });
+                                  setIsEditModalOpen(true);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                                title="Edit Item"
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Are you sure you want to delete "${item.name}" from the menu?`)) {
+                                    setMenuItems(prev => prev.filter(m => m.id !== item.id));
+                                    recordAuditLog('DELETE_MENU_ITEM', item.id, `Removed ${item.name} from menu.`);
                                   }
                                 }}
-                              />
-                            </label>
-                            <div>
-                              <p className="font-extrabold text-slate-900">{item.name}</p>
-                              <span className="text-[10px] text-slate-400 line-clamp-1">{item.description}</span>
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Delete Item"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
-                          }`}>
-                            {item.department}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 font-medium">{item.category}</td>
-                        <td className="py-3 px-4 font-mono font-bold text-[#ff5500]">{settings.currency} {item.price.toFixed(2)}</td>
-                        <td className="py-3 px-4 font-mono text-slate-500">{settings.currency} {cogs.toFixed(2)}</td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingMenuItem({ ...item });
-                                setIsEditModalOpen(true);
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                              title="Edit Item"
-                            >
-                              <Edit3 className="h-4 w-4" />
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm(`Are you sure you want to delete "${item.name}" from the menu?`)) {
-                                  setMenuItems(prev => prev.filter(m => m.id !== item.id));
-                                  recordAuditLog('DELETE_MENU_ITEM', item.id, `Removed ${item.name} from menu.`);
-                                }
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title="Delete Item"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -5159,7 +5159,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <h3 className="text-base font-black text-slate-900">Edit Dish / Item</h3>
-                <p className="text-xs text-slate-500">Update dish details, pricing, and category</p>
+                <p className="text-xs text-slate-500">Update dish details, pricing, BOM recipes, and category</p>
               </div>
               <button
                 type="button"
@@ -5184,7 +5184,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                 setMenuItems(prev => prev.map(m => m.id === editingMenuItem.id ? {
                   ...editingMenuItem,
-                  price: priceNum
+                  price: priceNum,
+                  recipe: editingMenuItem.recipe || []
                 } : m));
 
                 recordAuditLog('MENU_ITEM_UPDATED', editingMenuItem.id, `Updated ${editingMenuItem.name} to ${settings.currency} ${priceNum.toFixed(2)}`);
@@ -5304,6 +5305,73 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
+              {/* RECIPE INGREDIENT BOM BUILDER */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <BookOpen className="h-3.5 w-3.5 text-[#ff5500]" /> Link Recipe Ingredients (BOM)
+                </span>
+                <div className="flex gap-2">
+                  <select id="editDishIngSelect" className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900">
+                    {inventory.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                    ))}
+                  </select>
+                  <input
+                    id="editDishIngAmount"
+                    type="number"
+                    min="0.1"
+                    step="any"
+                    placeholder="Qty/portion"
+                    className="w-28 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sel = document.getElementById('editDishIngSelect');
+                      const amtInput = document.getElementById('editDishIngAmount');
+                      const ingId = sel?.value;
+                      const amt = parseFloat(amtInput?.value);
+                      if (!ingId || isNaN(amt) || amt <= 0) return;
+
+                      setEditingMenuItem(prev => ({
+                        ...prev,
+                        recipe: [...(prev.recipe || []), { ingredientId: ingId, amount: amt }]
+                      }));
+                      if (amtInput) amtInput.value = '';
+                    }}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    + Add
+                  </button>
+                </div>
+
+                {editingMenuItem.recipe && editingMenuItem.recipe.length > 0 && (
+                  <div className="space-y-1 max-h-28 overflow-y-auto">
+                    {editingMenuItem.recipe.map((r, i) => {
+                      const matchedIng = inventory.find(inv => inv.id === r.ingredientId);
+                      return (
+                        <div key={i} className="flex justify-between items-center text-xs p-1.5 bg-white rounded-lg border border-slate-200">
+                          <span className="font-bold text-slate-800">{matchedIng?.name || r.ingredientId}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-500">{r.amount} {matchedIng?.unit}</span>
+                            <button
+                              type="button"
+                              onClick={() => setEditingMenuItem(prev => ({
+                                ...prev,
+                                recipe: prev.recipe.filter((_, idx) => idx !== i)
+                              }))}
+                              className="text-slate-400 hover:text-rose-600 transition-colors"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
@@ -5326,7 +5394,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </div>
       )}
-
       {/* MODAL: CHECKOUT & SETTLEMENT */}
       {checkoutModalOpen && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
