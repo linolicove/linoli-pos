@@ -1321,6 +1321,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     const newInvoice = {
       invoiceNo: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
       orderRef: targetOrder.orderId,
+      shiftId: currentShift.shiftId,
       date: `${getLocalDateStr()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
       table: targetOrder.tableName,
       mode: targetOrder.mode,
@@ -3303,7 +3304,17 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               if (Array.isArray(transactions)) {
                 for (let i = 0; i < transactions.length; i++) {
                   const t = transactions[i];
-                  if (t && t.paymentMethod === 'CASH' && extractDateStr(t.date) === todayStr) {
+                  if (!t) continue;
+                  
+                  // Check payment method (case-insensitive)
+                  const isCash = String(t.paymentMethod || '').trim().toUpperCase() === 'CASH';
+                  
+                  // Match date by extracted date, substring inclusion, or fallback if empty
+                  const dateStr = String(t.date || '');
+                  const matchesDate = extractDateStr(dateStr) === todayStr || dateStr.includes(todayStr);
+                  const matchesShift = t.shiftId ? t.shiftId === currentShift.shiftId : matchesDate;
+                  
+                  if (isCash && matchesDate) {
                     shiftCashSales += Number(t.total) || 0;
                   }
                 }
