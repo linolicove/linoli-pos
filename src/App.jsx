@@ -2250,14 +2250,17 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             +
                           </button>
                           <button
-                            onClick={() => {
-                              setVoidPayload({ item, reason: '' });
-                              setVoidModalOpen(true);
-                            }}
-                            className="text-slate-400 hover:text-rose-600 ml-1 p-1"
-                            title="Void Line Item"
+                            type="button"
+                                  onClick={() => {
+                              if (item.qty <= 1) {
+                              setCart(prev => prev.filter(i => i.cartItemId !== item.cartItemId));
+                              } else {
+                              setCart(prev => prev.map(i => i.cartItemId === item.cartItemId ? { ...i, qty: i.qty - 1 } : i));
+                              }
+                           }}
+                            className="h-6 w-6 rounded-md bg-white border border-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold hover:bg-slate-100 cursor-pointer"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                          -
                           </button>
                         </div>
                       </div>
