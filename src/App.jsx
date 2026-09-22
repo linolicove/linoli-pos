@@ -387,18 +387,21 @@ export default function App() {
   const [editingDishForRecipe, setEditingDishForRecipe] = useState(null);
   const [currentRecipeIngredients, setCurrentRecipeIngredients] = useState([]);
   const [tempIngredientSelect, setTempIngredientSelect] = useState({ ingredientId: '', amount: '' });
- // Refs to track previous data and prevent re-upload loops
+ // Refs to prevent premature uploads and re-render loops
+  const isCloudSynced = useRef(false);
   const prevOrdersRef = useRef('');
   const prevTransRef = useRef('');
   const prevTablesRef = useRef('');
   const prevAuditsRef = useRef('');
-  const prevMenuRef = useRef(''); // <-- ADD THIS
+  const prevMenuRef = useRef('');
+
   // ============================================================
-  // 1. REAL-TIME CLOUD LISTENERS (Midigama <-> Australia)
+  // 1. REAL-TIME CLOUD LISTENERS (Download from Firebase)
   // ============================================================
   useEffect(() => {
     // 1. Receive incoming active orders
     const unsubOrders = subscribeToCloud('active_orders', (remoteOrders) => {
+      isCloudSynced.current = true;
       if (Array.isArray(remoteOrders)) {
         const serialized = JSON.stringify(remoteOrders);
         if (prevOrdersRef.current === serialized) return;
@@ -410,6 +413,7 @@ export default function App() {
 
     // 2. Receive incoming settled transactions
     const unsubTrans = subscribeToCloud('transactions', (remoteTrans) => {
+      isCloudSynced.current = true;
       if (Array.isArray(remoteTrans)) {
         const serialized = JSON.stringify(remoteTrans);
         if (prevTransRef.current === serialized) return;
@@ -421,6 +425,7 @@ export default function App() {
 
     // 3. Receive incoming table occupancy / floor status
     const unsubTables = subscribeToCloud('floor_tables', (remoteTables) => {
+      isCloudSynced.current = true;
       if (Array.isArray(remoteTables)) {
         const serialized = JSON.stringify(remoteTables);
         if (prevTablesRef.current === serialized) return;
@@ -432,6 +437,7 @@ export default function App() {
 
     // 4. Receive incoming audit trail activity logs
     const unsubAudits = subscribeToCloud('audit_logs', (remoteAudits) => {
+      isCloudSynced.current = true;
       if (Array.isArray(remoteAudits)) {
         const serialized = JSON.stringify(remoteAudits);
         if (prevAuditsRef.current === serialized) return;
@@ -440,8 +446,10 @@ export default function App() {
         localStorage.setItem('linoli_audit_logs', serialized);
       }
     });
-  // 5. Receive incoming menu items (dish additions, edits, pricing)
+
+    // 5. Receive incoming menu items
     const unsubMenu = subscribeToCloud('menu_items', (remoteMenu) => {
+      isCloudSynced.current = true;
       if (Array.isArray(remoteMenu)) {
         const serialized = JSON.stringify(remoteMenu);
         if (prevMenuRef.current === serialized) return;
@@ -450,6 +458,7 @@ export default function App() {
         localStorage.setItem('linoli_menu_items', serialized);
       }
     });
+
     return () => {
       if (typeof unsubOrders === 'function') unsubOrders();
       if (typeof unsubTrans === 'function') unsubTrans();
@@ -460,9 +469,10 @@ export default function App() {
   }, []);
 
   // ============================================================
-  // 2. BROADCAST LOCAL CHANGES UP TO FIREBASE
+  // 2. BROADCAST LOCAL CHANGES UP TO FIREBASE (Guarded)
   // ============================================================
   useEffect(() => {
+    if (!isCloudSynced.current) return;
     if (activeOrders !== undefined) {
       const current = JSON.stringify(activeOrders);
       if (current !== prevOrdersRef.current) {
@@ -473,6 +483,7 @@ export default function App() {
   }, [activeOrders]);
 
   useEffect(() => {
+    if (!isCloudSynced.current) return;
     if (transactions !== undefined) {
       const current = JSON.stringify(transactions);
       if (current !== prevTransRef.current) {
@@ -483,6 +494,7 @@ export default function App() {
   }, [transactions]);
 
   useEffect(() => {
+    if (!isCloudSynced.current) return;
     if (floorTables !== undefined) {
       const current = JSON.stringify(floorTables);
       if (current !== prevTablesRef.current) {
@@ -493,6 +505,7 @@ export default function App() {
   }, [floorTables]);
 
   useEffect(() => {
+    if (!isCloudSynced.current) return;
     if (auditLogs !== undefined) {
       const current = JSON.stringify(auditLogs);
       if (current !== prevAuditsRef.current) {
@@ -503,6 +516,7 @@ export default function App() {
   }, [auditLogs]);
 
   useEffect(() => {
+    if (!isCloudSynced.current) return;
     if (menuItems !== undefined && menuItems.length > 0) {
       const current = JSON.stringify(menuItems);
       if (current !== prevMenuRef.current) {
@@ -511,7 +525,7 @@ export default function App() {
       }
     }
   }, [menuItems]);
-  
+
   const handleCreateStaff = (e) => {
     e.preventDefault();
     setStaffFormError('');
