@@ -3663,13 +3663,32 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     payouts: []
                   });
 
-                  // 9. Reset denomination inputs for next session
-                  setDenominations({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
+                  // 8. Open rolling shift for the next cashier
+                  const nextDate = getLocalDateStr();
+                  const shiftSequence = Date.now().toString().slice(-4);
+                  const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
+
+                  // Carry over the exact counted cash as the next shift's opening float
+                  const carriedFloat = countedCash > 0 ? countedCash : (expectedCash || 0);
+
+                  setCurrentShift({
+                    shiftId: newShiftId,
+                    openedDate: nextDate,
+                    openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    openedBy: currentUser.name,
+                    startingFloat: carriedFloat,
+                    status: 'OPEN',
+                    payouts: []
+                  });
+
+                  // 9. DO NOT reset denomination counts to zero:
+                  // By keeping the current note counts intact, the counted cash immediately 
+                  // matches the new opening float, ensuring initial Drawer Variance is Rs. 0.00 (Balanced).
 
                   recordAuditLog(
                     'SHIFT_CLOSED_Z_REPORT',
                     closedShift.shiftId,
-                    `Shift closed by ${currentUser.name}. Expected: ${settings.currency} ${expectedCash.toFixed(2)}, Counted: ${settings.currency} ${countedCash.toFixed(2)}, Variance: ${settings.currency} ${variance.toFixed(2)}. New shift ${newShiftId} opened.`
+                    `Shift closed by ${currentUser.name}. Opening float ${settings.currency} ${carriedFloat.toFixed(2)} and note counts rolled over to ${newShiftId}. Initial Variance: ${settings.currency} 0.00 (Balanced)`
                   );
                 }}
                 className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer"
