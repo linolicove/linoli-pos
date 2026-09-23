@@ -5884,63 +5884,92 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
             {/* Final Settlement Tax Invoice */}
             {activePrintSlip.type === 'FINAL_BILL' && (
-              <div className="space-y-2">
-                <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
-                  <p className="font-black text-sm">{settings.restaurantName}</p>
-                  <p className="text-[9px] whitespace-pre-line">{settings.receiptHeader}</p>
-                  <p className="font-bold text-xs mt-1">TAX INVOICE #{activePrintSlip.data.invoiceNo}</p>
-                  <p className="text-[9px]">{activePrintSlip.data.date} • {activePrintSlip.data.table}</p>
+              <div className="space-y-3 font-mono">
+                {/* ENLARGED TOP HEADER */}
+                <div className="text-center border-b-2 border-dashed border-black pb-3 space-y-1">
+                  {/* Restaurant Name */}
+                  <h1 className="font-black text-xl tracking-tight uppercase leading-tight">
+                    {settings.restaurantName}
+                  </h1>
+
+                  {/* Tagline / Subtitle */}
+                  {settings.tagline && (
+                    <p className="font-bold text-xs uppercase tracking-wider">
+                      {settings.tagline}
+                    </p>
+                  )}
+
+                  {/* Address & Contact Details */}
+                  <div className="text-xs font-semibold leading-snug whitespace-pre-line text-black pt-1">
+                    {settings.receiptHeader}
+                  </div>
+
+                  {/* Prominent Tax Invoice Label & Number */}
+                  <div className="pt-2">
+                    <p className="font-black text-sm tracking-wide uppercase border-y border-black py-1 inline-block w-full">
+                      TAX INVOICE #{activePrintSlip.data.invoiceNo}
+                    </p>
+                  </div>
+
+                  {/* Date, Time & Table */}
+                  <p className="text-xs font-bold tracking-tight pt-1">
+                    {activePrintSlip.data.date} &bull; {activePrintSlip.data.table}
+                  </p>
                 </div>
-                <div className="py-1 border-b border-slate-300 space-y-1">
+
+                {/* Line Items */}
+                <div className="py-1 border-b border-black space-y-1 text-xs">
                   {activePrintSlip.data.items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between">
+                    <div key={idx} className="flex justify-between font-semibold">
                       <span>{item.qty}x {item.name}</span>
                       <span>{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
-                <div className="space-y-1 text-[10px]">
+
+                {/* Financial Summary */}
+                <div className="space-y-1 text-xs">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
                     <span>{settings.currency} {(activePrintSlip.data.subtotal || 0).toFixed(2)}</span>
                   </div>
                   {activePrintSlip.data.discount > 0 && (
-                    <div className="flex justify-between text-rose-600">
+                    <div className="flex justify-between text-rose-600 font-semibold">
                       <span>Discount ({activePrintSlip.data.discountPercent || 0}%):</span>
                       <span>-{settings.currency} {activePrintSlip.data.discount.toFixed(2)}</span>
                     </div>
                   )}
                   {activePrintSlip.data.serviceCharge > 0 && (
-                    <div className="flex justify-between">
+                    <div className="flex justify-between font-medium">
                       <span>Service Charge ({settings.serviceChargeRate}%):</span>
                       <span>+{settings.currency} {activePrintSlip.data.serviceCharge.toFixed(2)}</span>
                     </div>
                   )}
                   {activePrintSlip.data.tax > 0 && (
-                    <div className="flex justify-between">
+                    <div className="flex justify-between font-medium">
                       <span>Taxes ({settings.taxRate}%):</span>
                       <span>+{settings.currency} {activePrintSlip.data.tax.toFixed(2)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
+                  <div className="flex justify-between font-black text-sm pt-1.5 border-t border-black">
                     <span>TOTAL AMOUNT DUE:</span>
                     <span>{settings.currency} {activePrintSlip.data.total.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-[10px] font-bold">
+                  <div className="flex justify-between text-xs font-bold pt-0.5">
                     <span>PAYMENT METHOD:</span>
                     <span>{activePrintSlip.data.paymentMethod}</span>
                   </div>
 
-                  {/* Cash Given & Change Breakdown */}
+                  {/* Cash Tendered & Balance Breakdown */}
                   {activePrintSlip.data.paymentMethod === 'CASH' && (
-                    <div className="pt-1.5 mt-1 border-t border-dashed border-slate-800 space-y-1">
-                      <div className="flex justify-between text-[10px] font-bold">
+                    <div className="pt-2 mt-1 border-t border-dashed border-black space-y-1">
+                      <div className="flex justify-between text-xs font-bold">
                         <span>CASH TENDERED (GIVEN):</span>
                         <span>
                           {settings.currency} {(activePrintSlip.data.cashTendered !== undefined ? activePrintSlip.data.cashTendered : activePrintSlip.data.total).toFixed(2)}
                         </span>
                       </div>
-                      <div className="flex justify-between text-xs font-black">
+                      <div className="flex justify-between text-sm font-black">
                         <span>BALANCE / CHANGE DUE:</span>
                         <span>
                           {settings.currency} {(activePrintSlip.data.changeDue || 0).toFixed(2)}
@@ -5949,10 +5978,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     </div>
                   )}
                 </div>
-                <p className="text-center font-bold text-[9px] pt-2 whitespace-pre-line">{settings.receiptFooter}</p>
+
+                {/* Footer Message */}
+                <p className="text-center font-bold text-xs pt-3 whitespace-pre-line border-t border-dashed border-black">
+                  {settings.receiptFooter}
+                </p>
               </div>
             )}
-
+            
             {/* Cash Out Voucher */}
             {activePrintSlip.type === 'CASH_OUT_VOUCHER' && (
               <div className="space-y-2">
