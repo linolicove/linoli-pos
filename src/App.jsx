@@ -290,8 +290,9 @@ export default function App() {
   });
 
   const [shiftHistory, setShiftHistory] = usePersistentState('linoli_shift_history', []);
-  const [denominations, setDenominations] = usePersistentState('linoli_denominations', { 
-    5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
+  const [denominations, setDenominations] = usePersistentState('linoli_denominations', {
+    5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0
+  });
   const [payoutForm, setPayoutForm] = useState({ amount: '', reason: '' });
 
   const [cashOutForm, setCashOutForm] = useState({
@@ -396,6 +397,7 @@ export default function App() {
   const prevExpensesRef = useRef('');  // <-- ADD THIS
   const prevStaffRef = useRef('');
   const prevShiftRef = useRef('');
+  const prevDenomRef = useRef('');
   const [expenses, setExpenses] = useState(() => {
   try {
     const local = localStorage.getItem('linoli_expenses');
@@ -513,6 +515,18 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         localStorage.setItem('linoli_staff_list', serialized);
       }
     });
+    // 9. Receive physical denomination counts from cloud
+    const unsubDenominations = subscribeToCloud('denominations', (remoteDenom) => {
+      isCloudSynced.current = true;
+      if (remoteDenom && typeof remoteDenom === 'object') {
+        const serialized = JSON.stringify(remoteDenom);
+        if (prevDenomRef.current === serialized) return;
+        prevDenomRef.current = serialized;
+        setDenominations(remoteDenom);
+        localStorage.setItem('linoli_denominations', serialized);
+      }
+    });
+    
     return () => {
       if (typeof unsubOrders === 'function') unsubOrders();
       if (typeof unsubTrans === 'function') unsubTrans();
@@ -523,6 +537,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       if (typeof unsubExpenses === 'function') unsubExpenses();
       if (typeof unsubShift === 'function') unsubShift();
       if (typeof unsubStaff === 'function') unsubStaff();
+      if (typeof unsubDenominations === 'function') unsubDenominations();
     };
   }, []);
 
@@ -626,6 +641,16 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       }
     }
   }, [staffList]);
+  useEffect(() => {
+    if (!isCloudSynced.current) return;
+    if (denominations && typeof denominations === 'object') {
+      const current = JSON.stringify(denominations);
+      if (current !== prevDenomRef.current) {
+        prevDenomRef.current = current;
+        syncToCloud('denominations', denominations);
+      }
+    }
+  }, [denominations]);
 
   const handleCreateStaff = (e) => {
     e.preventDefault();
