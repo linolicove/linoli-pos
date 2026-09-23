@@ -1711,9 +1711,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             margin: ${settings.receiptMargin || '2mm'};
             size: auto;
           }
+          *, *::before, *::after {
+            box-sizing: border-box !important;
+          }
           body {
             background-color: #ffffff !important;
             color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
           body * {
             visibility: hidden !important;
@@ -1725,13 +1730,25 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            width: 100% !important;
+            width: ${settings.receiptRollWidth === '58mm' ? '58mm' : '80mm'} !important;
+            max-width: 100% !important;
             margin: 0 !important;
             padding: ${settings.receiptMargin || '2mm'} !important;
             box-shadow: none !important;
             border: none !important;
             background: #ffffff !important;
             color: #000000 !important;
+            font-size: ${settings.receiptFontSize || '11px'} !important;
+            font-family: ${settings.receiptFontFamily || 'monospace'} !important;
+            line-height: 1.25 !important;
+          }
+          #thermal-print-area .border-dashed,
+          #thermal-print-area .border-t,
+          #thermal-print-area .border-b {
+            border-color: #000000 !important;
+          }
+          #thermal-print-area div {
+            break-inside: avoid;
           }
         }
       `}</style>
@@ -3545,60 +3562,93 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               <button
                 type="button"
                 onClick={() => {
-                  // 1. Calculate shift sales directly inside the button click
+                  // 1. Calculate shift revenue across all payment channels
                   let shiftCashSales = 0;
+                  let shiftCardSales = 0;
+                  let shiftOtherSales = 0;
+                  let shiftTotalBills = 0;
+
                   if (Array.isArray(transactions)) {
                     for (let i = 0; i < transactions.length; i++) {
                       const t = transactions[i];
                       if (!t) continue;
-                      const isCash = String(t.paymentMethod || '').trim().toUpperCase() === 'CASH';
+                      const method = String(t.paymentMethod || '').trim().toUpperCase();
+                      const isCash = method === 'CASH';
+                      const isCard = method === 'CARD';
                       const matchesShift = t.shiftId 
                         ? t.shiftId === currentShift.shiftId 
                         : (extractDateStr(t.date) === currentShift.openedDate && !t.shiftId);
 
-                      if (isCash && matchesShift) {
-                        shiftCashSales += Number(t.total) || 0;
+                      if (matchesShift) {
+                        shiftTotalBills += 1;
+                        const amt = Number(t.total) || 0;
+                        if (isCash) {
+                          shiftCashSales += amt;
+                        } else if (isCard) {
+                          shiftCardSales += amt;
+                        } else {
+                          shiftOtherSales += amt;
+                        }
                       }
                     }
                   }
 
+                  // 2. Tally approved cash outs
+                  const allPayouts = currentShift.payouts || [];
+                  const approvedPayouts = allPayouts.filter(p => p.status === 'APPROVED' || !p.status);
+                  const totalCashOut = approvedPayouts.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+
+                  // 3. Calculate counted cash from physical notes
                   const countedCash = Object.entries(denominations).reduce(
                     (sum, [denom, count]) => sum + (Number(denom) * (Number(count) || 0)),
                     0
                   );
 
+                  // 4. Compute expected balance and variance
+                  const expectedCash = Number(((currentShift.startingFloat || 0) + shiftCashSales - totalCashOut).toFixed(2));
+                  const variance = Number((countedCash - expectedCash).toFixed(2));
+
                   const closedShift = {
                     ...currentShift,
+                    closedDate: getLocalDateStr(),
                     closedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                     closedBy: currentUser.name,
                     status: 'CLOSED',
                     metrics: {
                       startingFloat: currentShift.startingFloat,
                       cashSales: shiftCashSales,
-                      countedCash
+                      cardSales: shiftCardSales,
+                      otherSales: shiftOtherSales,
+                      grossSales: shiftCashSales + shiftCardSales + shiftOtherSales,
+                      totalBills: shiftTotalBills,
+                      cashOutTotal: totalCashOut,
+                      approvedPayouts,
+                      expectedCash,
+                      countedCash,
+                      variance,
+                      denominations: { ...denominations }
                     }
                   };
 
-                  // 2. Archive previous shift
+                  // 5. Archive shift
                   setShiftHistory(prev => [closedShift, ...prev]);
 
-                  // 3. Print Z-Report
+                  // 6. Print full Z-Report
                   triggerAutoPrint({
                     type: 'Z_REPORT',
                     data: closedShift
                   }, `Shift ${closedShift.shiftId} Closed`);
 
-                  // 4. Lock current transactions so they don't leak into the next shift
+                  // 7. Lock transactions to this shift
                   setTransactions(prev => prev.map(t => {
-                    const isCash = String(t.paymentMethod || '').trim().toUpperCase() === 'CASH';
                     const matchesThisShift = t.shiftId === currentShift.shiftId || (!t.shiftId && extractDateStr(t.date) === currentShift.openedDate);
-                    if (isCash && matchesThisShift) {
+                    if (matchesThisShift) {
                       return { ...t, shiftId: currentShift.shiftId };
                     }
                     return t;
                   }));
 
-                  // 5. Open clean shift for the next cashier
+                  // 8. Open clean shift for next cashier
                   const nextDate = getLocalDateStr();
                   const shiftSequence = Date.now().toString().slice(-4);
                   const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
@@ -3613,7 +3663,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     payouts: []
                   });
 
-                  recordAuditLog('SHIFT_CLOSED', closedShift.shiftId, `Shift closed by ${currentUser.name}. New shift ${newShiftId} opened.`);
+                  // 9. Reset denomination inputs for next session
+                  setDenominations({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
+
+                  recordAuditLog(
+                    'SHIFT_CLOSED_Z_REPORT',
+                    closedShift.shiftId,
+                    `Shift closed by ${currentUser.name}. Expected: ${settings.currency} ${expectedCash.toFixed(2)}, Counted: ${settings.currency} ${countedCash.toFixed(2)}, Variance: ${settings.currency} ${variance.toFixed(2)}. New shift ${newShiftId} opened.`
+                  );
                 }}
                 className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer"
               >
