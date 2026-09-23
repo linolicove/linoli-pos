@@ -5272,18 +5272,60 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
               <div className="flex gap-2 pt-2">
                 <button
+                  type="button"
                   onClick={() => setEditBillModalOpen(false)}
-                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-200 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
+                    const originalOrder = activeOrders.find(o => o.orderId === editingBill.orderId);
+                    const originalItems = originalOrder?.items || [];
+                    const updatedItems = editingBill.items || [];
+
+                    const changes = [];
+
+                    // 1. Detect additions and quantity changes
+                    updatedItems.forEach(item => {
+                      const prev = originalItems.find(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
+                      if (!prev) {
+                        changes.push(`ADDED "${item.name}" (Qty: ${item.qty}, ${settings.currency} ${(item.price * item.qty).toFixed(2)})`);
+                      } else if (item.qty > prev.qty) {
+                        const diff = item.qty - prev.qty;
+                        changes.push(`INCREASED "${item.name}" (+${diff}, now ${item.qty})`);
+                      } else if (item.qty < prev.qty) {
+                        const diff = prev.qty - item.qty;
+                        changes.push(`DECREASED "${item.name}" (-${diff}, now ${item.qty})`);
+                      }
+                    });
+
+                    // 2. Detect deleted/voided items
+                    originalItems.forEach(item => {
+                      const stillExists = updatedItems.some(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
+                      if (!stillExists) {
+                        changes.push(`REMOVED "${item.name}" (was Qty: ${item.qty}, ${settings.currency} ${(item.price * item.qty).toFixed(2)})`);
+                      }
+                    });
+
+                    const changeSummary = changes.length > 0
+                      ? changes.join(' | ')
+                      : 'No line item quantity modifications';
+
+                    // Update the active order in state
                     setActiveOrders(prev => prev.map(o => o.orderId === editingBill.orderId ? editingBill : o));
-                    recordAuditLog('BILL_UPDATED', editingBill.orderId, `Updated items for open bill ${editingBill.orderId} (${editingBill.tableName})`);
+
+                    // Record itemized differential log
+                    recordAuditLog(
+                      'BILL_MODIFIED_DIFF',
+                      editingBill.orderId,
+                      `Saved changes on Bill #${editingBill.orderId} (${editingBill.tableName}): ${changeSummary}`
+                    );
+
                     setEditBillModalOpen(false);
                   }}
-                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer"
                 >
                   Save Changes to Bill
                 </button>
