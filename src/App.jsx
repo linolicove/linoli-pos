@@ -3648,21 +3648,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     return t;
                   }));
 
-                  // 8. Open clean shift for next cashier
-                  const nextDate = getLocalDateStr();
-                  const shiftSequence = Date.now().toString().slice(-4);
-                  const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
-
-                  setCurrentShift({
-                    shiftId: newShiftId,
-                    openedDate: nextDate,
-                    openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    openedBy: currentUser.name,
-                    startingFloat: countedCash || 15000.00,
-                    status: 'OPEN',
-                    payouts: []
-                  });
-
                   // 8. Open rolling shift for the next cashier
                   const nextDate = getLocalDateStr();
                   const shiftSequence = Date.now().toString().slice(-4);
@@ -3681,9 +3666,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     payouts: []
                   });
 
-                  // 9. DO NOT reset denomination counts to zero:
-                  // By keeping the current note counts intact, the counted cash immediately 
-                  // matches the new opening float, ensuring initial Drawer Variance is Rs. 0.00 (Balanced).
+                  // 9. Keep denomination counts rolling over to maintain Rs. 0.00 initial variance
 
                   recordAuditLog(
                     'SHIFT_CLOSED_Z_REPORT',
@@ -3697,7 +3680,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <span>Close Shift &amp; Print Z-Report</span>
               </button>
             </div>
-
             {(() => {
               const allPayouts = currentShift.payouts || [];
               const approvedPayouts = allPayouts.filter(p => p.status === 'APPROVED' || !p.status);
