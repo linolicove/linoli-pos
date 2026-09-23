@@ -1364,6 +1364,76 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     return allowed.includes(tabKey);
   };
 
+  // Centralized Cart Action Mutators with Audit Logging
+  const handleAddToCart = (dish) => {
+    setCart(prev => {
+      const existing = prev.find(i => i.id === dish.id);
+      if (existing) {
+        const nextQty = existing.qty + 1;
+        recordAuditLog(
+          'CART_ITEM_INCREMENTED',
+          dish.id,
+          `Increased "${dish.name}" quantity to ${nextQty} on active ticket`
+        );
+        return prev.map(i => i.id === dish.id ? { ...i, qty: nextQty } : i);
+      }
+      const cartItemId = `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+      recordAuditLog(
+        'CART_ITEM_ADDED',
+        dish.id,
+        `Added "${dish.name}" (${settings.currency} ${dish.price.toFixed(2)}) to active ticket`
+      );
+      return [...prev, { ...dish, cartItemId, qty: 1, notes: '' }];
+    });
+  };
+
+  const handleIncrementCartItem = (item) => {
+    setCart(prev =>
+      prev.map(i => {
+        if (i.cartItemId === item.cartItemId) {
+          const nextQty = i.qty + 1;
+          recordAuditLog(
+            'CART_QTY_INCREMENT',
+            item.id,
+            `Incremented "${item.name}" qty: ${i.qty} -> ${nextQty} (Line Total: ${settings.currency} ${(item.price * nextQty).toFixed(2)})`
+          );
+          return { ...i, qty: nextQty };
+        }
+        return i;
+      })
+    );
+  };
+
+  const handleDecrementCartItem = (item) => {
+    if (item.qty <= 1) {
+      handleRemoveCartItem(item, 'DECREMENT_ZERO');
+      return;
+    }
+    setCart(prev =>
+      prev.map(i => {
+        if (i.cartItemId === item.cartItemId) {
+          const nextQty = i.qty - 1;
+          recordAuditLog(
+            'CART_QTY_DECREMENT',
+            item.id,
+            `Decremented "${item.name}" qty: ${i.qty} -> ${nextQty} (Line Total: ${settings.currency} ${(item.price * nextQty).toFixed(2)})`
+          );
+          return { ...i, qty: nextQty };
+        }
+        return i;
+      })
+    );
+  };
+
+  const handleRemoveCartItem = (item, reason = 'MANUAL_REMOVE') => {
+    setCart(prev => prev.filter(i => i.cartItemId !== item.cartItemId));
+    recordAuditLog(
+      'CART_ITEM_REMOVED',
+      item.id,
+      `Removed "${item.name}" (Qty: ${item.qty}, Amount: ${settings.currency} ${(item.price * item.qty).toFixed(2)}) from ticket [${reason}]`
+    );
+  };
+
   const handleSendOrder = () => {
     if (cart.length === 0) return;
 
@@ -1393,7 +1463,15 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       setFloorTables(prev => prev.map(t => t.id === selectedTable.id ? { ...t, status: 'OCCUPIED', currentOrderRef: newOrderId } : t));
     }
 
-    recordAuditLog('ORDER_DISPATCHED', newOrderId, `Dispatched order ${newOrderId} (${orderPayload.tableName}) with ${cart.length} items.`);
+    // Comprehensive snapshot logging: items, quantities, modifiers, and financial total
+    const itemSummary = cart.map(i => `${i.qty}x ${i.name}${i.notes ? ` (${i.notes})` : ''}`).join(', ');
+    const totalPortions = cart.reduce((acc, i) => acc + i.qty, 0);
+
+    recordAuditLog(
+      'ORDER_DISPATCHED',
+      newOrderId,
+      `Dispatched order ${newOrderId} (${orderPayload.tableName}) with ${totalPortions} portions across ${cart.length} line items. Total: ${settings.currency} ${cartGrandTotal.toFixed(2)}. Items: [${itemSummary}]`
+    );
 
     const kitchenItems = cart.filter(i => i.department === 'Kitchen');
     const barItems = cart.filter(i => i.department === 'Bar');
@@ -2002,44 +2080,50 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                   if (posViewMode === 'compact') {
                     return (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2.5">
-                        {filteredDishes.map(dish => {
-                          const { portions } = calculateDishAvailability(dish.recipe);
-                          return (
-                            <button
-                              key={dish.id}
-                              onClick={() => {
-                                setCart(prev => {
-                                  const existing = prev.find(i => i.id === dish.id);
-                                  if (existing) {
-                                    return prev.map(i => i.id === dish.id ? { ...i, qty: i.qty + 1 } : i);
-                                  }
-                                  return [...prev, { ...dish, cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
-                                });
-                              }}
-                              className="p-3 rounded-xl border text-left flex flex-col justify-between transition-all bg-white border-slate-200 hover:border-[#ff5500] hover:shadow-sm active:scale-95"
-                            >
-                              <div>
-                                <span className={`text-[8px] font-black px-1 py-0.2 rounded uppercase ${
-                                  dish.department === 'Bar' ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'
-                                }`}>
-                                  {dish.department}
-                                </span>
-                                <p className="font-extrabold text-xs text-slate-900 mt-1 line-clamp-1">{dish.name}</p>
-                              </div>
-                              <div className="mt-2 flex justify-between items-center text-[10px]">
-                                <span className="font-mono font-bold text-[#ff5500]">{settings.currency} {dish.price.toFixed(0)}</span>
-                                <span className={portions <= 0 ? 'text-amber-600 font-bold' : 'text-slate-400'}>
-                                  {portions <= 0 ? '0 in stock' : `${portions} left`}
-                                </span>
-                              </div>
-                            </button>
-                          );
-                        })}
+                      <div className="bg-slate-100/70 p-3 rounded-2xl border border-slate-200 shadow-inner">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2.5">
+                          {filteredDishes.map(dish => {
+                            const { portions } = calculateDishAvailability(dish.recipe);
+                            const isInCart = cart.some(i => i.id === dish.id);
+
+                            return (
+                              <button
+                                key={dish.id}
+                                type="button"
+                                onClick={() => handleAddToCart(dish)}
+                                className={`p-3 rounded-xl border-2 text-left flex flex-col justify-between transition-all bg-white cursor-pointer active:scale-95 shadow-xs hover:shadow-md ${
+                                  isInCart
+                                    ? 'border-[#ff5500] ring-2 ring-[#ff5500]/25 shadow-orange-500/10'
+                                    : 'border-slate-300 hover:border-slate-400'
+                                }`}
+                              >
+                                <div>
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                                    dish.department === 'Bar' 
+                                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
+                                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  }`}>
+                                    {dish.department}
+                                  </span>
+                                  <p className="font-black text-xs text-slate-950 mt-1.5 line-clamp-1">
+                                    {dish.name}
+                                  </p>
+                                </div>
+                                <div className="mt-2.5 pt-2 border-t border-slate-100 flex justify-between items-center text-[10px]">
+                                  <span className="font-mono font-black text-[#ff5500]">
+                                    {settings.currency} {dish.price.toFixed(0)}
+                                  </span>
+                                  <span className={`font-bold ${portions <= 0 ? 'text-amber-600' : 'text-emerald-700'}`}>
+                                    {portions <= 0 ? '0 ready' : `${portions} left`}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   }
-
                   if (posViewMode === 'list') {
                     return (
                       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
