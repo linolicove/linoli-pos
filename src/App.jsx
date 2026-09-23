@@ -3311,7 +3311,25 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
 
               <button
+                type="button"
                 onClick={() => {
+                  // 1. Calculate shift sales directly inside the button click
+                  let shiftCashSales = 0;
+                  if (Array.isArray(transactions)) {
+                    for (let i = 0; i < transactions.length; i++) {
+                      const t = transactions[i];
+                      if (!t) continue;
+                      const isCash = String(t.paymentMethod || '').trim().toUpperCase() === 'CASH';
+                      const matchesShift = t.shiftId 
+                        ? t.shiftId === currentShift.shiftId 
+                        : (extractDateStr(t.date) === currentShift.openedDate && !t.shiftId);
+
+                      if (isCash && matchesShift) {
+                        shiftCashSales += Number(t.total) || 0;
+                      }
+                    }
+                  }
+
                   const countedCash = Object.entries(denominations).reduce(
                     (sum, [denom, count]) => sum + (Number(denom) * (Number(count) || 0)),
                     0
@@ -3329,17 +3347,16 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     }
                   };
 
-                  // 1. Archive previous shift
+                  // 2. Archive previous shift
                   setShiftHistory(prev => [closedShift, ...prev]);
 
-                  // 2. Print Z-Report
+                  // 3. Print Z-Report
                   triggerAutoPrint({
                     type: 'Z_REPORT',
                     data: closedShift
                   }, `Shift ${closedShift.shiftId} Closed`);
 
-                  // 3. Mark all current transactions as already archived into this closed shift
-                  // This prevents them from ever leaking into the next shift!
+                  // 4. Lock current transactions so they don't leak into the next shift
                   setTransactions(prev => prev.map(t => {
                     const isCash = String(t.paymentMethod || '').trim().toUpperCase() === 'CASH';
                     const matchesThisShift = t.shiftId === currentShift.shiftId || (!t.shiftId && extractDateStr(t.date) === currentShift.openedDate);
@@ -3349,7 +3366,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     return t;
                   }));
 
-                  // 4. Generate a unique, clean new shift ID
+                  // 5. Open clean shift for the next cashier
                   const nextDate = getLocalDateStr();
                   const shiftSequence = Date.now().toString().slice(-4);
                   const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
@@ -3366,7 +3383,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                   recordAuditLog('SHIFT_CLOSED', closedShift.shiftId, `Shift closed by ${currentUser.name}. New shift ${newShiftId} opened.`);
                 }}
-                className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs"
+                className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer"
               >
                 <Lock className="h-4 w-4" />
                 <span>Close Shift &amp; Print Z-Report</span>
