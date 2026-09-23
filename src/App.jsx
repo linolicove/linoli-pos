@@ -65,11 +65,7 @@ const ROLE_PERMISSIONS = {
 };
 
 const INITIAL_STAFF = [
-  { id: 'usr_admin', name: 'System Administrator', role: 'Administrator', pin: '1234', avatar: 'SA', email: 'admin@linolicove.me' },
-  { id: 'usr_cashier', name: 'Marco Rossi', role: 'Cashier', pin: '1111', avatar: 'MR', email: 'marco@linolicove.me' },
-  { id: 'usr_chef', name: 'Alexandros Thorne', role: 'Kitchen Chef', pin: '2222', avatar: 'AT', email: 'chef@linolicove.me' },
-  { id: 'usr_bar', name: 'Chloe Dubois', role: 'Bartender', pin: '3333', avatar: 'CD', email: 'bar@linolicove.me' },
-  { id: 'usr_server', name: 'Niroshan Perera', role: 'Floor Server', pin: '5555', avatar: 'NP', email: 'server@linolicove.me' }
+  { id: 'usr_admin', name: 'System Administrator', role: 'Administrator', pin: '2022', avatar: 'SA', email: 'admin@linolicove.com' }
 ];
 
 const INITIAL_RAW_INVENTORY = [
@@ -608,6 +604,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       }
     }
   }, [expenses]);
+  
   useEffect(() => {
   if (!isCloudSynced.current) return;
   if (currentShift !== undefined) {
@@ -618,6 +615,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     }
   }
   }, [currentShift]);
+
   useEffect(() => {
     if (!isCloudSynced.current) return;
     if (staffList !== undefined && staffList.length > 0) {
@@ -4038,17 +4036,17 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       </td>
                       <td className="py-3 px-4 font-mono text-slate-700">•••• ({member.pin})</td>
                       <td className="py-3 px-4 text-right">
-                        {staffList.length > 1 && (
+                        {currentUser.role === 'Administrator' && member.id !== currentUser.id && (
                           <button
                             onClick={() => {
-                              setStaffList(prev => prev.filter(s => s.id !== member.id));
-                              recordAuditLog('STAFF_DELETED', member.id, `Removed staff member ${member.name} (${member.role})`);
+                             setStaffList(prev => prev.filter(s => s.id !== member.id));
+                             recordAuditLog('STAFF_DELETED', member.id, `Removed staff member ${member.name} (${member.role})`);
                             }}
                             className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors"
                             title="Remove Employee"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                         >
+                           <Trash2 className="h-4 w-4" />
+                           </button>
                         )}
                       </td>
                     </tr>
