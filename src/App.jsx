@@ -3316,6 +3316,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     (sum, [denom, count]) => sum + (Number(denom) * (Number(count) || 0)),
                     0
                   );
+
                   const closedShift = {
                     ...currentShift,
                     closedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -3323,23 +3324,38 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     status: 'CLOSED',
                     metrics: {
                       startingFloat: currentShift.startingFloat,
+                      cashSales: shiftCashSales,
                       countedCash
                     }
                   };
 
-                  // 1. Archive closed shift
+                  // 1. Archive previous shift
                   setShiftHistory(prev => [closedShift, ...prev]);
 
-                  // 2. Print Z-Report slip
+                  // 2. Print Z-Report
                   triggerAutoPrint({
                     type: 'Z_REPORT',
                     data: closedShift
                   }, `Shift ${closedShift.shiftId} Closed`);
 
-                  // 3. Open fresh shift for next cashier
+                  // 3. Mark all current transactions as already archived into this closed shift
+                  // This prevents them from ever leaking into the next shift!
+                  setTransactions(prev => prev.map(t => {
+                    const isCash = String(t.paymentMethod || '').trim().toUpperCase() === 'CASH';
+                    const matchesThisShift = t.shiftId === currentShift.shiftId || (!t.shiftId && extractDateStr(t.date) === currentShift.openedDate);
+                    if (isCash && matchesThisShift) {
+                      return { ...t, shiftId: currentShift.shiftId };
+                    }
+                    return t;
+                  }));
+
+                  // 4. Generate a unique, clean new shift ID
                   const nextDate = getLocalDateStr();
+                  const shiftSequence = Date.now().toString().slice(-4);
+                  const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
+
                   setCurrentShift({
-                    shiftId: `SHIFT-${nextDate.replace(/-/g, '')}-01`,
+                    shiftId: newShiftId,
                     openedDate: nextDate,
                     openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                     openedBy: currentUser.name,
@@ -3348,8 +3364,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     payouts: []
                   });
 
-                  // Retain denomination inputs (no reset)
-                  recordAuditLog('SHIFT_CLOSED', closedShift.shiftId, `Shift closed by ${currentUser.name}. Z-Report generated.`);
+                  recordAuditLog('SHIFT_CLOSED', closedShift.shiftId, `Shift closed by ${currentUser.name}. New shift ${newShiftId} opened.`);
                 }}
                 className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs"
               >
@@ -3374,12 +3389,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   
                   const isCash = String(t.paymentMethod || '').trim().toUpperCase() === 'CASH';
                   
-                  // 1. Primary rule: If the transaction has this shift's ID, it belongs to this shift forever
-                  // 2. Fallback rule: If the invoice was created after the shift opened
-                  const matchesShiftId = t.shiftId && t.shiftId === currentShift.shiftId;
-                  const matchesFallback = !t.shiftId && (extractDateStr(t.date) === currentShift.openedDate || extractDateStr(t.date) === getLocalDateStr());
+                  // Match strictly by current open shiftId
+                  // If legacy transaction without shiftId, only match if opened today AND created today
+                  const matchesShift = t.shiftId 
+                    ? t.shiftId === currentShift.shiftId 
+                    : (extractDateStr(t.date) === currentShift.openedDate && !t.shiftId);
 
-                  if (isCash && (matchesShiftId || matchesFallback)) {
+                  if (isCash && matchesShift) {
                     shiftCashSales += Number(t.total) || 0;
                   }
                 }
@@ -3482,6 +3498,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           const isManager = currentUser.role === 'Administrator' || currentUser.role === 'Manager';
                           const newCashOut = {
                             id: `CO-${Date.now().toString().slice(-6)}`,
+                            shiftId: currentShift.shiftId,
                             amount: amt,
                             category: cashOutForm.category,
                             reason: cashOutForm.reason.trim(),
@@ -3495,10 +3512,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             approvedAt: isManager ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null
                           };
 
+                          // 1. Update active shift payouts
                           setCurrentShift(prev => ({
                             ...prev,
                             payouts: [newCashOut, ...(prev.payouts || [])]
                           }));
+
+                          // 2. Also register in global expenses array
+                          setExpenses(prev => [newCashOut, ...prev]);
 
                           recordAuditLog(
                             isManager ? 'CASH_OUT_APPROVED_DIRECT' : 'CASH_OUT_REQUESTED',
