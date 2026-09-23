@@ -6006,26 +6006,157 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             )}
 
-            {/* Z-Report Shift Close */}
+            {/* Z-Report Shift Close Thermal Slip */}
             {activePrintSlip.type === 'Z_REPORT' && (
-              <div className="space-y-2">
+              <div className="space-y-3 font-mono">
+                {/* Header */}
                 <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
-                  <p className="font-black text-sm">{settings.restaurantName}</p>
-                  <p className="font-bold text-xs mt-1">*** Z-REPORT (SHIFT CLOSE) ***</p>
-                  <p className="text-[10px]">Shift: {activePrintSlip.data.shiftId}</p>
-                  <p className="text-[9px]">Closed by: {activePrintSlip.data.closedBy} at {activePrintSlip.data.closedAt}</p>
+                  <p className="font-black text-sm uppercase">{settings.restaurantName}</p>
+                  <p className="text-[9px] uppercase tracking-wider">{settings.tagline}</p>
+                  <p className="font-black text-xs mt-1.5">*** END OF SHIFT Z-REPORT ***</p>
+                  <p className="text-[10px] font-bold mt-0.5">SHIFT ID: {activePrintSlip.data.shiftId}</p>
+                  <p className="text-[9px]">Terminal: {settings.terminalId}</p>
                 </div>
-                <div className="py-2 border-b border-slate-300 space-y-1 text-xs">
+
+                {/* Shift Timings & Personnel */}
+                <div className="text-[10px] space-y-0.5 border-b border-dashed border-slate-400 pb-2">
                   <div className="flex justify-between">
-                    <span>OPENING FLOAT:</span>
-                    <span>{settings.currency} {activePrintSlip.data.startingFloat.toFixed(2)}</span>
+                    <span>Opened:</span>
+                    <span>{activePrintSlip.data.openedDate} {activePrintSlip.data.openedAt}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Opened By:</span>
+                    <span>{activePrintSlip.data.openedBy}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Closed:</span>
+                    <span>{activePrintSlip.data.closedDate || activePrintSlip.data.openedDate} {activePrintSlip.data.closedAt}</span>
                   </div>
                   <div className="flex justify-between font-bold">
-                    <span>COUNTED CASH:</span>
-                    <span>{settings.currency} {activePrintSlip.data.metrics.countedCash.toFixed(2)}</span>
+                    <span>Closed By:</span>
+                    <span>{activePrintSlip.data.closedBy}</span>
                   </div>
                 </div>
-                <p className="text-center font-bold text-[9px] pt-1">REGISTER AUDITED &amp; CLOSED</p>
+
+                {/* Sales Summary */}
+                <div className="text-[10px] space-y-1 border-b border-dashed border-slate-400 pb-2">
+                  <p className="font-black text-[11px] uppercase">=== SALES SUMMARY ===</p>
+                  <div className="flex justify-between">
+                    <span>Total Invoices Settled:</span>
+                    <span className="font-bold">{activePrintSlip.data.metrics?.totalBills || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Cash Sales:</span>
+                    <span className="font-bold">+{settings.currency} {(activePrintSlip.data.metrics?.cashSales || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Card / Digital Sales:</span>
+                    <span>+{settings.currency} {(activePrintSlip.data.metrics?.cardSales || 0).toFixed(2)}</span>
+                  </div>
+                  {activePrintSlip.data.metrics?.otherSales > 0 && (
+                    <div className="flex justify-between">
+                      <span>Split / Other Sales:</span>
+                      <span>+{settings.currency} {activePrintSlip.data.metrics.otherSales.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-300">
+                    <span>TOTAL GROSS SALES:</span>
+                    <span>{settings.currency} {(activePrintSlip.data.metrics?.grossSales || 0).toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Cash Out Disbursements */}
+                <div className="text-[10px] space-y-1 border-b border-dashed border-slate-400 pb-2">
+                  <div className="flex justify-between font-black text-[11px] uppercase">
+                    <span>=== CASH DISBURSEMENTS ===</span>
+                    <span>-{settings.currency} {(activePrintSlip.data.metrics?.cashOutTotal || 0).toFixed(2)}</span>
+                  </div>
+                  {(!activePrintSlip.data.metrics?.approvedPayouts || activePrintSlip.data.metrics.approvedPayouts.length === 0) ? (
+                    <p className="italic text-[9px] text-slate-500">No cash out payouts recorded.</p>
+                  ) : (
+                    activePrintSlip.data.metrics.approvedPayouts.map((payout, idx) => (
+                      <div key={idx} className="flex justify-between text-[9px]">
+                        <span className="truncate max-w-[180px]">{payout.reason} ({payout.category})</span>
+                        <span className="font-bold">-{settings.currency} {(parseFloat(payout.amount) || 0).toFixed(2)}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Physical Denomination Breakdown */}
+                <div className="text-[10px] space-y-1 border-b border-dashed border-slate-400 pb-2">
+                  <p className="font-black text-[11px] uppercase">=== CASH NOTE BREAKDOWN ===</p>
+                  {activePrintSlip.data.metrics?.denominations && Object.keys(activePrintSlip.data.metrics.denominations).length > 0 ? (
+                    Object.entries(activePrintSlip.data.metrics.denominations)
+                      .sort((a, b) => Number(b[0]) - Number(a[0]))
+                      .map(([denom, count]) => {
+                        const noteCount = Number(count) || 0;
+                        const subtotal = Number(denom) * noteCount;
+                        return (
+                          <div key={denom} className="flex justify-between text-[9px]">
+                            <span>{settings.currency} {denom} x {noteCount}</span>
+                            <span className="font-mono">{settings.currency} {subtotal.toFixed(2)}</span>
+                          </div>
+                        );
+                      })
+                  ) : (
+                    <p className="italic text-[9px] text-slate-500">No denomination breakdown entered.</p>
+                  )}
+                </div>
+
+                {/* Drawer Balancing Summary */}
+                <div className="text-xs space-y-1 border-b-2 border-dashed border-slate-800 pb-2.5">
+                  <p className="font-black text-[11px] uppercase">=== DRAWER BALANCING ===</p>
+                  <div className="flex justify-between text-[10px]">
+                    <span>Opening Cash Float:</span>
+                    <span>{settings.currency} {(activePrintSlip.data.metrics?.startingFloat || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px]">
+                    <span>+ Cash Sales Added:</span>
+                    <span>+{settings.currency} {(activePrintSlip.data.metrics?.cashSales || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px]">
+                    <span>- Cash Out Payouts:</span>
+                    <span>-{settings.currency} {(activePrintSlip.data.metrics?.cashOutTotal || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-[11px] pt-1 border-t border-slate-300">
+                    <span>EXPECTED IN DRAWER:</span>
+                    <span>{settings.currency} {(activePrintSlip.data.metrics?.expectedCash || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-black text-xs">
+                    <span>ACTUAL COUNTED CASH:</span>
+                    <span>{settings.currency} {(activePrintSlip.data.metrics?.countedCash || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-black text-xs pt-1 border-t border-slate-800">
+                    <span>DRAWER VARIANCE:</span>
+                    <span>
+                      {(activePrintSlip.data.metrics?.variance || 0) > 0 ? '+' : ''}
+                      {settings.currency} {(activePrintSlip.data.metrics?.variance || 0).toFixed(2)}{' '}
+                      ({(activePrintSlip.data.metrics?.variance || 0) === 0
+                        ? 'BALANCED'
+                        : (activePrintSlip.data.metrics?.variance || 0) > 0
+                        ? 'OVERAGE'
+                        : 'SHORTAGE'})
+                    </span>
+                  </div>
+                </div>
+
+                {/* Sign-off Signatures */}
+                <div className="pt-3 text-[9px] space-y-4">
+                  <div className="flex justify-between">
+                    <div>
+                      <p>_______________________</p>
+                      <p className="mt-0.5">Cashier: {activePrintSlip.data.closedBy}</p>
+                    </div>
+                    <div className="text-right">
+                      <p>_______________________</p>
+                      <p className="mt-0.5">Manager / Supervisor</p>
+                    </div>
+                  </div>
+                  <p className="text-center italic text-[8px] pt-1">
+                    System Generated Shift Audit Record • Retain for Accounts
+                  </p>
+                </div>
               </div>
             )}
           </>
