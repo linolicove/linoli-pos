@@ -285,9 +285,10 @@ export default function App() {
   // Shifts state
   const [currentShift, setCurrentShift] = usePersistentState('linoli_current_shift', {
     shiftId: `SHIFT-${getLocalDateStr().replace(/-/g, '')}-01`,
+    openedDate: getLocalDateStr(), // <-- ADD THIS
     openedAt: '09:00 AM',
     openedBy: 'Marco Rossi',
-    startingFloat: 15000.00,
+    startingFloat: 10000.00,
     status: 'OPEN',
     payouts: []
   });
@@ -3279,11 +3280,30 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       countedCash
                     }
                   };
+
+                  // 1. Archive closed shift
                   setShiftHistory(prev => [closedShift, ...prev]);
+
+                  // 2. Print Z-Report slip
                   triggerAutoPrint({
                     type: 'Z_REPORT',
                     data: closedShift
                   }, `Shift ${closedShift.shiftId} Closed`);
+
+                  // 3. Open fresh shift for next cashier
+                  const nextDate = getLocalDateStr();
+                  setCurrentShift({
+                    shiftId: `SHIFT-${nextDate.replace(/-/g, '')}-01`,
+                    openedDate: nextDate,
+                    openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    openedBy: currentUser.name,
+                    startingFloat: countedCash || 15000.00,
+                    status: 'OPEN',
+                    payouts: []
+                  });
+
+                  // Retain denomination inputs (no reset)
+                  recordAuditLog('SHIFT_CLOSED', closedShift.shiftId, `Shift closed by ${currentUser.name}. Z-Report generated.`);
                 }}
                 className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs"
               >
@@ -3306,15 +3326,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   const t = transactions[i];
                   if (!t) continue;
                   
-                  // Check payment method (case-insensitive)
                   const isCash = String(t.paymentMethod || '').trim().toUpperCase() === 'CASH';
                   
-                  // Match date by extracted date, substring inclusion, or fallback if empty
-                  const dateStr = String(t.date || '');
-                  const matchesDate = extractDateStr(dateStr) === todayStr || dateStr.includes(todayStr);
-                  const matchesShift = t.shiftId ? t.shiftId === currentShift.shiftId : matchesDate;
-                  
-                  if (isCash && matchesDate) {
+                  // 1. Primary rule: If the transaction has this shift's ID, it belongs to this shift forever
+                  // 2. Fallback rule: If the invoice was created after the shift opened
+                  const matchesShiftId = t.shiftId && t.shiftId === currentShift.shiftId;
+                  const matchesFallback = !t.shiftId && (extractDateStr(t.date) === currentShift.openedDate || extractDateStr(t.date) === getLocalDateStr());
+
+                  if (isCash && (matchesShiftId || matchesFallback)) {
                     shiftCashSales += Number(t.total) || 0;
                   }
                 }
