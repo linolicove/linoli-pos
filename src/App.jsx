@@ -398,6 +398,7 @@ export default function App() {
   const prevMenuRef = useRef('');
   const prevInventoryRef = useRef(''); // <-- ADD THIS
   const prevExpensesRef = useRef('');  // <-- ADD THIS
+  const prevStaffRef = useRef('');
   const prevShiftRef = useRef('');
   const [expenses, setExpenses] = useState(() => {
   try {
@@ -505,7 +506,17 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     localStorage.setItem('linoli_current_shift', serialized);
   }
 });
-  
+  // 8. Receive incoming staff list
+    const unsubStaff = subscribeToCloud('staff_list', (remoteStaff) => {
+      isCloudSynced.current = true;
+      if (Array.isArray(remoteStaff) && remoteStaff.length > 0) {
+        const serialized = JSON.stringify(remoteStaff);
+        if (prevStaffRef.current === serialized) return;
+        prevStaffRef.current = serialized;
+        setStaffList(remoteStaff);
+        localStorage.setItem('linoli_staff_list', serialized);
+      }
+    });
     return () => {
       if (typeof unsubOrders === 'function') unsubOrders();
       if (typeof unsubTrans === 'function') unsubTrans();
@@ -515,6 +526,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       if (typeof unsubInventory === 'function') unsubInventory();
       if (typeof unsubExpenses === 'function') unsubExpenses();
       if (typeof unsubShift === 'function') unsubShift();
+      if (typeof unsubStaff === 'function') unsubStaff();
     };
   }, []);
 
@@ -606,6 +618,16 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     }
   }
   }, [currentShift]);
+  useEffect(() => {
+    if (!isCloudSynced.current) return;
+    if (staffList !== undefined && staffList.length > 0) {
+      const current = JSON.stringify(staffList);
+      if (current !== prevStaffRef.current) {
+        prevStaffRef.current = current;
+        syncToCloud('staff_list', staffList);
+      }
+    }
+  }, [staffList]);
 
   const handleCreateStaff = (e) => {
     e.preventDefault();
