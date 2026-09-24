@@ -334,6 +334,8 @@ export default function App() {
   const [transactions, setTransactions] = usePersistentState('linoli_transactions', []);
   const [auditLogs, setAuditLogs] = usePersistentState('linoli_audit_logs', []);
   const [cancelledTickets, setCancelledTickets] = usePersistentState('linoli_cancelled_tickets', []);
+  // Tracks unsettled cash discrepancy carried across shifts
+  const [unsettledVariance, setUnsettledVariance] = usePersistentState('linoli_unsettled_variance', 0);
 // Persistent stock movement difference & intake ledger
   const [stockLogs, setStockLogs] = usePersistentState('linoli_stock_logs', []);
   // System Settings
@@ -3975,8 +3977,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     0
                   );
 
+                  // 1. Shift baseline calculations
                   const expectedCash = Number(((currentShift.startingFloat || 0) + shiftCashSales - totalCashOut).toFixed(2));
-                  const variance = Number((countedCash - expectedCash).toFixed(2));
+                  const shiftVariance = Number((countedCash - expectedCash).toFixed(2));
+
+                  // 2. Accumulate carryover deficit/overage into persistent state
+                  const totalCumulativeVariance = Number(((Number(unsettledVariance) || 0) + shiftVariance).toFixed(2));
+                  setUnsettledVariance(totalCumulativeVariance);
 
                   const closedShift = {
                     ...currentShift,
@@ -3995,7 +4002,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       approvedPayouts,
                       expectedCash,
                       countedCash,
-                      variance,
+                      variance: shiftVariance,
+                      carriedDiscrepancy: totalCumulativeVariance,
                       denominations: { ...denominations }
                     }
                   };
@@ -4030,10 +4038,16 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     payouts: []
                   });
 
+                  const shiftVarianceText = shiftVariance === 0 
+                    ? 'Balanced' 
+                    : shiftVariance > 0 
+                    ? `Overage of ${settings.currency} ${shiftVariance.toFixed(2)}` 
+                    : `Shortage of ${settings.currency} ${Math.abs(shiftVariance).toFixed(2)}`;
+
                   recordAuditLog(
                     'SHIFT_CLOSED_Z_REPORT',
                     closedShift.shiftId,
-                    `Shift closed by ${currentUser.name}. Opening float ${settings.currency} ${carriedFloat.toFixed(2)} and note counts rolled over to ${newShiftId}. Initial Variance: ${settings.currency} 0.00 (Balanced)`
+                    `Shift closed by ${currentUser.name}. Shift Variance: ${shiftVarianceText}. Cumulative unsettled variance forward: ${settings.currency} ${totalCumulativeVariance.toFixed(2)}. Float ${settings.currency} ${carriedFloat.toFixed(2)} moved to ${newShiftId}.`
                   );
                 }}
                 className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer"
@@ -4074,7 +4088,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               }
 
               const expectedCash = Number(((currentShift.startingFloat || 0) + shiftCashSales - totalApprovedCashOut).toFixed(2));
-              const variance = Number((countedCash - expectedCash).toFixed(2));
+              const currentShiftVariance = Number((countedCash - expectedCash).toFixed(2));
+              const carriedShortage = Number(unsettledVariance) || 0;
+              const netTotalVariance = Number((currentShiftVariance + carriedShortage).toFixed(2));
 
               return (
                 <>
@@ -4119,19 +4135,48 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     </div>
 
                     <div className={`p-4 rounded-2xl border shadow-xs ${
-                      variance === 0
+                      carriedShortage !== 0
+                        ? 'bg-amber-50/70 border-amber-300 text-amber-950'
+                        : currentShiftVariance === 0
                         ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
-                        : variance > 0
+                        : currentShiftVariance > 0
                         ? 'bg-blue-50/60 border-blue-200 text-blue-900'
                         : 'bg-rose-50/60 border-rose-200 text-rose-900'
                     }`}>
-                      <p className="text-[10px] font-black uppercase tracking-wider opacity-70">Drawer Variance</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black uppercase tracking-wider opacity-70">Drawer Variance</p>
+                        {carriedShortage !== 0 && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-rose-200 text-rose-900">
+                            Carried: {settings.currency} {carriedShortage.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xl font-black font-mono mt-1">
-                        {variance > 0 ? '+' : ''}{settings.currency} {variance.toFixed(2)}
+                        {netTotalVariance > 0 ? '+' : ''}{settings.currency} {netTotalVariance.toFixed(2)}
                       </p>
-                      <span className="text-[10px] font-bold">
-                        {variance === 0 ? 'Balanced' : variance > 0 ? 'Overage' : 'Shortage'}
-                      </span>
+                      <div className="flex items-center justify-between mt-0.5">
+                        <span className="text-[10px] font-bold">
+                          {netTotalVariance === 0 ? 'Balanced' : netTotalVariance > 0 ? 'Overage' : 'Shortage'}
+                        </span>
+                        {currentUser.role === 'Administrator' && carriedShortage !== 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Clear and settle the carried discrepancy of ${settings.currency} ${carriedShortage.toFixed(2)}?`)) {
+                                setUnsettledVariance(0);
+                                recordAuditLog(
+                                  'VARIANCE_SETTLED',
+                                  currentShift.shiftId,
+                                  `Administrator ${currentUser.name} cleared carried variance of ${settings.currency} ${carriedShortage.toFixed(2)}`
+                                );
+                              }
+                            }}
+                            className="text-[9px] font-bold text-indigo-700 hover:text-indigo-900 underline cursor-pointer"
+                          >
+                            Settle / Clear
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -6489,6 +6534,16 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         : 'SHORTAGE'})
                     </span>
                   </div>
+
+                  {Boolean(activePrintSlip.data.metrics?.carriedDiscrepancy) && (
+                    <div className="flex justify-between font-black text-[11px] pt-1 border-t border-dashed border-slate-600">
+                      <span>CUMULATIVE UNSETTLED CARRYOVER:</span>
+                      <span>
+                        {(activePrintSlip.data.metrics?.carriedDiscrepancy || 0) > 0 ? '+' : ''}
+                        {settings.currency} {(activePrintSlip.data.metrics?.carriedDiscrepancy || 0).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-3 text-[9px] space-y-4">
