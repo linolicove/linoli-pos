@@ -781,48 +781,71 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
   };
 
   const handleCreateInventoryItem = (e) => {
-    e.preventDefault();
-    if (!newInventoryForm.name.trim() || !newInventoryForm.cost) return;
+    if (e && e.preventDefault) e.preventDefault();
+
+    const cleanName = (newInventoryForm.name || '').trim();
+    const parsedCost = parseFloat(newInventoryForm.cost);
+    const parsedStock = parseFloat(newInventoryForm.stock) || 0;
+    const parsedThreshold = parseFloat(newInventoryForm.threshold) || 10;
+
+    if (!cleanName) {
+      alert('Please enter a name for the raw material.');
+      return;
+    }
+
+    if (isNaN(parsedCost) || parsedCost <= 0) {
+      alert('Please enter a valid unit cost greater than 0.');
+      return;
+    }
 
     const newItem = {
       id: `ing_${Date.now().toString().slice(-6)}`,
-      name: newInventoryForm.name.trim(),
+      name: cleanName,
       category: newInventoryForm.category || 'Dry Goods',
-      stock: parseFloat(newInventoryForm.stock) || 0,
+      stock: parsedStock,
       unit: newInventoryForm.unit || 'g',
-      cost: parseFloat(newInventoryForm.cost) || 0,
-      threshold: parseFloat(newInventoryForm.threshold) || 10
+      cost: parsedCost,
+      threshold: parsedThreshold
     };
 
     setInventory(prev => [...prev, newItem]);
+
     recordAuditLog(
       'INVENTORY_ITEM_CREATED',
       newItem.id,
-      `Added raw material ${newItem.name} (${newItem.stock} ${newItem.unit} @ ${settings.currency} ${newItem.cost}/${newItem.unit})`
+      `Added raw material ${newItem.name} (${newItem.stock} ${newItem.unit} @ ${settings.currency} ${newItem.cost.toFixed(2)}/${newItem.unit})`
     );
 
     setAddInventoryModalOpen(false);
-    setNewInventoryForm({ name: '', category: 'Dry Goods', stock: '', unit: 'g', cost: '', threshold: '' });
+    setNewInventoryForm({ name: '', category: 'Dry Goods', stock: '', unit: 'g', cost: '', threshold: '10' });
   };
 
   const handleReceiveStock = (e) => {
-    e.preventDefault();
-    if (!receiveStockForm.ingredientId || !receiveStockForm.quantity) return;
+    if (e && e.preventDefault) e.preventDefault();
+
+    if (!receiveStockForm.ingredientId || !receiveStockForm.quantity) {
+      alert('Please select an ingredient and enter a quantity.');
+      return;
+    }
 
     const qtyToAdd = parseFloat(receiveStockForm.quantity);
-    if (isNaN(qtyToAdd) || qtyToAdd <= 0) return;
+    if (isNaN(qtyToAdd) || qtyToAdd <= 0) {
+      alert('Please enter a valid positive quantity.');
+      return;
+    }
 
     const targetItem = inventoryMap[receiveStockForm.ingredientId];
     const oldStock = targetItem ? targetItem.stock : 0;
     const newStock = Number((oldStock + qtyToAdd).toFixed(2));
-    const newCost = receiveStockForm.newCost ? parseFloat(receiveStockForm.newCost) : (targetItem?.cost || 0);
+    const parsedNewCost = parseFloat(receiveStockForm.newCost);
+    const hasValidNewCost = !isNaN(parsedNewCost) && parsedNewCost > 0;
 
     setInventory(prev => prev.map(item => {
       if (item.id === receiveStockForm.ingredientId) {
         return {
           ...item,
           stock: newStock,
-          cost: !isNaN(newCost) && newCost > 0 ? newCost : item.cost
+          cost: hasValidNewCost ? parsedNewCost : item.cost
         };
       }
       return item;
@@ -836,7 +859,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
     setReceiveStockModalOpen(false);
     setReceiveStockForm({ ingredientId: '', quantity: '', supplier: '', invoiceRef: '', newCost: '' });
-  };
+  }
 
   const handleCreateTable = (e) => {
     e.preventDefault();
@@ -3396,6 +3419,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => {
                     setReceiveStockForm({
                       ingredientId: inventory[0]?.id || '',
@@ -3406,15 +3430,26 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     });
                     setReceiveStockModalOpen(true);
                   }}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs"
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
                 >
                   <Package className="h-3.5 w-3.5" />
                   <span>Receive Stock</span>
                 </button>
 
                 <button
-                  onClick={() => setAddInventoryModalOpen(true)}
-                  className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs"
+                  type="button"
+                  onClick={() => {
+                    setNewInventoryForm({
+                      name: '',
+                      category: 'Dry Goods',
+                      stock: '',
+                      unit: 'g',
+                      cost: '',
+                      threshold: '10'
+                    });
+                    setAddInventoryModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>Add Material</span>
