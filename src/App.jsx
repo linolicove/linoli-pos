@@ -334,7 +334,8 @@ export default function App() {
   const [transactions, setTransactions] = usePersistentState('linoli_transactions', []);
   const [auditLogs, setAuditLogs] = usePersistentState('linoli_audit_logs', []);
   const [cancelledTickets, setCancelledTickets] = usePersistentState('linoli_cancelled_tickets', []);
-
+// Persistent stock movement difference & intake ledger
+  const [stockLogs, setStockLogs] = usePersistentState('linoli_stock_logs', []);
   // System Settings
   const [settings, setSettings] = usePersistentState('linoli_system_settings', {
     restaurantName: 'Linoli Cove Midigama',
@@ -816,6 +817,19 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       `Added raw material ${newItem.name} (${newItem.stock} ${newItem.unit} @ ${settings.currency} ${newItem.cost.toFixed(2)}/${newItem.unit})`
     );
 
+    recordStockMovement(
+      'INITIAL_ENTRY',
+      newItem.id,
+      newItem.name,
+      newItem.stock,
+      0,
+      newItem.stock,
+      newItem.unit,
+      newItem.cost,
+      'Initial stock registered',
+      'NEW_MATERIAL'
+    );
+
     setAddInventoryModalOpen(false);
     setNewInventoryForm({ name: '', category: 'Dry Goods', stock: '', unit: 'g', cost: '', threshold: '10' });
   };
@@ -857,9 +871,22 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       `Received ${qtyToAdd} ${targetItem?.unit || 'units'} of ${targetItem?.name || receiveStockForm.ingredientId}. Supplier: ${receiveStockForm.supplier || 'N/A'}. Invoice: ${receiveStockForm.invoiceRef || 'N/A'}`
     );
 
+    recordStockMovement(
+      'INTAKE',
+      receiveStockForm.ingredientId,
+      targetItem?.name || receiveStockForm.ingredientId,
+      qtyToAdd,
+      oldStock,
+      newStock,
+      targetItem?.unit || 'units',
+      hasValidNewCost ? parsedNewCost : (targetItem?.cost || 0),
+      `Intake from ${receiveStockForm.supplier || 'Vendor'} (Inv: ${receiveStockForm.invoiceRef || 'N/A'})`,
+      receiveStockForm.invoiceRef || 'GRN'
+    );
+
     setReceiveStockModalOpen(false);
     setReceiveStockForm({ ingredientId: '', quantity: '', supplier: '', invoiceRef: '', newCost: '' });
-  }
+  };
 
   const handleCreateTable = (e) => {
     e.preventDefault();
@@ -1023,6 +1050,32 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       details
     };
     setAuditLogs(prev => [newLog, ...prev]);
+  };
+
+  // Record Stock Movement Difference Ledger Entry
+  const recordStockMovement = (type, ingredientId, ingredientName, diffQty, oldStock, newStock, unit, unitCost, reason, reference = '') => {
+    const numericDiff = Number(diffQty) || 0;
+    const numericCost = Number(unitCost) || 0;
+
+    const newStockEntry = {
+      id: `STK-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+      timestamp: new Date().toLocaleString(),
+      date: getLocalDateStr(),
+      type, // 'INTAKE' | 'SALE_DEPLETION' | 'MANUAL_EDIT' | 'INITIAL_ENTRY'
+      ingredientId,
+      ingredientName,
+      diffQty: numericDiff,
+      oldStock: Number(oldStock) || 0,
+      newStock: Number(newStock) || 0,
+      unit: unit || 'units',
+      unitCost: numericCost,
+      totalCostImpact: Number((Math.abs(numericDiff) * numericCost).toFixed(2)),
+      reason: reason || 'Stock level updated',
+      reference: reference || 'N/A',
+      staff: currentUser?.name || 'System'
+    };
+
+    setStockLogs(prev => [newStockEntry, ...(Array.isArray(prev) ? prev : [])]);
   };
 
   const inventoryMap = useMemo(() => {
@@ -1570,7 +1623,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
     const { subtotal, discount, service, tax, total } = calculateOrderFinancials(targetOrder);
 
-    // Inventory BOM deduction
+    // Inventory BOM deduction calculation
     const deductions = {};
     let orderRawCost = 0;
 
@@ -1586,6 +1639,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       }
     });
 
+    // Apply inventory deductions
     setInventory(prev => prev.map(item => {
       if (deductions[item.id]) {
         return {
@@ -1623,6 +1677,27 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       changeDue: paymentMethod === 'CASH' ? Math.max(0, (parseFloat(cashTendered) || total) - total) : 0
     };
 
+    // Log each recipe ingredient deduction in the Stock Movement Ledger
+    Object.entries(deductions).forEach(([ingId, needed]) => {
+      const ing = inventoryMap[ingId];
+      if (ing) {
+        const curStock = Number(ing.stock) || 0;
+        const afterStock = Math.max(0, Number((curStock - needed).toFixed(2)));
+        recordStockMovement(
+          'SALE_DEPLETION',
+          ingId,
+          ing.name,
+          -needed,
+          curStock,
+          afterStock,
+          ing.unit,
+          ing.cost,
+          `BOM deduction for settled Bill #${newInvoice.invoiceNo} (${newInvoice.table})`,
+          newInvoice.invoiceNo
+        );
+      }
+    });
+
     setTransactions(prev => [newInvoice, ...prev]);
     setActiveOrders(prev => prev.filter(o => o.orderId !== targetOrder.orderId));
 
@@ -1647,7 +1722,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     setCashTendered('');
     setCart([]);
   };
-
   const handlePinSubmit = (pinVal) => {
     const pin = pinVal || loginPinInput;
     setLoginError('');
@@ -2776,11 +2850,11 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         {activeTab === 'reports' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <div className="flex items-center gap-6 border-b border-slate-200 pb-3 text-xs font-bold overflow-x-auto">
-              {['Daily Overview', 'All Items Sales', 'Sales Detail', 'KOT Report', 'BOT Report', 'Sales Summary', 'Food vs Beverage', 'Stock Usage', 'Audit Trail'].map(sub => (
+              {['Daily Overview', 'All Items Sales', 'Sales Detail', 'KOT Report', 'BOT Report', 'Sales Summary', 'Food vs Beverage', 'Stock Usage', 'Stock Movement Ledger', 'Audit Trail'].map(sub => (
                 <button
                   key={sub}
                   onClick={() => setReportSubTab(sub)}
-                  className={`transition-colors relative pb-1 whitespace-nowrap ${
+                  className={`transition-colors relative pb-1 whitespace-nowrap cursor-pointer ${
                     reportSubTab === sub
                       ? 'text-[#ff5500] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-[#ff5500]'
                       : 'text-slate-500 hover:text-slate-900'
@@ -2825,7 +2899,422 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       setReportStartDate(preset.start);
                       setReportEndDate(preset.end);
                     }}
-                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg whitespace-nowrap"
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg whitespace-nowrap cursor-pointer"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Daily Overview */}
+            {reportSubTab === 'Daily Overview' && (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">GROSS REVENUE</p>
+                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.grossRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">{salesMetrics.paidBillsCount} Paid Bills</p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">ITEM SUBTOTAL</p>
+                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.itemSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Food &amp; Beverage Sales</p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">SERVICE CHARGE</p>
+                    <p className="text-2xl font-black text-emerald-600 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.serviceCharge.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Collected for staff pool</p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">TAXES / DISCOUNTS</p>
+                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                      {settings.currency} {salesMetrics.taxes.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Discounts: {settings.currency} {salesMetrics.discounts.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 mb-4">
+                      Payment Methods Breakdown
+                    </h3>
+                    <div className="space-y-3">
+                      {Object.keys(salesMetrics.paymentMethods).length === 0 ? (
+                        <p className="text-xs text-slate-400 italic">No payments collected in selected period.</p>
+                      ) : (
+                        Object.entries(salesMetrics.paymentMethods).map(([method, data]) => (
+                          <div key={method} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                            <span className="text-xs font-bold text-slate-900">{method} ({data.count} bills)</span>
+                            <span className="text-sm font-black font-mono text-slate-900">
+                              {settings.currency} {data.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 mb-4">
+                      Preparation Area Sales
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <span className="text-xs font-bold text-slate-900">Kitchen ({salesMetrics.kitchenItemsCount} items)</span>
+                        <span className="text-sm font-black font-mono text-slate-900">
+                          {settings.currency} {salesMetrics.kitchenRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <span className="text-xs font-bold text-slate-900">Bar ({salesMetrics.barItemsCount} drinks)</span>
+                        <span className="text-sm font-black font-mono text-slate-900">
+                          {settings.currency} {salesMetrics.barRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* All Items & Top Selling Menu Items Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
+                      Top &amp; All Sold Menu Items
+                    </h3>
+                    <span className="text-xs font-mono text-slate-500">{salesMetrics.topItems.length} Products Sold</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5">Menu Item</th>
+                          <th className="py-2.5">Area</th>
+                          <th className="py-2.5">Category</th>
+                          <th className="py-2.5 text-center">Portions Sold</th>
+                          <th className="py-2.5 text-right">Price</th>
+                          <th className="py-2.5 text-right">Total Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {salesMetrics.topItems.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-6 text-center text-slate-400 italic">No menu items sold in this period.</td>
+                          </tr>
+                        ) : (
+                          salesMetrics.topItems.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50">
+                              <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                              <td className="py-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
+                                }`}>
+                                  {item.department}
+                                </span>
+                              </td>
+                              <td className="py-3 text-slate-500">{item.category}</td>
+                              <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
+                              <td className="py-3 text-right font-mono text-slate-600">{settings.currency} {(item.unitPrice || 0).toFixed(2)}</td>
+                              <td className="py-3 text-right font-mono font-black text-slate-900">
+                                {settings.currency} {item.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Subtab: All Items Sales */}
+            {reportSubTab === 'All Items Sales' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Itemized Menu Sales Report</h3>
+                    <p className="text-xs text-slate-500">Every menu item ordered within the selected date filter range</p>
+                  </div>
+                  <span className="text-xs font-mono font-bold px-3 py-1 bg-slate-100 rounded-xl text-slate-700">
+                    {salesMetrics.topItems.reduce((acc, i) => acc + i.sold, 0)} Total Portions
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Menu Item</th>
+                        <th className="py-2.5">Department</th>
+                        <th className="py-2.5">Category</th>
+                        <th className="py-2.5 text-center">Portions Sold</th>
+                        <th className="py-2.5 text-right">Selling Price</th>
+                        <th className="py-2.5 text-right">Total Revenue</th>
+                        <th className="py-2.5 text-right">% of Item Sales</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {salesMetrics.topItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-400 italic">No sales recorded for any items in this period.</td>
+                        </tr>
+                      ) : (
+                        salesMetrics.topItems.map((item, idx) => {
+                          const pct = salesMetrics.itemSubtotal > 0
+                            ? ((item.revenue / salesMetrics.itemSubtotal) * 100).toFixed(1)
+                            : '0.0';
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50">
+                              <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                              <td className="py-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
+                                }`}>
+                                  {item.department}
+                                </span>
+                              </td>
+                              <td className="py-3 text-slate-500">{item.category}</td>
+                              <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
+                              <td className="py-3 text-right font-mono text-slate-600">{settings.currency} {(item.unitPrice || 0).toFixed(2)}</td>
+                              <td className="py-3 text-right font-mono font-black text-slate-900">
+                                {settings.currency} {item.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="py-3 text-right font-mono text-slate-500">{pct}%</td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Subtab: KOT Report */}
+            {reportSubTab === 'KOT Report' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Kitchen Order Tickets (KOT) Production Report</h3>
+                    <p className="text-xs text-slate-500">Breakdown of all kitchen items prepped in the filtered period</p>
+                  </div>
+                  <span className="px-3 py-1 bg-rose-100 text-rose-800 text-xs font-bold rounded-xl">
+                    {salesMetrics.kitchenItemsCount} Kitchen Items • {settings.currency} {salesMetrics.kitchenRevenue.toFixed(2)}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Kitchen Dish</th>
+                        <th className="py-2.5">Category</th>
+                        <th className="py-2.5 text-center">Portions Prepared</th>
+                        <th className="py-2.5 text-right">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {salesMetrics.topItems.filter(i => i.department === 'Kitchen').length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-6 text-center text-slate-400 italic">No kitchen orders recorded in this date range.</td>
+                        </tr>
+                      ) : (
+                        salesMetrics.topItems.filter(i => i.department === 'Kitchen').map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                            <td className="py-3 text-slate-500">{item.category}</td>
+                            <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
+                            <td className="py-3 text-right font-mono font-bold text-slate-900">{settings.currency} {item.revenue.toFixed(2)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Subtab: BOT Report */}
+            {reportSubTab === 'BOT Report' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Bar Order Tickets (BOT) Dispense Report</h3>
+                    <p className="text-xs text-slate-500">Breakdown of all bar beverages, cocktails &amp; coffees served</p>
+                  </div>
+                  <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-xl">
+                    {salesMetrics.barItemsCount} Drinks Served • {settings.currency} {salesMetrics.barRevenue.toFixed(2)}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5">Beverage / Drink</th>
+                        <th className="py-2.5">Category</th>
+                        <th className="py-2.5 text-center">Glasses / Units</th>
+                        <th className="py-2.5 text-right">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {salesMetrics.topItems.filter(i => i.department === 'Bar').length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-6 text-center text-slate-400 italic">No bar beverage orders recorded in this date range.</td>
+                        </tr>
+                      ) : (
+                        salesMetrics.topItems.filter(i => i.department === 'Bar').map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="py-3 font-bold text-slate-900">{item.name}</td>
+                            <td className="py-3 text-slate-500">{item.category}</td>
+                            <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
+                            <td className="py-3 text-right font-mono font-bold text-slate-900">{settings.currency} {item.revenue.toFixed(2)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Subtab: Sales Summary */}
+            {reportSubTab === 'Sales Summary' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4 max-w-2xl">
+                <h3 className="text-base font-black text-slate-900 uppercase">Executive Financial Summary</h3>
+                <div className="space-y-2.5 text-xs divide-y divide-slate-100">
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Total Settled Invoices</span>
+                    <span className="font-mono font-bold text-slate-900">{salesMetrics.paidBillsCount}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Average Order Value (AOV)</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      {settings.currency} {salesMetrics.paidBillsCount > 0 ? (salesMetrics.grossRevenue / salesMetrics.paidBillsCount).toFixed(2) : '0.00'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Net Food &amp; Beverage Subtotal</span>
+                    <span className="font-mono font-bold text-slate-900">{settings.currency} {salesMetrics.itemSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Service Charge Pool ({settings.serviceChargeRate}%)</span>
+                    <span className="font-mono font-bold text-emerald-600">+{settings.currency} {salesMetrics.serviceCharge.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Statutory Taxes / VAT ({settings.taxRate}%)</span>
+                    <span className="font-mono font-bold text-slate-900">+{settings.currency} {salesMetrics.taxes.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-slate-600">Total Discounts Deducted</span>
+                    <span className="font-mono font-bold text-rose-600">-{settings.currency} {salesMetrics.discounts.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-3 text-sm font-black text-slate-900 border-t-2 border-slate-900">
+                    <span>Total Gross Revenue</span>
+                    <span className="font-mono text-base text-[#ff5500]">{settings.currency} {salesMetrics.grossRevenue.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Subtab: Food vs Beverage */}
+            {reportSubTab === 'Food vs Beverage' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-rose-600 uppercase tracking-wider">Food / Kitchen (KOT)</span>
+                    <h3 className="text-3xl font-black font-mono text-slate-900 mt-2">
+                      {settings.currency} {salesMetrics.kitchenRevenue.toFixed(2)}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {((salesMetrics.kitchenRevenue / (salesMetrics.itemSubtotal || 1)) * 100).toFixed(1)}% of total menu sales
+                    </p>
+                  </div>
+                  <div className="mt-6 pt-4 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-700">Total Kitchen Portions: {salesMetrics.kitchenItemsCount}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Beverages / Bar (BOT)</span>
+                    <h3 className="text-3xl font-black font-mono text-slate-900 mt-2">
+                      {settings.currency} {salesMetrics.barRevenue.toFixed(2)}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {((salesMetrics.barRevenue / (salesMetrics.itemSubtotal || 1)) * 100).toFixed(1)}% of total menu sales
+                    </p>
+                  </div>
+                  <div className="mt-6 pt-4 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-700">Total Bar Drinks: {salesMetrics.barItemsCount}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 3: SALES & REVENUE REPORTS WITH DATE FILTERS */}
+        {activeTab === 'reports' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center gap-6 border-b border-slate-200 pb-3 text-xs font-bold overflow-x-auto">
+              {['Daily Overview', 'All Items Sales', 'Sales Detail', 'KOT Report', 'BOT Report', 'Sales Summary', 'Food vs Beverage', 'Stock Usage', 'Stock Movement Ledger', 'Audit Trail'].map(sub => (
+                <button
+                  key={sub}
+                  onClick={() => setReportSubTab(sub)}
+                  className={`transition-colors relative pb-1 whitespace-nowrap cursor-pointer ${
+                    reportSubTab === sub
+                      ? 'text-[#ff5500] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-[#ff5500]'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  {sub}
+                </button>
+              ))}
+            </div>
+
+            {/* Date Filters Header */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 shadow-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5 text-[#ff5500]" /> Date Filter:
+                </span>
+                <input
+                  type="date"
+                  value={reportStartDate}
+                  onChange={e => setReportStartDate(e.target.value)}
+                  className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800"
+                />
+                <span className="text-slate-400 text-xs">to</span>
+                <input
+                  type="date"
+                  value={reportEndDate}
+                  onChange={e => setReportEndDate(e.target.value)}
+                  className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto">
+                {[
+                  { label: 'Today', start: getLocalDateStr(), end: getLocalDateStr() },
+                  { label: 'Yesterday', start: getLocalDateStr(new Date(Date.now() - 86400000)), end: getLocalDateStr(new Date(Date.now() - 86400000)) },
+                  { label: 'Last 7 Days', start: getLocalDateStr(new Date(Date.now() - 7 * 86400000)), end: getLocalDateStr() },
+                  { label: 'All Time', start: '', end: '' }
+                ].map(preset => (
+                  <button
+                    key={preset.label}
+                    onClick={() => {
+                      setReportStartDate(preset.start);
+                      setReportEndDate(preset.end);
+                    }}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg whitespace-nowrap cursor-pointer"
                   >
                     {preset.label}
                   </button>
@@ -3233,6 +3722,103 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             )}
 
+            {/* Subtab: Stock Movement Ledger */}
+            {reportSubTab === 'Stock Movement Ledger' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Stock Intake &amp; Variance Change Ledger</h3>
+                    <p className="text-xs text-slate-500">History of every intake (+), sales deduction (-), or manual edit</p>
+                  </div>
+                  <span className="text-xs font-mono font-bold px-3 py-1 bg-slate-100 rounded-xl text-slate-700">
+                    {stockLogs.length} Records
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5 px-3">Date &amp; Time</th>
+                        <th className="py-2.5 px-3">Material</th>
+                        <th className="py-2.5 px-3">Action Type</th>
+                        <th className="py-2.5 px-3 text-right">Previous</th>
+                        <th className="py-2.5 px-3 text-center">Change (Diff)</th>
+                        <th className="py-2.5 px-3 text-right">New Level</th>
+                        <th className="py-2.5 px-3 text-right">Cost Impact</th>
+                        <th className="py-2.5 px-3">Reason / Ref</th>
+                        <th className="py-2.5 px-3">Staff</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(() => {
+                        const filteredLogs = (stockLogs || []).filter(log => {
+                          const lDate = log.date || extractDateStr(log.timestamp);
+                          if (!lDate) return true;
+                          if (reportStartDate && lDate < reportStartDate) return false;
+                          if (reportEndDate && lDate > reportEndDate) return false;
+                          return true;
+                        });
+
+                        if (filteredLogs.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={9} className="py-8 text-center text-slate-400 italic">
+                                No stock movements or intake events recorded in this period.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return filteredLogs.map(log => {
+                          const isPositive = log.diffQty > 0;
+                          return (
+                            <tr key={log.id} className="hover:bg-slate-50/70">
+                              <td className="py-3 px-3 font-mono text-slate-500 whitespace-nowrap">{log.timestamp}</td>
+                              <td className="py-3 px-3 font-bold text-slate-900">{log.ingredientName}</td>
+                              <td className="py-3 px-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  log.type === 'INTAKE'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : log.type === 'SALE_DEPLETION'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : log.type === 'MANUAL_EDIT'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-slate-100 text-slate-800'
+                                }`}>
+                                  {log.type}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono text-slate-600">
+                                {log.oldStock} {log.unit}
+                              </td>
+                              <td className="py-3 px-3 text-center font-mono font-black">
+                                <span className={`px-2 py-0.5 rounded ${
+                                  isPositive ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                                }`}>
+                                  {isPositive ? `+${log.diffQty}` : log.diffQty} {log.unit}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                                {log.newStock} {log.unit}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono font-bold text-slate-700">
+                                {settings.currency} {log.totalCostImpact.toFixed(2)}
+                              </td>
+                              <td className="py-3 px-3 text-slate-600 truncate max-w-[200px]" title={log.reason}>
+                                {log.reason}
+                              </td>
+                              <td className="py-3 px-3 text-slate-700 font-medium">{log.staff}</td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Sales Detail Subtab with Admin Deletion */}
             {reportSubTab === 'Sales Detail' && (
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
@@ -3282,7 +3868,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                     setTransactions(prev => prev.filter(inv => inv.invoiceNo !== t.invoiceNo));
                                     recordAuditLog('ADMIN_DELETE_TRANSACTION', t.invoiceNo, `Admin deleted invoice ${t.invoiceNo} for ${settings.currency} ${t.total.toFixed(2)}`);
                                   }}
-                                  className="text-slate-400 hover:text-rose-600 p-1"
+                                  className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
                                   title="Admin Delete Transaction"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -3309,7 +3895,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         setAuditLogs([]);
                         recordAuditLog('ADMIN_CLEAR_AUDIT_LOGS', 'ALL', 'Purged all audit log entries');
                       }}
-                      className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                      className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
                     >
                       <Trash2 className="h-3 w-3" /> Clear Audit Logs (Admin)
                     </button>
@@ -3350,7 +3936,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                   onClick={() => {
                                     setAuditLogs(prev => prev.filter(l => l.id !== log.id));
                                   }}
-                                  className="text-slate-400 hover:text-rose-600 p-1"
+                                  className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
                                   title="Admin Delete Log Entry"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -6815,19 +7401,41 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   return;
                 }
 
+                // Check existing item stock to compute variance diff
+                const originalItem = inventoryMap[editingInventoryItem.id];
+                const oldStock = originalItem ? Number(originalItem.stock) : Number(editingInventoryItem.stock);
+                const targetStock = isNaN(stockVal) ? oldStock : stockVal;
+
                 setInventory(prev => prev.map(item => item.id === editingInventoryItem.id ? {
                   ...editingInventoryItem,
                   name: editingInventoryItem.name.trim(),
                   cost: costVal,
-                  stock: isNaN(stockVal) ? item.stock : stockVal,
+                  stock: targetStock,
                   threshold: isNaN(thresholdVal) ? item.threshold : thresholdVal
                 } : item));
 
                 recordAuditLog(
                   'INVENTORY_ITEM_MODIFIED',
                   editingInventoryItem.id,
-                  `Updated raw material "${editingInventoryItem.name.trim()}": Stock: ${stockVal} ${editingInventoryItem.unit}, Cost: ${settings.currency} ${costVal.toFixed(2)}/${editingInventoryItem.unit}, Alert: ${thresholdVal} ${editingInventoryItem.unit}`
+                  `Updated raw material "${editingInventoryItem.name.trim()}": Stock: ${targetStock} ${editingInventoryItem.unit}, Cost: ${settings.currency} ${costVal.toFixed(2)}/${editingInventoryItem.unit}, Alert: ${thresholdVal} ${editingInventoryItem.unit}`
                 );
+
+                // Log the difference in the Stock Movement Ledger if stock was modified
+                if (oldStock !== targetStock && typeof recordStockMovement === 'function') {
+                  const diff = Number((targetStock - oldStock).toFixed(2));
+                  recordStockMovement(
+                    'MANUAL_EDIT',
+                    editingInventoryItem.id,
+                    editingInventoryItem.name.trim(),
+                    diff,
+                    oldStock,
+                    targetStock,
+                    editingInventoryItem.unit,
+                    costVal,
+                    'Manual stock adjustment in inventory editor',
+                    'ADMIN_EDIT'
+                  );
+                }
 
                 setEditInventoryModalOpen(false);
                 setEditingInventoryItem(null);
