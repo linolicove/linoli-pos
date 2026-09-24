@@ -1027,8 +1027,48 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
   const inventoryMap = useMemo(() => {
     const map = {};
-    inventory.forEach(item => { map[item.id] = item; });
+    (inventory || []).forEach(item => { if (item) map[item.id] = item; });
     return map;
+  }, [inventory]);
+
+  // Total Inventory Valuation & Cost Tracking Metrics
+  const inventoryValuation = useMemo(() => {
+    const list = Array.isArray(inventory) ? inventory : [];
+    let totalStockValue = 0;
+    let lowStockCount = 0;
+    const categoryTotals = {};
+
+    list.forEach(item => {
+      if (!item) return;
+      const stock = Number(item.stock) || 0;
+      const cost = Number(item.cost) || 0;
+      const threshold = Number(item.threshold) || 0;
+      const itemVal = stock * cost;
+
+      totalStockValue += itemVal;
+      if (stock <= threshold) lowStockCount += 1;
+
+      const cat = item.category || 'General';
+      categoryTotals[cat] = (categoryTotals[cat] || 0) + itemVal;
+    });
+
+    // Detect highest value category investment
+    let topCat = 'None';
+    let maxCatVal = 0;
+    Object.entries(categoryTotals).forEach(([cat, val]) => {
+      if (val > maxCatVal) {
+        maxCatVal = val;
+        topCat = cat;
+      }
+    });
+
+    return {
+      totalStockValue,
+      totalItems: list.length,
+      lowStockCount,
+      topCat,
+      maxCatVal
+    };
   }, [inventory]);
 
   const calculateDishAvailability = (recipe) => {
@@ -3409,15 +3449,15 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         {/* VIEW 5: STOCK & RAW INVENTORY */}
         {activeTab === 'stock' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-xl font-black text-slate-900">Stock &amp; Raw Inventory</h2>
+                <h2 className="text-xl font-black text-slate-900">Stock &amp; Raw Inventory Valuation</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Raw ingredients and inventory tracked and depleted by recipe Bill of Materials.
+                  Track total raw material investment, asset value, unit costs, and real-time recipe depletion.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -3431,7 +3471,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     });
                     setReceiveStockModalOpen(true);
                   }}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all"
                 >
                   <Package className="h-3.5 w-3.5" />
                   <span>Receive Stock</span>
@@ -3450,7 +3490,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     });
                     setAddInventoryModalOpen(true);
                   }}
-                  className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                  className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>Add Material</span>
@@ -3458,6 +3498,68 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
+            {/* INVENTORY VALUATION KPI CARDS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Total Stock Asset Value */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Stock Value</p>
+                  <span className="p-1.5 rounded-lg bg-orange-50 text-[#ff5500]">
+                    <DollarSign className="h-4 w-4" />
+                  </span>
+                </div>
+                <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                  {settings.currency} {inventoryValuation.totalStockValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1 font-medium">Total capital tied in current inventory</p>
+              </div>
+
+              {/* Total Material Lines */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Tracked Ingredients</p>
+                  <span className="p-1.5 rounded-lg bg-slate-100 text-slate-700">
+                    <Package className="h-4 w-4" />
+                  </span>
+                </div>
+                <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                  {inventoryValuation.totalItems} Items
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1 font-medium">Active Bill of Materials stock records</p>
+              </div>
+
+              {/* Low Stock Alerts */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Reorder Alerts</p>
+                  <span className={`p-1.5 rounded-lg ${inventoryValuation.lowStockCount > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                    <AlertTriangle className="h-4 w-4" />
+                  </span>
+                </div>
+                <p className={`text-2xl font-black mt-2 font-mono ${inventoryValuation.lowStockCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  {inventoryValuation.lowStockCount} Items Low
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1 font-medium">Below configured threshold limit</p>
+              </div>
+
+              {/* Top Investment Category */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Top Category Asset</p>
+                  <span className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
+                    <BarChart3 className="h-4 w-4" />
+                  </span>
+                </div>
+                <p className="text-lg font-black text-slate-900 mt-2 truncate">
+                  {inventoryValuation.topCat}
+                </p>
+                <p className="text-[11px] font-mono font-bold text-indigo-600 mt-1">
+                  {settings.currency} {inventoryValuation.maxCatVal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            </div>
+
+            {/* INVENTORY TABLE WITH UNIT COST & TOTAL ASSET VALUE */}
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
@@ -3466,14 +3568,15 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <th className="py-3 px-4">Category</th>
                     <th className="py-3 px-4">Remaining Stock</th>
                     <th className="py-3 px-4">Reorder Threshold</th>
-                    <th className="py-3 px-4">Unit Cost</th>
+                    <th className="py-3 px-4 text-right">Unit Cost</th>
+                    <th className="py-3 px-4 text-right">Total Valuation</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {(!Array.isArray(inventory) || inventory.length === 0) ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400 italic">
+                      <td colSpan={7} className="py-8 text-center text-slate-400 italic">
                         No raw inventory items registered yet. Click &ldquo;Add Material&rdquo; above to record ingredients.
                       </td>
                     </tr>
@@ -3483,6 +3586,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       const stockNum = Number(ing.stock) || 0;
                       const threshNum = Number(ing.threshold) || 0;
                       const costNum = Number(ing.cost) || 0;
+                      const totalAssetVal = stockNum * costNum;
                       const isLow = stockNum <= threshNum;
 
                       return (
@@ -3505,8 +3609,11 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             )}
                           </td>
                           <td className="py-3 px-4 font-mono text-slate-400">{threshNum} {ing.unit}</td>
-                          <td className="py-3 px-4 font-mono text-slate-600">
+                          <td className="py-3 px-4 text-right font-mono text-slate-600">
                             {settings.currency} {costNum.toFixed(2)} / {ing.unit}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
+                            {settings.currency} {totalAssetVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
@@ -3573,7 +3680,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             </div>
           </div>
         )}
-
         {/* VIEW 6: TABLE MANAGEMENT */}
         {activeTab === 'tables' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
