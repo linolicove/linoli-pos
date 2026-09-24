@@ -455,6 +455,8 @@ export default function App() {
   const [addInventoryModalOpen, setAddInventoryModalOpen] = useState(false);
   const [newInventoryForm, setNewInventoryForm] = useState({ name: '', category: 'Dry Goods', stock: '', unit: 'g', cost: '', threshold: '' });
   const [receiveStockModalOpen, setReceiveStockModalOpen] = useState(false);
+  const [editingInventoryItem, setEditingInventoryItem] = useState(null);
+  const [editInventoryModalOpen, setEditInventoryModalOpen] = useState(false);
   const [receiveStockForm, setReceiveStockForm] = useState({ ingredientId: '', quantity: '', supplier: '', invoiceRef: '', newCost: '' });
   const [addItemModalOpen, setAddItemModalOpen] = useState(false);
   const [editingMenuItem, setEditingMenuItem] = useState(null); // <-- ADD THIS
@@ -3429,7 +3431,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <th className="py-3 px-4">Remaining Stock</th>
                     <th className="py-3 px-4">Reorder Threshold</th>
                     <th className="py-3 px-4">Unit Cost</th>
-                    <th className="py-3 px-4 text-right">Quick Restock</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -3453,21 +3455,58 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         <td className="py-3 px-4 font-mono text-slate-400">{ing.threshold} {ing.unit}</td>
                         <td className="py-3 px-4 font-mono text-slate-600">{settings.currency} {ing.cost.toFixed(2)} / {ing.unit}</td>
                         <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => {
-                              setReceiveStockForm({
-                                ingredientId: ing.id,
-                                quantity: ing.unit === 'g' || ing.unit === 'ml' ? '1000' : '10',
-                                supplier: 'Local Market',
-                                invoiceRef: `REC-${Math.floor(100 + Math.random() * 900)}`,
-                                newCost: ing.cost.toString()
-                              });
-                              setReceiveStockModalOpen(true);
-                            }}
-                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
-                          >
-                            + Intake
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Quick Restock / Intake Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReceiveStockForm({
+                                  ingredientId: ing.id,
+                                  quantity: ing.unit === 'g' || ing.unit === 'ml' ? '1000' : '10',
+                                  supplier: 'Local Market',
+                                  invoiceRef: `REC-${Math.floor(100 + Math.random() * 900)}`,
+                                  newCost: ing.cost.toString()
+                                });
+                                setReceiveStockModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              title="Intake / Receive Stock"
+                            >
+                              + Intake
+                            </button>
+
+                            {/* Edit Material Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingInventoryItem({ ...ing });
+                                setEditInventoryModalOpen(true);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                              title="Edit Material"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </button>
+
+                            {/* Remove Material Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to remove "${ing.name}" from inventory?`)) {
+                                  setInventory(prev => prev.filter(item => item.id !== ing.id));
+                                  recordAuditLog(
+                                    'INVENTORY_ITEM_DELETED',
+                                    ing.id,
+                                    `Deleted raw material "${ing.name}" (${ing.stock} ${ing.unit} @ ${settings.currency} ${ing.cost}/${ing.unit})`
+                                  );
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Remove Material"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -6566,33 +6605,65 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         </div>
       )}
 
-      {/* MODAL: ADD NEW RAW MATERIAL */}
-      {addInventoryModalOpen && (
+      {/* MODAL: EDIT RAW MATERIAL INVENTORY */}
+      {editInventoryModalOpen && editingInventoryItem && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Package className="h-5 w-5 text-[#ff5500]" />
-                <h3 className="text-base font-black text-slate-900">Add Raw Material to Inventory</h3>
+                <h3 className="text-base font-black text-slate-900">Edit Raw Material</h3>
               </div>
               <button
                 type="button"
-                onClick={() => setAddInventoryModalOpen(false)}
-                className="text-slate-400 hover:text-slate-900"
+                onClick={() => {
+                  setEditInventoryModalOpen(false);
+                  setEditingInventoryItem(null);
+                }}
+                className="text-slate-400 hover:text-slate-900 cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateInventoryItem} className="mt-4 space-y-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const costVal = parseFloat(editingInventoryItem.cost);
+                const stockVal = parseFloat(editingInventoryItem.stock);
+                const thresholdVal = parseFloat(editingInventoryItem.threshold);
+
+                if (!editingInventoryItem.name.trim() || isNaN(costVal) || costVal <= 0) {
+                  alert('Please enter a valid material name and unit cost.');
+                  return;
+                }
+
+                setInventory(prev => prev.map(item => item.id === editingInventoryItem.id ? {
+                  ...editingInventoryItem,
+                  name: editingInventoryItem.name.trim(),
+                  cost: costVal,
+                  stock: isNaN(stockVal) ? item.stock : stockVal,
+                  threshold: isNaN(thresholdVal) ? item.threshold : thresholdVal
+                } : item));
+
+                recordAuditLog(
+                  'INVENTORY_ITEM_MODIFIED',
+                  editingInventoryItem.id,
+                  `Updated raw material "${editingInventoryItem.name.trim()}": Stock: ${stockVal} ${editingInventoryItem.unit}, Cost: ${settings.currency} ${costVal.toFixed(2)}/${editingInventoryItem.unit}, Alert: ${thresholdVal} ${editingInventoryItem.unit}`
+                );
+
+                setEditInventoryModalOpen(false);
+                setEditingInventoryItem(null);
+              }}
+              className="mt-4 space-y-4"
+            >
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Material / Ingredient Name</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Material Name</label>
                 <input
                   type="text"
                   required
-                  value={newInventoryForm.name}
-                  onChange={e => setNewInventoryForm(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="e.g. Single Malt Scotch, Fresh Lime"
+                  value={editingInventoryItem.name}
+                  onChange={e => setEditingInventoryItem(prev => ({ ...prev, name: e.target.value }))}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                 />
               </div>
@@ -6601,8 +6672,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
                   <select
-                    value={newInventoryForm.category}
-                    onChange={e => setNewInventoryForm(prev => ({ ...prev, category: e.target.value }))}
+                    value={editingInventoryItem.category}
+                    onChange={e => setEditingInventoryItem(prev => ({ ...prev, category: e.target.value }))}
                     className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                     style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
                   >
@@ -6621,8 +6692,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Unit of Measure</label>
                   <select
-                    value={newInventoryForm.unit}
-                    onChange={e => setNewInventoryForm(prev => ({ ...prev, unit: e.target.value }))}
+                    value={editingInventoryItem.unit}
+                    onChange={e => setEditingInventoryItem(prev => ({ ...prev, unit: e.target.value }))}
                     className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                     style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
                   >
@@ -6643,62 +6714,61 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     step="0.01"
                     min="0.01"
                     required
-                    value={newInventoryForm.cost}
-                    onChange={e => setNewInventoryForm(prev => ({ ...prev, cost: e.target.value }))}
-                    placeholder="e.g. 1.50"
+                    value={editingInventoryItem.cost}
+                    onChange={e => setEditingInventoryItem(prev => ({ ...prev, cost: e.target.value }))}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Initial Stock</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Stock Level</label>
                   <input
                     type="number"
                     step="any"
                     min="0"
                     required
-                    value={newInventoryForm.stock}
-                    onChange={e => setNewInventoryForm(prev => ({ ...prev, stock: e.target.value }))}
-                    placeholder="e.g. 5000"
+                    value={editingInventoryItem.stock}
+                    onChange={e => setEditingInventoryItem(prev => ({ ...prev, stock: e.target.value }))}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Low Alert Level</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Low Reorder Alert</label>
                   <input
                     type="number"
                     step="any"
                     min="1"
                     required
-                    value={newInventoryForm.threshold}
-                    onChange={e => setNewInventoryForm(prev => ({ ...prev, threshold: e.target.value }))}
-                    placeholder="e.g. 500"
+                    value={editingInventoryItem.threshold}
+                    onChange={e => setEditingInventoryItem(prev => ({ ...prev, threshold: e.target.value }))}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                   />
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setAddInventoryModalOpen(false)}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                  onClick={() => {
+                    setEditInventoryModalOpen(false);
+                    setEditingInventoryItem(null);
+                  }}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all cursor-pointer"
                 >
-                  Save Material
+                  Save Material Changes
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
       {/* MODAL: RECEIVE STOCK INTAKE (GRN) */}
       {receiveStockModalOpen && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
