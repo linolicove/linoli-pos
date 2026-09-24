@@ -2853,6 +2853,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               {['Daily Overview', 'All Items Sales', 'Sales Detail', 'KOT Report', 'BOT Report', 'Sales Summary', 'Food vs Beverage', 'Stock Usage', 'Stock Movement Ledger', 'Audit Trail'].map(sub => (
                 <button
                   key={sub}
+                  type="button"
                   onClick={() => setReportSubTab(sub)}
                   className={`transition-colors relative pb-1 whitespace-nowrap cursor-pointer ${
                     reportSubTab === sub
@@ -2895,421 +2896,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 ].map(preset => (
                   <button
                     key={preset.label}
-                    onClick={() => {
-                      setReportStartDate(preset.start);
-                      setReportEndDate(preset.end);
-                    }}
-                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg whitespace-nowrap cursor-pointer"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Daily Overview */}
-            {reportSubTab === 'Daily Overview' && (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">GROSS REVENUE</p>
-                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
-                      {settings.currency} {salesMetrics.grossRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">{salesMetrics.paidBillsCount} Paid Bills</p>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">ITEM SUBTOTAL</p>
-                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
-                      {settings.currency} {salesMetrics.itemSubtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">Food &amp; Beverage Sales</p>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">SERVICE CHARGE</p>
-                    <p className="text-2xl font-black text-emerald-600 mt-2 font-mono">
-                      {settings.currency} {salesMetrics.serviceCharge.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">Collected for staff pool</p>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">TAXES / DISCOUNTS</p>
-                    <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
-                      {settings.currency} {salesMetrics.taxes.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">Discounts: {settings.currency} {salesMetrics.discounts.toFixed(2)}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 mb-4">
-                      Payment Methods Breakdown
-                    </h3>
-                    <div className="space-y-3">
-                      {Object.keys(salesMetrics.paymentMethods).length === 0 ? (
-                        <p className="text-xs text-slate-400 italic">No payments collected in selected period.</p>
-                      ) : (
-                        Object.entries(salesMetrics.paymentMethods).map(([method, data]) => (
-                          <div key={method} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                            <span className="text-xs font-bold text-slate-900">{method} ({data.count} bills)</span>
-                            <span className="text-sm font-black font-mono text-slate-900">
-                              {settings.currency} {data.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            </span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 mb-4">
-                      Preparation Area Sales
-                    </h3>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                        <span className="text-xs font-bold text-slate-900">Kitchen ({salesMetrics.kitchenItemsCount} items)</span>
-                        <span className="text-sm font-black font-mono text-slate-900">
-                          {settings.currency} {salesMetrics.kitchenRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                        <span className="text-xs font-bold text-slate-900">Bar ({salesMetrics.barItemsCount} drinks)</span>
-                        <span className="text-sm font-black font-mono text-slate-900">
-                          {settings.currency} {salesMetrics.barRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* All Items & Top Selling Menu Items Table */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
-                      Top &amp; All Sold Menu Items
-                    </h3>
-                    <span className="text-xs font-mono text-slate-500">{salesMetrics.topItems.length} Products Sold</span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                        <tr>
-                          <th className="py-2.5">Menu Item</th>
-                          <th className="py-2.5">Area</th>
-                          <th className="py-2.5">Category</th>
-                          <th className="py-2.5 text-center">Portions Sold</th>
-                          <th className="py-2.5 text-right">Price</th>
-                          <th className="py-2.5 text-right">Total Revenue</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {salesMetrics.topItems.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="py-6 text-center text-slate-400 italic">No menu items sold in this period.</td>
-                          </tr>
-                        ) : (
-                          salesMetrics.topItems.map((item, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50">
-                              <td className="py-3 font-bold text-slate-900">{item.name}</td>
-                              <td className="py-3">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                  item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
-                                }`}>
-                                  {item.department}
-                                </span>
-                              </td>
-                              <td className="py-3 text-slate-500">{item.category}</td>
-                              <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
-                              <td className="py-3 text-right font-mono text-slate-600">{settings.currency} {(item.unitPrice || 0).toFixed(2)}</td>
-                              <td className="py-3 text-right font-mono font-black text-slate-900">
-                                {settings.currency} {item.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Subtab: All Items Sales */}
-            {reportSubTab === 'All Items Sales' && (
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase">Itemized Menu Sales Report</h3>
-                    <p className="text-xs text-slate-500">Every menu item ordered within the selected date filter range</p>
-                  </div>
-                  <span className="text-xs font-mono font-bold px-3 py-1 bg-slate-100 rounded-xl text-slate-700">
-                    {salesMetrics.topItems.reduce((acc, i) => acc + i.sold, 0)} Total Portions
-                  </span>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                      <tr>
-                        <th className="py-2.5">Menu Item</th>
-                        <th className="py-2.5">Department</th>
-                        <th className="py-2.5">Category</th>
-                        <th className="py-2.5 text-center">Portions Sold</th>
-                        <th className="py-2.5 text-right">Selling Price</th>
-                        <th className="py-2.5 text-right">Total Revenue</th>
-                        <th className="py-2.5 text-right">% of Item Sales</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {salesMetrics.topItems.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="py-8 text-center text-slate-400 italic">No sales recorded for any items in this period.</td>
-                        </tr>
-                      ) : (
-                        salesMetrics.topItems.map((item, idx) => {
-                          const pct = salesMetrics.itemSubtotal > 0
-                            ? ((item.revenue / salesMetrics.itemSubtotal) * 100).toFixed(1)
-                            : '0.0';
-                          return (
-                            <tr key={idx} className="hover:bg-slate-50">
-                              <td className="py-3 font-bold text-slate-900">{item.name}</td>
-                              <td className="py-3">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                  item.department === 'Kitchen' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'
-                                }`}>
-                                  {item.department}
-                                </span>
-                              </td>
-                              <td className="py-3 text-slate-500">{item.category}</td>
-                              <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
-                              <td className="py-3 text-right font-mono text-slate-600">{settings.currency} {(item.unitPrice || 0).toFixed(2)}</td>
-                              <td className="py-3 text-right font-mono font-black text-slate-900">
-                                {settings.currency} {item.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                              </td>
-                              <td className="py-3 text-right font-mono text-slate-500">{pct}%</td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Subtab: KOT Report */}
-            {reportSubTab === 'KOT Report' && (
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase">Kitchen Order Tickets (KOT) Production Report</h3>
-                    <p className="text-xs text-slate-500">Breakdown of all kitchen items prepped in the filtered period</p>
-                  </div>
-                  <span className="px-3 py-1 bg-rose-100 text-rose-800 text-xs font-bold rounded-xl">
-                    {salesMetrics.kitchenItemsCount} Kitchen Items • {settings.currency} {salesMetrics.kitchenRevenue.toFixed(2)}
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                      <tr>
-                        <th className="py-2.5">Kitchen Dish</th>
-                        <th className="py-2.5">Category</th>
-                        <th className="py-2.5 text-center">Portions Prepared</th>
-                        <th className="py-2.5 text-right">Revenue</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {salesMetrics.topItems.filter(i => i.department === 'Kitchen').length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="py-6 text-center text-slate-400 italic">No kitchen orders recorded in this date range.</td>
-                        </tr>
-                      ) : (
-                        salesMetrics.topItems.filter(i => i.department === 'Kitchen').map((item, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50">
-                            <td className="py-3 font-bold text-slate-900">{item.name}</td>
-                            <td className="py-3 text-slate-500">{item.category}</td>
-                            <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
-                            <td className="py-3 text-right font-mono font-bold text-slate-900">{settings.currency} {item.revenue.toFixed(2)}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Subtab: BOT Report */}
-            {reportSubTab === 'BOT Report' && (
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase">Bar Order Tickets (BOT) Dispense Report</h3>
-                    <p className="text-xs text-slate-500">Breakdown of all bar beverages, cocktails &amp; coffees served</p>
-                  </div>
-                  <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-xl">
-                    {salesMetrics.barItemsCount} Drinks Served • {settings.currency} {salesMetrics.barRevenue.toFixed(2)}
-                  </span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                      <tr>
-                        <th className="py-2.5">Beverage / Drink</th>
-                        <th className="py-2.5">Category</th>
-                        <th className="py-2.5 text-center">Glasses / Units</th>
-                        <th className="py-2.5 text-right">Revenue</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {salesMetrics.topItems.filter(i => i.department === 'Bar').length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="py-6 text-center text-slate-400 italic">No bar beverage orders recorded in this date range.</td>
-                        </tr>
-                      ) : (
-                        salesMetrics.topItems.filter(i => i.department === 'Bar').map((item, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50">
-                            <td className="py-3 font-bold text-slate-900">{item.name}</td>
-                            <td className="py-3 text-slate-500">{item.category}</td>
-                            <td className="py-3 text-center font-mono font-bold text-slate-800">{item.sold}</td>
-                            <td className="py-3 text-right font-mono font-bold text-slate-900">{settings.currency} {item.revenue.toFixed(2)}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Subtab: Sales Summary */}
-            {reportSubTab === 'Sales Summary' && (
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4 max-w-2xl">
-                <h3 className="text-base font-black text-slate-900 uppercase">Executive Financial Summary</h3>
-                <div className="space-y-2.5 text-xs divide-y divide-slate-100">
-                  <div className="flex justify-between py-2">
-                    <span className="text-slate-600">Total Settled Invoices</span>
-                    <span className="font-mono font-bold text-slate-900">{salesMetrics.paidBillsCount}</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-slate-600">Average Order Value (AOV)</span>
-                    <span className="font-mono font-bold text-slate-900">
-                      {settings.currency} {salesMetrics.paidBillsCount > 0 ? (salesMetrics.grossRevenue / salesMetrics.paidBillsCount).toFixed(2) : '0.00'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-slate-600">Net Food &amp; Beverage Subtotal</span>
-                    <span className="font-mono font-bold text-slate-900">{settings.currency} {salesMetrics.itemSubtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-slate-600">Service Charge Pool ({settings.serviceChargeRate}%)</span>
-                    <span className="font-mono font-bold text-emerald-600">+{settings.currency} {salesMetrics.serviceCharge.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-slate-600">Statutory Taxes / VAT ({settings.taxRate}%)</span>
-                    <span className="font-mono font-bold text-slate-900">+{settings.currency} {salesMetrics.taxes.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-slate-600">Total Discounts Deducted</span>
-                    <span className="font-mono font-bold text-rose-600">-{settings.currency} {salesMetrics.discounts.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between py-3 text-sm font-black text-slate-900 border-t-2 border-slate-900">
-                    <span>Total Gross Revenue</span>
-                    <span className="font-mono text-base text-[#ff5500]">{settings.currency} {salesMetrics.grossRevenue.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Subtab: Food vs Beverage */}
-            {reportSubTab === 'Food vs Beverage' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-rose-600 uppercase tracking-wider">Food / Kitchen (KOT)</span>
-                    <h3 className="text-3xl font-black font-mono text-slate-900 mt-2">
-                      {settings.currency} {salesMetrics.kitchenRevenue.toFixed(2)}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {((salesMetrics.kitchenRevenue / (salesMetrics.itemSubtotal || 1)) * 100).toFixed(1)}% of total menu sales
-                    </p>
-                  </div>
-                  <div className="mt-6 pt-4 border-t border-slate-100">
-                    <span className="text-xs font-bold text-slate-700">Total Kitchen Portions: {salesMetrics.kitchenItemsCount}</span>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Beverages / Bar (BOT)</span>
-                    <h3 className="text-3xl font-black font-mono text-slate-900 mt-2">
-                      {settings.currency} {salesMetrics.barRevenue.toFixed(2)}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {((salesMetrics.barRevenue / (salesMetrics.itemSubtotal || 1)) * 100).toFixed(1)}% of total menu sales
-                    </p>
-                  </div>
-                  <div className="mt-6 pt-4 border-t border-slate-100">
-                    <span className="text-xs font-bold text-slate-700">Total Bar Drinks: {salesMetrics.barItemsCount}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 3: SALES & REVENUE REPORTS WITH DATE FILTERS */}
-        {activeTab === 'reports' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="flex items-center gap-6 border-b border-slate-200 pb-3 text-xs font-bold overflow-x-auto">
-              {['Daily Overview', 'All Items Sales', 'Sales Detail', 'KOT Report', 'BOT Report', 'Sales Summary', 'Food vs Beverage', 'Stock Usage', 'Stock Movement Ledger', 'Audit Trail'].map(sub => (
-                <button
-                  key={sub}
-                  onClick={() => setReportSubTab(sub)}
-                  className={`transition-colors relative pb-1 whitespace-nowrap cursor-pointer ${
-                    reportSubTab === sub
-                      ? 'text-[#ff5500] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-[#ff5500]'
-                      : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  {sub}
-                </button>
-              ))}
-            </div>
-
-            {/* Date Filters Header */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 shadow-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                  <Calendar className="h-3.5 w-3.5 text-[#ff5500]" /> Date Filter:
-                </span>
-                <input
-                  type="date"
-                  value={reportStartDate}
-                  onChange={e => setReportStartDate(e.target.value)}
-                  className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800"
-                />
-                <span className="text-slate-400 text-xs">to</span>
-                <input
-                  type="date"
-                  value={reportEndDate}
-                  onChange={e => setReportEndDate(e.target.value)}
-                  className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800"
-                />
-              </div>
-
-              <div className="flex items-center gap-1.5 overflow-x-auto">
-                {[
-                  { label: 'Today', start: getLocalDateStr(), end: getLocalDateStr() },
-                  { label: 'Yesterday', start: getLocalDateStr(new Date(Date.now() - 86400000)), end: getLocalDateStr(new Date(Date.now() - 86400000)) },
-                  { label: 'Last 7 Days', start: getLocalDateStr(new Date(Date.now() - 7 * 86400000)), end: getLocalDateStr() },
-                  { label: 'All Time', start: '', end: '' }
-                ].map(preset => (
-                  <button
-                    key={preset.label}
+                    type="button"
                     onClick={() => {
                       setReportStartDate(preset.start);
                       setReportEndDate(preset.end);
@@ -3819,7 +3406,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             )}
 
-            {/* Sales Detail Subtab with Admin Deletion */}
+            {/* Subtab: Sales Detail */}
             {reportSubTab === 'Sales Detail' && (
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
                 <div className="flex items-center justify-between mb-4">
@@ -3864,6 +3451,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             {currentUser.role === 'Administrator' && (
                               <td className="py-3 text-right">
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     setTransactions(prev => prev.filter(inv => inv.invoiceNo !== t.invoiceNo));
                                     recordAuditLog('ADMIN_DELETE_TRANSACTION', t.invoiceNo, `Admin deleted invoice ${t.invoiceNo} for ${settings.currency} ${t.total.toFixed(2)}`);
@@ -3884,13 +3472,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             )}
 
-            {/* Audit Trail Subtab */}
+            {/* Subtab: Audit Trail */}
             {reportSubTab === 'Audit Trail' && (
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-black text-slate-900 uppercase">System Activity &amp; Change Audit Log</h3>
                   {currentUser.role === 'Administrator' && auditLogs.length > 0 && (
                     <button
+                      type="button"
                       onClick={() => {
                         setAuditLogs([]);
                         recordAuditLog('ADMIN_CLEAR_AUDIT_LOGS', 'ALL', 'Purged all audit log entries');
@@ -3933,6 +3522,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             {currentUser.role === 'Administrator' && (
                               <td className="py-2.5 text-right">
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     setAuditLogs(prev => prev.filter(l => l.id !== log.id));
                                   }}
@@ -3996,7 +3586,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             setTempIngredientSelect({ ingredientId: inventory[0]?.id || '', amount: '' });
                             setRecipeConfigModalOpen(true);
                           }}
-                          className="text-[11px] font-bold text-[#ff5500] hover:underline flex items-center gap-1"
+                          className="text-[11px] font-bold text-[#ff5500] hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <Sliders className="h-3 w-3" /> Configure Recipe
                         </button>
@@ -4086,7 +3676,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
             {/* INVENTORY VALUATION KPI CARDS */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Total Stock Asset Value */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Stock Value</p>
@@ -4100,7 +3689,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <p className="text-[11px] text-slate-500 mt-1 font-medium">Total capital tied in current inventory</p>
               </div>
 
-              {/* Total Material Lines */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Tracked Ingredients</p>
@@ -4114,7 +3702,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <p className="text-[11px] text-slate-500 mt-1 font-medium">Active Bill of Materials stock records</p>
               </div>
 
-              {/* Low Stock Alerts */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Reorder Alerts</p>
@@ -4128,7 +3715,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <p className="text-[11px] text-slate-500 mt-1 font-medium">Below configured threshold limit</p>
               </div>
 
-              {/* Top Investment Category */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Top Category Asset</p>
@@ -4266,6 +3852,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             </div>
           </div>
         )}
+
         {/* VIEW 6: TABLE MANAGEMENT */}
         {activeTab === 'tables' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -4275,8 +3862,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <p className="text-xs text-slate-500 mt-0.5">Floor layout, real-time occupancy status, and table launching.</p>
               </div>
               <button
+                type="button"
                 onClick={() => setAddTableModalOpen(true)}
-                className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs"
+                className="px-3.5 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
               >
                 <Plus className="h-3.5 w-3.5" /> Add Table
               </button>
@@ -4307,22 +3895,24 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                     <div className="mt-4 pt-3 border-t border-slate-100 flex gap-2">
                       <button
+                        type="button"
                         onClick={() => {
                           setSelectedTable(tbl);
                           setOrderMode('DINING');
                           setActiveTab('pos');
                         }}
-                        className="flex-1 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold"
+                        className="flex-1 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer"
                       >
                         {isOccupied ? 'Open Order' : 'Seat Table'}
                       </button>
                       {currentUser.role === 'Administrator' && !isOccupied && floorTables.length > 1 && (
                         <button
+                          type="button"
                           onClick={() => {
                             setFloorTables(prev => prev.filter(t => t.id !== tbl.id));
                             recordAuditLog('TABLE_DELETED', tbl.id, `Admin removed table ${tbl.name} (${tbl.id})`);
                           }}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
                           title="Admin: Delete Table"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -4350,7 +3940,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               <button
                 type="button"
                 onClick={() => {
-                  // 1. Calculate shift revenue across all payment channels
                   let shiftCashSales = 0;
                   let shiftCardSales = 0;
                   let shiftOtherSales = 0;
@@ -4370,29 +3959,22 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       if (matchesShift) {
                         shiftTotalBills += 1;
                         const amt = Number(t.total) || 0;
-                        if (isCash) {
-                          shiftCashSales += amt;
-                        } else if (isCard) {
-                          shiftCardSales += amt;
-                        } else {
-                          shiftOtherSales += amt;
-                        }
+                        if (isCash) shiftCashSales += amt;
+                        else if (isCard) shiftCardSales += amt;
+                        else shiftOtherSales += amt;
                       }
                     }
                   }
 
-                  // 2. Tally approved cash outs
                   const allPayouts = currentShift.payouts || [];
                   const approvedPayouts = allPayouts.filter(p => p.status === 'APPROVED' || !p.status);
                   const totalCashOut = approvedPayouts.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
 
-                  // 3. Calculate counted cash from physical notes
                   const countedCash = Object.entries(denominations).reduce(
                     (sum, [denom, count]) => sum + (Number(denom) * (Number(count) || 0)),
                     0
                   );
 
-                  // 4. Compute expected balance and variance
                   const expectedCash = Number(((currentShift.startingFloat || 0) + shiftCashSales - totalCashOut).toFixed(2));
                   const variance = Number((countedCash - expectedCash).toFixed(2));
 
@@ -4418,16 +4000,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     }
                   };
 
-                  // 5. Archive shift
                   setShiftHistory(prev => [closedShift, ...prev]);
 
-                  // 6. Print full Z-Report
                   triggerAutoPrint({
                     type: 'Z_REPORT',
                     data: closedShift
                   }, `Shift ${closedShift.shiftId} Closed`);
 
-                  // 7. Lock transactions to this shift
                   setTransactions(prev => prev.map(t => {
                     const matchesThisShift = t.shiftId === currentShift.shiftId || (!t.shiftId && extractDateStr(t.date) === currentShift.openedDate);
                     if (matchesThisShift) {
@@ -4436,12 +4015,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     return t;
                   }));
 
-                  // 8. Open rolling shift for the next cashier
                   const nextDate = getLocalDateStr();
                   const shiftSequence = Date.now().toString().slice(-4);
                   const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
-
-                  // Carry over the exact counted cash as the next shift's opening float
                   const carriedFloat = countedCash > 0 ? countedCash : (expectedCash || 0);
 
                   setCurrentShift({
@@ -4453,8 +4029,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     status: 'OPEN',
                     payouts: []
                   });
-
-                  // 9. Keep denomination counts rolling over to maintain Rs. 0.00 initial variance
 
                   recordAuditLog(
                     'SHIFT_CLOSED_Z_REPORT',
@@ -4473,19 +4047,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               const approvedPayouts = allPayouts.filter(p => p.status === 'APPROVED' || !p.status);
               const pendingPayouts = allPayouts.filter(p => p.status === 'PENDING');
               const totalApprovedCashOut = approvedPayouts.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
-              const totalPendingCashOut = pendingPayouts.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
 
-              const todayStr = getLocalDateStr();
               let shiftCashSales = 0;
               if (Array.isArray(transactions)) {
                 for (let i = 0; i < transactions.length; i++) {
                   const t = transactions[i];
                   if (!t) continue;
-                  
                   const isCash = String(t.paymentMethod || '').trim().toUpperCase() === 'CASH';
-                  
-                  // Match strictly by current open shiftId
-                  // If legacy transaction without shiftId, only match if opened today AND created today
                   const matchesShift = t.shiftId 
                     ? t.shiftId === currentShift.shiftId 
                     : (extractDateStr(t.date) === currentShift.openedDate && !t.shiftId);
@@ -4507,6 +4075,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
               const expectedCash = Number(((currentShift.startingFloat || 0) + shiftCashSales - totalApprovedCashOut).toFixed(2));
               const variance = Number((countedCash - expectedCash).toFixed(2));
+
               return (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
@@ -4566,9 +4135,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     </div>
                   </div>
 
-                  {}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                    {/* Left: Request Cash Out Form */}
                     <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-2">
@@ -4607,13 +4174,11 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             approvedAt: isManager ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null
                           };
 
-                          // 1. Update active shift payouts
                           setCurrentShift(prev => ({
                             ...prev,
                             payouts: [newCashOut, ...(prev.payouts || [])]
                           }));
 
-                          // 2. Also register in global expenses array
                           setExpenses(prev => [newCashOut, ...prev]);
 
                           recordAuditLog(
@@ -4696,7 +4261,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                         <button
                           type="submit"
-                          className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
+                          className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
                         >
                           <Send className="h-3.5 w-3.5" />
                           <span>Submit Cash Out Request</span>
@@ -4704,7 +4269,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       </form>
                     </div>
 
-                    {/* Right: Cash Out Approval & History Ledger */}
                     <div className="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-4">
                       <div>
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -4733,7 +4297,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             (currentShift.payouts || []).map((item) => {
                               const isApproved = item.status === 'APPROVED' || !item.status;
                               const isPending = item.status === 'PENDING';
-                              const isRejected = item.status === 'REJECTED';
                               const canDirectApprove = currentUser.role === 'Administrator' || currentUser.role === 'Manager';
 
                               return (
@@ -4766,7 +4329,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                       {settings.currency} {(parseFloat(item.amount) || 0).toFixed(2)}
                                     </span>
 
-                                    {/* Action Buttons */}
                                     {isPending && (
                                       <div className="flex items-center gap-1">
                                         <button
@@ -4792,7 +4354,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                               });
                                             }
                                           }}
-                                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-xs"
+                                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-xs cursor-pointer"
                                         >
                                           <Check className="h-3 w-3 stroke-[3]" />
                                           <span>Approve</span>
@@ -4811,14 +4373,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                             }));
                                             recordAuditLog('CASH_OUT_REJECTED', item.id, `${currentUser.name} rejected cash out request ${item.id}`);
                                           }}
-                                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-[10px] font-bold"
+                                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-[10px] font-bold cursor-pointer"
                                         >
                                           Reject
                                         </button>
                                       </div>
                                     )}
 
-                                    {/* Print Voucher Button */}
                                     {isApproved && (
                                       <button
                                         type="button"
@@ -4828,7 +4389,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                             data: item
                                           }, `Cash Out Ref ${item.id}`);
                                         }}
-                                        className="p-1 text-slate-400 hover:text-slate-800 rounded hover:bg-slate-100"
+                                        className="p-1 text-slate-400 hover:text-slate-800 rounded hover:bg-slate-100 cursor-pointer"
                                         title="Print Cash Out Voucher"
                                       >
                                         <Printer className="h-3.5 w-3.5" />
@@ -4943,7 +4504,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <p className="text-xs text-slate-500 mt-0.5">Manage 150+ dishes, upload food photos, configure categories, and link recipes.</p>
               </div>
               <div className="flex items-center gap-3">
-                {/* Category Filter Dropdown with High-Contrast Legibility */}
                 <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 shadow-xs">
                   <span className="text-[11px] font-bold text-slate-500">Category:</span>
                   <select
@@ -4960,7 +4520,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </select>
                 </div>
 
-                {/* PDF Menu Import Button */}
                 <label className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs shrink-0 cursor-pointer transition-colors">
                   <Upload className="h-4 w-4" />
                   <span>Import from PDF</span>
@@ -4993,8 +4552,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </label>
 
                 <button
+                  type="button"
                   onClick={() => setAddItemModalOpen(true)}
-                  className="px-4 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs shrink-0"
+                  className="px-4 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs shrink-0 cursor-pointer"
                 >
                   <Plus className="h-4 w-4" /> Add New Menu Item
                 </button>
@@ -5117,11 +4677,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
               {currentUser.role === 'Administrator' && cancelledTickets.length > 0 && (
                 <button
+                  type="button"
                   onClick={() => {
                     setCancelledTickets([]);
                     recordAuditLog('ADMIN_CLEAR_CANCELLED_TICKETS', 'ALL', 'Purged all void ticket history');
                   }}
-                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Trash2 className="h-3.5 w-3.5" /> Clear Void History (Admin)
                 </button>
@@ -5159,11 +4720,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         {currentUser.role === 'Administrator' && (
                           <td className="py-3 px-4 text-right">
                             <button
+                              type="button"
                               onClick={() => {
                                 setCancelledTickets(prev => prev.filter(v => v.id !== voidItem.id));
                                 recordAuditLog('ADMIN_DELETE_VOID_ENTRY', voidItem.id, `Deleted void record ${voidItem.id} (${voidItem.itemName})`);
                               }}
-                              className="text-slate-400 hover:text-rose-600 p-1"
+                              className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
                               title="Admin Delete Void Record"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -5188,8 +4750,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <p className="text-xs text-slate-500 mt-0.5">Configure employee credentials and 4-digit security PINs.</p>
               </div>
               <button
+                type="button"
                 onClick={() => setAddStaffModalOpen(true)}
-                className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs"
+                className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer"
               >
                 <Plus className="h-4 w-4" /> Add Employee
               </button>
@@ -5228,15 +4791,16 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       <td className="py-3 px-4 text-right">
                         {currentUser.role === 'Administrator' && member.id !== currentUser.id && (
                           <button
+                            type="button"
                             onClick={() => {
-                             setStaffList(prev => prev.filter(s => s.id !== member.id));
-                             recordAuditLog('STAFF_DELETED', member.id, `Removed staff member ${member.name} (${member.role})`);
+                              setStaffList(prev => prev.filter(s => s.id !== member.id));
+                              recordAuditLog('STAFF_DELETED', member.id, `Removed staff member ${member.name} (${member.role})`);
                             }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
                             title="Remove Employee"
-                         >
-                           <Trash2 className="h-4 w-4" />
-                           </button>
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -5250,7 +4814,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         {/* VIEW 13: SYSTEM SETTINGS */}
         {activeTab === 'settings' && (
           <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-6 max-w-5xl mx-auto w-full">
-            {/* Settings Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
               <div>
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
@@ -5266,7 +4829,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <button
                   type="button"
                   onClick={handleExportBackup}
-                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors"
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                   title="Export complete system database to JSON file"
                 >
                   <Download className="h-3.5 w-3.5 text-slate-600" />
@@ -5282,7 +4845,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     });
                     setTimeout(() => setSettingsNotice(null), 3500);
                   }}
-                  className="px-4 py-2 bg-[#008f5d] hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition-all"
+                  className="px-4 py-2 bg-[#008f5d] hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                 >
                   <CheckCircle2 className="h-4 w-4" />
                   <span>Save Changes</span>
@@ -5419,7 +4982,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-            {}
+            {/* SECTION 2: AUTOMATED DAILY EMAIL DISPATCH */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
@@ -5490,7 +5053,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              {/* Data Inclusions Summary and Manual Test Trigger */}
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
                 <div className="space-y-0.5 text-xs">
                   <p className="font-bold text-slate-800">What data is transmitted in the 11:30 PM package?</p>
@@ -5504,7 +5066,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     type="button"
                     disabled={isSendingEmail}
                     onClick={() => sendDailyEodEmail(true)}
-                    className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs transition-all disabled:opacity-50"
+                    className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                   >
                     <Send className="h-3.5 w-3.5" />
                     <span>{isSendingEmail ? 'Dispatching...' : 'Send Daily Report Now'}</span>
@@ -5512,7 +5074,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              {/* Optional Webhook / EmailJS Backend Integration */}
               <details className="text-xs text-slate-600 pt-1">
                 <summary className="font-bold cursor-pointer text-slate-700 hover:text-[#ff5500] select-none">
                   Advanced: Direct Silent Webhook or EmailJS API Keys (Optional)
@@ -5555,7 +5116,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </details>
             </div>
 
-            {/* SECTION 2: STREAMLINED AUTO-PRINTER CONFIGURATION */}
+            {/* SECTION 3: STREAMLINED AUTO-PRINTER CONFIGURATION */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
@@ -5574,7 +5135,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </span>
               </div>
 
-              {}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Paper Roll Width</label>
@@ -5617,7 +5177,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              {}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Thermal Slip Margins</label>
@@ -5658,7 +5217,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              {/* Hardware Pairing & Test Diagnostic */}
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 <div className="space-y-0.5">
                   <p className="text-xs font-bold text-slate-800">Direct WebUSB Thermal Printer Connection</p>
@@ -5678,14 +5236,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         navigator.usb.requestDevice({ filters: [] }).then(dev => {
                           setPairedUsbDevice(dev);
                           setUsbStatusMessage(`Paired with ${dev.productName || 'USB Printer'}`);
-                        }).catch(err => {
+                        }).catch(() => {
                           setUsbStatusMessage('Pairing cancelled or printer busy.');
                         });
                       } else {
                         setUsbStatusMessage('WebUSB not supported; standard OS spooler active.');
                       }
                     }}
-                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                   >
                     <Usb className="h-3.5 w-3.5" />
                     <span>Pair USB Printer</span>
@@ -5710,7 +5268,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         }
                       }, 'Diagnostic Slip');
                     }}
-                    className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5"
+                    className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                   >
                     <Printer className="h-3.5 w-3.5 text-slate-500" />
                     <span>Test Slip</span>
@@ -5719,7 +5277,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-            {/* SECTION 3: AUTOMATED CASH DRAWER SOLENOID */}
+            {/* SECTION 4: AUTOMATED CASH DRAWER SOLENOID */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
@@ -5783,7 +5341,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <button
                       type="button"
                       onClick={() => setSettings(prev => ({ ...prev, chimeAudio: !prev.chimeAudio }))}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                         settings.chimeAudio
                           ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                           : 'bg-slate-200 text-slate-600'
@@ -5794,7 +5352,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <button
                       type="button"
                       onClick={playCashRegisterChime}
-                      className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-200"
+                      className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-200 cursor-pointer"
                       title="Test Audio Chime"
                     >
                       <Volume2 className="h-4 w-4" />
@@ -5817,7 +5375,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       });
                       setTimeout(() => setSettingsNotice(null), 3500);
                     }}
-                    className="px-3.5 py-1.5 bg-[#ff5500] hover:bg-orange-600 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                    className="px-3.5 py-1.5 bg-[#ff5500] hover:bg-orange-600 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
                   >
                     <Zap className="h-3.5 w-3.5" />
                     <span>Pop Drawer</span>
@@ -5826,7 +5384,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-            {/* SECTION 4: TAX, SERVICE CHARGE & CURRENCY */}
+            {/* SECTION 5: TAX, SERVICE CHARGE & CURRENCY */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
@@ -5882,7 +5440,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              {/* Receipt Header & Footer Text */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Thermal Receipt Header Notes</label>
@@ -5908,7 +5465,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-            {/* SECTION 5: SYSTEM DATABASE BACKUP & RESTORE */}
+            {/* SECTION 6: SYSTEM DATABASE BACKUP & RESTORE */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
@@ -5925,7 +5482,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Export Card */}
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col justify-between space-y-3">
                   <div>
                     <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
@@ -5938,13 +5494,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   <button
                     type="button"
                     onClick={handleExportBackup}
-                    className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5"
+                    className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Download className="h-3.5 w-3.5" /> Download System Backup (.json)
                   </button>
                 </div>
 
-                {/* Import Card */}
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col justify-between space-y-3">
                   <div>
                     <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
@@ -5969,7 +5524,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-            {/* SECTION 6: ADMIN FACTORY RESET / WIPE TEST DATA */}
+            {/* SECTION 7: ADMIN FACTORY RESET / WIPE TEST DATA */}
             {currentUser.role === 'Administrator' && (
               <div className="bg-rose-50/60 rounded-2xl border border-rose-200 p-6 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">
@@ -5993,6 +5548,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       setFloorTables(prev => prev.map(t => ({ ...t, status: 'VACANT', currentOrderRef: null })));
                       setCurrentShift({
                         shiftId: `SHIFT-${getLocalDateStr().replace(/-/g, '')}-01`,
+                        openedDate: getLocalDateStr(),
                         openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                         openedBy: currentUser.name,
                         startingFloat: 15000.00,
@@ -6006,7 +5562,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       });
                       setTimeout(() => setSettingsNotice(null), 4000);
                     }}
-                    className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs shrink-0"
+                    className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     <span>Purge Test Records</span>
@@ -6028,13 +5584,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <h3 className="text-base font-black text-slate-900">Edit Active Bill: {editingBill.tableName}</h3>
                 <p className="text-xs text-slate-500 font-mono">Order #{editingBill.orderId}</p>
               </div>
-              <button onClick={() => setEditBillModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+              <button onClick={() => setEditBillModalOpen(false)} className="text-slate-400 hover:text-slate-900 cursor-pointer">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <div className="mt-4 space-y-4">
-              {/* Add item to this bill */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                 <span className="text-xs font-bold text-slate-800">Add Item to Bill</span>
                 <div className="flex gap-2">
@@ -6047,6 +5602,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     ))}
                   </select>
                   <button
+                    type="button"
                     onClick={() => {
                       const selectEl = document.getElementById('addDishToBillSelect');
                       const selectedDish = menuItems.find(m => m.id === selectEl?.value);
@@ -6060,14 +5616,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         });
                       }
                     }}
-                    className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800"
+                    className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer"
                   >
                     + Add
                   </button>
                 </div>
               </div>
 
-              {/* Items in the active bill */}
               <div className="space-y-2 max-h-56 overflow-y-auto">
                 <span className="text-xs font-black uppercase text-slate-400">Current Items</span>
                 {editingBill.items.map(item => (
@@ -6078,36 +5633,39 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                        type="button"
                         onClick={() => {
                           setEditingBill(prev => ({
                             ...prev,
                             items: prev.items.map(i => (i.cartItemId || i.id) === (item.cartItemId || item.id) ? { ...i, qty: Math.max(1, i.qty - 1) } : i)
                           }));
                         }}
-                        className="h-6 w-6 bg-white border border-slate-200 rounded text-xs font-bold"
+                        className="h-6 w-6 bg-white border border-slate-200 rounded text-xs font-bold cursor-pointer"
                       >
                         -
                       </button>
                       <span className="font-mono font-bold text-xs">{item.qty}</span>
                       <button
+                        type="button"
                         onClick={() => {
                           setEditingBill(prev => ({
                             ...prev,
                             items: prev.items.map(i => (i.cartItemId || i.id) === (item.cartItemId || item.id) ? { ...i, qty: i.qty + 1 } : i)
                           }));
                         }}
-                        className="h-6 w-6 bg-white border border-slate-200 rounded text-xs font-bold"
+                        className="h-6 w-6 bg-white border border-slate-200 rounded text-xs font-bold cursor-pointer"
                       >
                         +
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setEditingBill(prev => ({
                             ...prev,
                             items: prev.items.filter(i => (i.cartItemId || i.id) !== (item.cartItemId || item.id))
                           }));
                         }}
-                        className="text-slate-400 hover:text-rose-600 p-1"
+                        className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -6130,10 +5688,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     const originalOrder = activeOrders.find(o => o.orderId === editingBill.orderId);
                     const originalItems = originalOrder?.items || [];
                     const updatedItems = editingBill.items || [];
-
                     const changes = [];
 
-                    // 1. Detect additions and quantity changes
                     updatedItems.forEach(item => {
                       const prev = originalItems.find(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
                       if (!prev) {
@@ -6147,7 +5703,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       }
                     });
 
-                    // 2. Detect deleted/voided items
                     originalItems.forEach(item => {
                       const stillExists = updatedItems.some(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
                       if (!stillExists) {
@@ -6155,14 +5710,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       }
                     });
 
-                    const changeSummary = changes.length > 0
-                      ? changes.join(' | ')
-                      : 'No line item quantity modifications';
+                    const changeSummary = changes.length > 0 ? changes.join(' | ') : 'No line item quantity modifications';
 
-                    // Update the active order in state
                     setActiveOrders(prev => prev.map(o => o.orderId === editingBill.orderId ? editingBill : o));
 
-                    // Record itemized differential log
                     recordAuditLog(
                       'BILL_MODIFIED_DIFF',
                       editingBill.orderId,
@@ -6316,7 +5867,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       <button
                         type="button"
                         onClick={() => setEditingMenuItem(prev => ({ ...prev, imageUrl: '' }))}
-                        className="p-2 text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 hover:bg-rose-50 transition-colors"
+                        className="p-2 text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 hover:bg-rose-50 transition-colors cursor-pointer"
                         title="Remove Photo"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -6389,7 +5940,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                 ...prev,
                                 recipe: prev.recipe.filter((_, idx) => idx !== i)
                               }))}
-                              className="text-slate-400 hover:text-rose-600 transition-colors"
+                              className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
@@ -6423,6 +5974,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </div>
       )}
+
       {/* MODAL: CHECKOUT & SETTLEMENT */}
       {checkoutModalOpen && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
@@ -6431,7 +5983,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               <h3 className="text-base font-black text-slate-900">
                 Settle Bill: {settlingOrder ? settlingOrder.tableName : selectedTable.name}
               </h3>
-              <button onClick={() => setCheckoutModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+              <button onClick={() => setCheckoutModalOpen(false)} className="text-slate-400 hover:text-slate-900 cursor-pointer">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -6451,8 +6003,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     {['CASH', 'CARD', 'SPLIT'].map(type => (
                       <button
                         key={type}
+                        type="button"
                         onClick={() => setPaymentMethod(type)}
-                        className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                        className={`py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                           paymentMethod === type
                             ? 'bg-[#ff5500] text-white border-[#ff5500]'
                             : 'bg-slate-50 border-slate-200 text-slate-600'
@@ -6470,7 +6023,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         <button
                           type="button"
                           onClick={() => setCashTendered(fin.total.toFixed(2))}
-                          className="text-[10px] font-bold text-[#ff5500] hover:underline"
+                          className="text-[10px] font-bold text-[#ff5500] hover:underline cursor-pointer"
                         >
                           Exact Amount
                         </button>
@@ -6484,7 +6037,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         className="w-full px-3 py-2 border border-slate-200 rounded-xl text-slate-900 font-mono text-sm focus:outline-none focus:border-[#ff5500]"
                       />
 
-                      {/* Quick cash denomination shortcuts */}
                       <div className="flex gap-1.5 overflow-x-auto pt-0.5">
                         {[
                           Math.ceil(fin.total / 100) * 100,
@@ -6499,7 +6051,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                               key={val}
                               type="button"
                               onClick={() => setCashTendered(val.toString())}
-                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-mono font-bold transition-colors"
+                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-mono font-bold transition-colors cursor-pointer"
                             >
                               {settings.currency} {val}
                             </button>
@@ -6547,8 +6099,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
 
                   <button
+                    type="button"
                     onClick={handleCompleteSettlement}
-                    className="w-full py-3 bg-[#008f5d] hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-xs"
+                    className="w-full py-3 bg-[#008f5d] hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow-xs cursor-pointer active:scale-95"
                   >
                     Confirm Settlement &amp; Deduct BOM Stock
                   </button>
@@ -6572,7 +6125,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         </div>
       )}
 
-      {/* HIDDEN OFF-SCREEN THERMAL PRINT AREA (Visible ONLY to physical print engine) */}
+      {/* HIDDEN OFF-SCREEN THERMAL PRINT AREA */}
       <div
         id="thermal-print-area"
         style={{
@@ -6584,7 +6137,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       >
         {activePrintSlip && (
           <>
-            {/* 2-Slip Order Dispatch: KOT & BOT */}
             {activePrintSlip.type === 'KOT_BOT_DISPATCH' && (
               <div className="space-y-4">
                 {activePrintSlip.data.kitchenItems?.length > 0 && (
@@ -6621,7 +6173,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             )}
 
-            {/* Temporary Proforma Bill */}
             {activePrintSlip.type === 'TEMP_BILL' && (
               <div className="space-y-2">
                 <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
@@ -6670,42 +6221,30 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             )}
 
-            {/* Final Settlement Tax Invoice */}
             {activePrintSlip.type === 'FINAL_BILL' && (
               <div className="space-y-3 font-mono">
-                {/* ENLARGED TOP HEADER */}
                 <div className="text-center border-b-2 border-dashed border-black pb-3 space-y-1">
-                  {/* Restaurant Name */}
                   <h1 className="font-black text-xl tracking-tight uppercase leading-tight">
                     {settings.restaurantName}
                   </h1>
-
-                  {/* Tagline / Subtitle */}
                   {settings.tagline && (
                     <p className="font-bold text-xs uppercase tracking-wider">
                       {settings.tagline}
                     </p>
                   )}
-
-                  {/* Address & Contact Details */}
                   <div className="text-xs font-semibold leading-snug whitespace-pre-line text-black pt-1">
                     {settings.receiptHeader}
                   </div>
-
-                  {/* Prominent Tax Invoice Label & Number */}
                   <div className="pt-2">
                     <p className="font-black text-sm tracking-wide uppercase border-y border-black py-1 inline-block w-full">
                       TAX INVOICE #{activePrintSlip.data.invoiceNo}
                     </p>
                   </div>
-
-                  {/* Date, Time & Table */}
                   <p className="text-xs font-bold tracking-tight pt-1">
                     {activePrintSlip.data.date} &bull; {activePrintSlip.data.table}
                   </p>
                 </div>
 
-                {/* Line Items */}
                 <div className="py-1 border-b border-black space-y-1 text-xs">
                   {activePrintSlip.data.items.map((item, idx) => (
                     <div key={idx} className="flex justify-between font-semibold">
@@ -6715,7 +6254,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   ))}
                 </div>
 
-                {/* Financial Summary */}
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
@@ -6748,7 +6286,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <span>{activePrintSlip.data.paymentMethod}</span>
                   </div>
 
-                  {/* Cash Tendered & Balance Breakdown */}
                   {activePrintSlip.data.paymentMethod === 'CASH' && (
                     <div className="pt-2 mt-1 border-t border-dashed border-black space-y-1">
                       <div className="flex justify-between text-xs font-bold">
@@ -6767,14 +6304,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   )}
                 </div>
 
-                {/* Footer Message */}
                 <p className="text-center font-bold text-xs pt-3 whitespace-pre-line border-t border-dashed border-black">
                   {settings.receiptFooter}
                 </p>
               </div>
             )}
             
-            {/* Cash Out Voucher */}
             {activePrintSlip.type === 'CASH_OUT_VOUCHER' && (
               <div className="space-y-2">
                 <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
@@ -6828,10 +6363,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             )}
 
-            {/* Z-Report Shift Close Thermal Slip */}
             {activePrintSlip.type === 'Z_REPORT' && (
               <div className="space-y-3 font-mono">
-                {/* Header */}
                 <div className="text-center border-b-2 border-dashed border-slate-800 pb-2">
                   <p className="font-black text-sm uppercase">{settings.restaurantName}</p>
                   <p className="text-[9px] uppercase tracking-wider">{settings.tagline}</p>
@@ -6840,7 +6373,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   <p className="text-[9px]">Terminal: {settings.terminalId}</p>
                 </div>
 
-                {/* Shift Timings & Personnel */}
                 <div className="text-[10px] space-y-0.5 border-b border-dashed border-slate-400 pb-2">
                   <div className="flex justify-between">
                     <span>Opened:</span>
@@ -6860,7 +6392,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 </div>
 
-                {/* Sales Summary */}
                 <div className="text-[10px] space-y-1 border-b border-dashed border-slate-400 pb-2">
                   <p className="font-black text-[11px] uppercase">=== SALES SUMMARY ===</p>
                   <div className="flex justify-between">
@@ -6887,7 +6418,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 </div>
 
-                {/* Cash Out Disbursements */}
                 <div className="text-[10px] space-y-1 border-b border-dashed border-slate-400 pb-2">
                   <div className="flex justify-between font-black text-[11px] uppercase">
                     <span>=== CASH DISBURSEMENTS ===</span>
@@ -6905,7 +6435,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   )}
                 </div>
 
-                {/* Physical Denomination Breakdown */}
                 <div className="text-[10px] space-y-1 border-b border-dashed border-slate-400 pb-2">
                   <p className="font-black text-[11px] uppercase">=== CASH NOTE BREAKDOWN ===</p>
                   {activePrintSlip.data.metrics?.denominations && Object.keys(activePrintSlip.data.metrics.denominations).length > 0 ? (
@@ -6926,7 +6455,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   )}
                 </div>
 
-                {/* Drawer Balancing Summary */}
                 <div className="text-xs space-y-1 border-b-2 border-dashed border-slate-800 pb-2.5">
                   <p className="font-black text-[11px] uppercase">=== DRAWER BALANCING ===</p>
                   <div className="flex justify-between text-[10px]">
@@ -6963,7 +6491,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 </div>
 
-                {/* Sign-off Signatures */}
                 <div className="pt-3 text-[9px] space-y-4">
                   <div className="flex justify-between">
                     <div>
@@ -6985,7 +6512,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         )}
       </div>
 
-      {}
       {cashOutApprovalModal.open && cashOutApprovalModal.item && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
@@ -6995,8 +6521,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <h3 className="text-base font-black text-slate-900">Manager Authorization</h3>
               </div>
               <button
+                type="button"
                 onClick={() => setCashOutApprovalModal({ open: false, item: null, managerPin: '', error: '' })}
-                className="text-slate-400 hover:text-slate-900"
+                className="text-slate-400 hover:text-slate-900 cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -7043,7 +6570,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <button
                   type="button"
                   onClick={() => setCashOutApprovalModal({ open: false, item: null, managerPin: '', error: '' })}
-                  className="flex-1 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+                  className="flex-1 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -7075,7 +6602,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                     setCashOutApprovalModal({ open: false, item: null, managerPin: '', error: '' });
                   }}
-                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs"
+                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer"
                 >
                   Authorize Payout
                 </button>
@@ -7093,17 +6620,16 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
                 <Grid className="h-4 w-4 text-[#ff5500]" /> Assign Table or Order Mode
               </h3>
-              <button onClick={() => setAllocationModalOpen(false)} className="text-slate-400 hover:text-slate-900">
+              <button onClick={() => setAllocationModalOpen(false)} className="text-slate-400 hover:text-slate-900 cursor-pointer">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Mode selection with tick indicators */}
             <div className="mt-4 grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setOrderMode('DINING')}
-                className={`p-3 rounded-2xl border flex items-center justify-between transition-all ${
+                className={`p-3 rounded-2xl border flex items-center justify-between transition-all cursor-pointer ${
                   orderMode === 'DINING'
                     ? 'border-[#ff5500] bg-orange-50/70 shadow-xs'
                     : 'border-slate-200 bg-white hover:bg-slate-50'
@@ -7123,7 +6649,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               <button
                 type="button"
                 onClick={() => setOrderMode('TAKEAWAY')}
-                className={`p-3 rounded-2xl border flex items-center justify-between transition-all ${
+                className={`p-3 rounded-2xl border flex items-center justify-between transition-all cursor-pointer ${
                   orderMode === 'TAKEAWAY'
                     ? 'border-[#ff5500] bg-orange-50/70 shadow-xs'
                     : 'border-slate-200 bg-white hover:bg-slate-50'
@@ -7141,7 +6667,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </button>
             </div>
 
-            {/* Visual table grid with tick marks on the selected table */}
             {orderMode === 'DINING' ? (
               <div className="mt-4 space-y-3">
                 <div className="flex items-center justify-between">
@@ -7151,7 +6676,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <button
                       type="button"
                       onClick={() => setGuestCount(Math.max(1, guestCount - 1))}
-                      className="h-6 w-6 rounded bg-slate-100 font-bold"
+                      className="h-6 w-6 rounded bg-slate-100 font-bold cursor-pointer"
                     >
                       -
                     </button>
@@ -7159,7 +6684,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <button
                       type="button"
                       onClick={() => setGuestCount(guestCount + 1)}
-                      className="h-6 w-6 rounded bg-slate-100 font-bold"
+                      className="h-6 w-6 rounded bg-slate-100 font-bold cursor-pointer"
                     >
                       +
                     </button>
@@ -7178,7 +6703,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           setSelectedTable(tbl);
                           setAllocationModalOpen(false);
                         }}
-                        className={`p-3 rounded-2xl border text-left flex items-start justify-between transition-all ${
+                        className={`p-3 rounded-2xl border text-left flex items-start justify-between transition-all cursor-pointer ${
                           isSelected
                             ? 'border-[#ff5500] bg-orange-50/80 ring-2 ring-orange-500/20 shadow-xs'
                             : 'border-slate-200 bg-white hover:bg-slate-50'
@@ -7236,7 +6761,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <button
                   type="button"
                   onClick={() => setAllocationModalOpen(false)}
-                  className="w-full py-2.5 bg-[#ff5500] text-white font-bold rounded-xl text-xs"
+                  className="w-full py-2.5 bg-[#ff5500] text-white font-bold rounded-xl text-xs cursor-pointer"
                 >
                   Confirm Takeaway Order
                 </button>
@@ -7246,7 +6771,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         </div>
       )}
 
-      {}
       {/* MODAL: ADD NEW STAFF MEMBER */}
       {addStaffModalOpen && (
         <div 
@@ -7401,7 +6925,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   return;
                 }
 
-                // Check existing item stock to compute variance diff
                 const originalItem = inventoryMap[editingInventoryItem.id];
                 const oldStock = originalItem ? Number(originalItem.stock) : Number(editingInventoryItem.stock);
                 const targetStock = isNaN(stockVal) ? oldStock : stockVal;
@@ -7420,7 +6943,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   `Updated raw material "${editingInventoryItem.name.trim()}": Stock: ${targetStock} ${editingInventoryItem.unit}, Cost: ${settings.currency} ${costVal.toFixed(2)}/${editingInventoryItem.unit}, Alert: ${thresholdVal} ${editingInventoryItem.unit}`
                 );
 
-                // Log the difference in the Stock Movement Ledger if stock was modified
                 if (oldStock !== targetStock && typeof recordStockMovement === 'function') {
                   const diff = Number((targetStock - oldStock).toFixed(2));
                   recordStockMovement(
@@ -7554,6 +7076,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </div>
       )}
+
       {/* MODAL: RECEIVE STOCK INTAKE (GRN) */}
       {receiveStockModalOpen && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
@@ -7566,7 +7089,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               <button
                 type="button"
                 onClick={() => setReceiveStockModalOpen(false)}
-                className="text-slate-400 hover:text-slate-900"
+                className="text-slate-400 hover:text-slate-900 cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -7678,13 +7201,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <button
                   type="button"
                   onClick={() => setReceiveStockModalOpen(false)}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs transition-all"
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs transition-all cursor-pointer"
                 >
                   Confirm Intake
                 </button>
@@ -7694,7 +7217,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         </div>
       )}
 
-      {}
       {/* MODAL: ADD NEW FLOOR TABLE */}
       {addTableModalOpen && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
