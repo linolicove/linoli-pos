@@ -3421,8 +3421,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <button
                   type="button"
                   onClick={() => {
+                    const firstId = Array.isArray(inventory) && inventory.length > 0 ? inventory[0].id : '';
                     setReceiveStockForm({
-                      ingredientId: inventory[0]?.id || '',
+                      ingredientId: firstId,
                       quantity: '',
                       supplier: '',
                       invoiceRef: '',
@@ -3470,82 +3471,103 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {inventory.map(ing => {
-                    const isLow = ing.stock <= ing.threshold;
-                    return (
-                      <tr key={ing.id} className="hover:bg-slate-50/70">
-                        <td className="py-3 px-4">
-                          <p className="font-extrabold text-slate-900">{ing.name}</p>
-                          <span className="text-[10px] text-slate-400 font-mono">{ing.id}</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-bold">
-                            {ing.category}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                          {ing.stock} {ing.unit}
-                          {isLow && <span className="ml-2 px-1.5 py-0.5 bg-rose-100 text-rose-700 text-[10px] rounded font-bold">Low</span>}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-slate-400">{ing.threshold} {ing.unit}</td>
-                        <td className="py-3 px-4 font-mono text-slate-600">{settings.currency} {ing.cost.toFixed(2)} / {ing.unit}</td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Quick Restock / Intake Button */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReceiveStockForm({
-                                  ingredientId: ing.id,
-                                  quantity: ing.unit === 'g' || ing.unit === 'ml' ? '1000' : '10',
-                                  supplier: 'Local Market',
-                                  invoiceRef: `REC-${Math.floor(100 + Math.random() * 900)}`,
-                                  newCost: ing.cost.toString()
-                                });
-                                setReceiveStockModalOpen(true);
-                              }}
-                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                              title="Intake / Receive Stock"
-                            >
-                              + Intake
-                            </button>
+                  {(!Array.isArray(inventory) || inventory.length === 0) ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 italic">
+                        No raw inventory items registered yet. Click &ldquo;Add Material&rdquo; above to record ingredients.
+                      </td>
+                    </tr>
+                  ) : (
+                    inventory.map(ing => {
+                      if (!ing) return null;
+                      const stockNum = Number(ing.stock) || 0;
+                      const threshNum = Number(ing.threshold) || 0;
+                      const costNum = Number(ing.cost) || 0;
+                      const isLow = stockNum <= threshNum;
 
-                            {/* Edit Material Button */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingInventoryItem({ ...ing });
-                                setEditInventoryModalOpen(true);
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                              title="Edit Material"
-                            >
-                              <Edit3 className="h-4 w-4" />
-                            </button>
+                      return (
+                        <tr key={ing.id} className="hover:bg-slate-50/70">
+                          <td className="py-3 px-4">
+                            <p className="font-extrabold text-slate-900">{ing.name}</p>
+                            <span className="text-[10px] text-slate-400 font-mono">{ing.id}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-bold">
+                              {ing.category || 'General'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                            {stockNum} {ing.unit}
+                            {isLow && (
+                              <span className="ml-2 px-1.5 py-0.5 bg-rose-100 text-rose-700 text-[10px] rounded font-bold">
+                                Low
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-slate-400">{threshNum} {ing.unit}</td>
+                          <td className="py-3 px-4 font-mono text-slate-600">
+                            {settings.currency} {costNum.toFixed(2)} / {ing.unit}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Quick Restock / Intake */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReceiveStockForm({
+                                    ingredientId: ing.id,
+                                    quantity: ing.unit === 'g' || ing.unit === 'ml' ? '1000' : '10',
+                                    supplier: 'Local Market',
+                                    invoiceRef: `REC-${Math.floor(100 + Math.random() * 900)}`,
+                                    newCost: costNum.toString()
+                                  });
+                                  setReceiveStockModalOpen(true);
+                                }}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                                title="Intake / Receive Stock"
+                              >
+                                + Intake
+                              </button>
 
-                            {/* Remove Material Button */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm(`Are you sure you want to remove "${ing.name}" from inventory?`)) {
-                                  setInventory(prev => prev.filter(item => item.id !== ing.id));
-                                  recordAuditLog(
-                                    'INVENTORY_ITEM_DELETED',
-                                    ing.id,
-                                    `Deleted raw material "${ing.name}" (${ing.stock} ${ing.unit} @ ${settings.currency} ${ing.cost}/${ing.unit})`
-                                  );
-                                }
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title="Remove Material"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                              {/* Edit Material */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingInventoryItem({ ...ing });
+                                  setEditInventoryModalOpen(true);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                                title="Edit Material"
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </button>
+
+                              {/* Remove Material */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Are you sure you want to remove "${ing.name}" from inventory?`)) {
+                                    setInventory(prev => (prev || []).filter(item => item.id !== ing.id));
+                                    if (typeof recordAuditLog === 'function') {
+                                      recordAuditLog(
+                                        'INVENTORY_ITEM_DELETED',
+                                        ing.id,
+                                        `Deleted raw material "${ing.name}" (${stockNum} ${ing.unit} @ ${settings.currency} ${costNum.toFixed(2)}/${ing.unit})`
+                                      );
+                                    }
+                                  }
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Remove Material"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -6535,8 +6557,17 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       {}
       {/* MODAL: ADD NEW STAFF MEMBER */}
       {addStaffModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200">
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 text-slate-900"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setAddStaffModalOpen(false);
+              setStaffFormError('');
+              setNewStaffForm({ name: '', role: 'Cashier', pin: '', email: '' });
+            }
+          }}
+        >
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200 relative max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-[#ff5500]" />
@@ -6549,7 +6580,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   setStaffFormError('');
                   setNewStaffForm({ name: '', role: 'Cashier', pin: '', email: '' });
                 }}
-                className="text-slate-400 hover:text-slate-900"
+                className="text-slate-400 hover:text-slate-900 p-1 cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -6561,6 +6592,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <input
                   type="text"
                   required
+                  autoFocus
                   value={newStaffForm.name}
                   onChange={e => setNewStaffForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="e.g. Kasun Fernando"
@@ -6574,7 +6606,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   <select
                     value={newStaffForm.role}
                     onChange={e => setNewStaffForm(prev => ({ ...prev, role: e.target.value }))}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#ff5500]"
                     style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
                   >
                     {Object.keys(ROLE_PERMISSIONS).map(role => (
@@ -6589,10 +6621,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   <label className="block text-xs font-bold text-slate-700 mb-1">4-Digit Security PIN</label>
                   <input
                     type="password"
+                    inputMode="numeric"
                     maxLength={4}
                     required
                     value={newStaffForm.pin}
-                    onChange={e => setNewStaffForm(prev => ({ ...prev, pin: e.target.value }))}
+                    onChange={e => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                      setNewStaffForm(prev => ({ ...prev, pin: val }));
+                    }}
                     placeholder="e.g. 4321"
                     className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-sm font-mono font-bold text-slate-900 tracking-widest focus:bg-white focus:outline-none focus:border-[#ff5500]"
                   />
@@ -6616,7 +6652,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               )}
 
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => {
@@ -6624,13 +6660,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     setStaffFormError('');
                     setNewStaffForm({ name: '', role: 'Cashier', pin: '', email: '' });
                   }}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all cursor-pointer active:scale-95"
                 >
                   Save Employee
                 </button>
