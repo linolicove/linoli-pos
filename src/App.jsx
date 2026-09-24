@@ -6981,6 +6981,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       )}
 
       {}
+      {/* MODAL: ADD NEW FLOOR TABLE */}
       {addTableModalOpen && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200">
@@ -6995,7 +6996,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   setAddTableModalOpen(false);
                   setNewTableForm({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
                 }}
-                className="text-slate-400 hover:text-slate-900"
+                className="text-slate-400 hover:text-slate-900 cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -7055,15 +7056,152 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     setAddTableModalOpen(false);
                     setNewTableForm({ name: '', zone: 'Indoor Main Hall', capacity: 4 });
                   }}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all cursor-pointer active:scale-95"
                 >
                   Create Table
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD NEW RAW MATERIAL */}
+      {addInventoryModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 text-slate-900"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setAddInventoryModalOpen(false);
+          }}
+        >
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200 relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-[#ff5500]" />
+                <h3 className="text-base font-black text-slate-900">Add Raw Material to Inventory</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAddInventoryModalOpen(false)}
+                className="text-slate-400 hover:text-slate-900 cursor-pointer p-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateInventoryItem} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Material Name *</label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={newInventoryForm.name || ''}
+                  onChange={e => setNewInventoryForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Basmati Rice, Fresh Lime, Single Malt"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                  <select
+                    value={newInventoryForm.category || 'Dry Goods'}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                  >
+                    <option value="Dry Goods">Dry Goods</option>
+                    <option value="Dairy & Eggs">Dairy &amp; Eggs</option>
+                    <option value="Meat">Meat</option>
+                    <option value="Poultry">Poultry</option>
+                    <option value="Seafood">Seafood</option>
+                    <option value="Beverages">Beverages</option>
+                    <option value="Bar Supplies">Bar Supplies</option>
+                    <option value="Bakery">Bakery</option>
+                    <option value="Produce">Produce</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Unit</label>
+                  <select
+                    value={newInventoryForm.unit || 'g'}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, unit: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                  >
+                    <option value="g">Grams (g)</option>
+                    <option value="ml">Milliliters (ml)</option>
+                    <option value="pcs">Pieces (pcs)</option>
+                    <option value="kg">Kilograms (kg)</option>
+                    <option value="l">Liters (l)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Unit Cost ({settings.currency}) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={newInventoryForm.cost || ''}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, cost: e.target.value }))}
+                    placeholder="150.00"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Initial Stock</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={newInventoryForm.stock || ''}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, stock: e.target.value }))}
+                    placeholder="1000"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Low Alert</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="1"
+                    value={newInventoryForm.threshold || ''}
+                    onChange={e => setNewInventoryForm(prev => ({ ...prev, threshold: e.target.value }))}
+                    placeholder="100"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setAddInventoryModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-md transition-all cursor-pointer active:scale-95"
+                >
+                  Save Material
                 </button>
               </div>
             </form>
