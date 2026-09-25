@@ -294,7 +294,8 @@ export default function App() {
   });
 
   const [shiftHistory, setShiftHistory] = usePersistentState('linoli_shift_history', []);
-  const [denominations, setDenominations] = useState({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
+  const [denominations, setDenominations] = usePersistentState('linoli_denominations', { 
+    5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
   const [payoutForm, setPayoutForm] = useState({ amount: '', reason: '' });
 
   const [cashOutForm, setCashOutForm] = useState({
