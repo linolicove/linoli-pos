@@ -6767,7 +6767,273 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </div>
       )}
+      {/* MODAL: ADD NEW MENU ITEM */}
+      {addItemModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 text-slate-900"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setAddItemModalOpen(false);
+          }}
+        >
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Plus className="h-5 w-5 text-[#ff5500]" />
+                <h3 className="text-base font-black text-slate-900">Add New Dish / Menu Item</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAddItemModalOpen(false)}
+                className="text-slate-400 hover:text-slate-900 p-1 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const priceNum = parseFloat(newDishForm.price);
+                if (!newDishForm.name.trim() || isNaN(priceNum) || priceNum <= 0) {
+                  alert('Please enter a valid dish name and selling price.');
+                  return;
+                }
+
+                const resolvedCategory = newDishForm.category === 'Other' && newDishForm.customCategory?.trim()
+                  ? newDishForm.customCategory.trim()
+                  : newDishForm.category;
+
+                const newItem = {
+                  id: `dish_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                  name: newDishForm.name.trim(),
+                  department: newDishForm.department || 'Kitchen',
+                  category: resolvedCategory || 'Main Menu',
+                  price: priceNum,
+                  prepTime: newDishForm.prepTime || '15m',
+                  imageUrl: newDishForm.imageUrl || '',
+                  description: newDishForm.description || '',
+                  recipe: newDishForm.recipeIngredients || []
+                };
+
+                setMenuItems(prev => [...prev, newItem]);
+                recordAuditLog('MENU_ITEM_CREATED', newItem.id, `Created new dish "${newItem.name}" (${newItem.department}) for ${settings.currency} ${newItem.price.toFixed(2)}`);
+
+                setNewDishForm({
+                  name: '',
+                  department: 'Kitchen',
+                  category: 'Rice & Noodles',
+                  customCategory: '',
+                  price: '',
+                  prepTime: '10m',
+                  description: '',
+                  imageUrl: '',
+                  recipeIngredients: []
+                });
+                setAddItemModalOpen(false);
+              }}
+              className="mt-4 space-y-4"
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Dish Name *</label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    value={newDishForm.name}
+                    onChange={(e) => setNewDishForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g. Seafood Fried Rice"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Selling Price ({settings.currency}) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={newDishForm.price}
+                    onChange={(e) => setNewDishForm(prev => ({ ...prev, price: e.target.value }))}
+                    placeholder="e.g. 1850.00"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
+                  <select
+                    value={newDishForm.department}
+                    onChange={(e) => setNewDishForm(prev => ({ ...prev, department: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                  >
+                    <option value="Kitchen">Kitchen (Sends KOT)</option>
+                    <option value="Bar">Bar (Sends BOT)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                  <input
+                    type="text"
+                    required
+                    value={newDishForm.category}
+                    onChange={(e) => setNewDishForm(prev => ({ ...prev, category: e.target.value }))}
+                    placeholder="e.g. Starters, Mains, Cocktails"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Prep Time</label>
+                  <input
+                    type="text"
+                    value={newDishForm.prepTime}
+                    onChange={(e) => setNewDishForm(prev => ({ ...prev, prepTime: e.target.value }))}
+                    placeholder="e.g. 15m"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Dish Photo</label>
+                  <div className="flex gap-2">
+                    <label className="cursor-pointer px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors">
+                      <Upload className="h-3.5 w-3.5" />
+                      <span>Upload</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = ev => {
+                              if (ev.target?.result) {
+                                setNewDishForm(prev => ({ ...prev, imageUrl: ev.target.result }));
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                    <input
+                      type="url"
+                      value={newDishForm.imageUrl}
+                      onChange={(e) => setNewDishForm(prev => ({ ...prev, imageUrl: e.target.value }))}
+                      placeholder="or paste URL"
+                      className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Description</label>
+                <textarea
+                  rows={2}
+                  value={newDishForm.description}
+                  onChange={(e) => setNewDishForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Ingredients, dietary notes or flavors..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              {/* RECIPE BOM BUILDER */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <BookOpen className="h-3.5 w-3.5 text-[#ff5500]" /> Link Recipe Ingredients (BOM)
+                </span>
+                <div className="flex gap-2">
+                  <select id="newDishIngSelect" className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900">
+                    {inventory.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                    ))}
+                  </select>
+                  <input
+                    id="newDishIngAmount"
+                    type="number"
+                    min="0.1"
+                    step="any"
+                    placeholder="Qty/portion"
+                    className="w-28 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sel = document.getElementById('newDishIngSelect');
+                      const amtInput = document.getElementById('newDishIngAmount');
+                      const ingId = sel?.value;
+                      const amt = parseFloat(amtInput?.value);
+                      if (!ingId || isNaN(amt) || amt <= 0) return;
+
+                      setNewDishForm(prev => ({
+                        ...prev,
+                        recipeIngredients: [...(prev.recipeIngredients || []), { ingredientId: ingId, amount: amt }]
+                      }));
+                      if (amtInput) amtInput.value = '';
+                    }}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    + Add
+                  </button>
+                </div>
+
+                {newDishForm.recipeIngredients && newDishForm.recipeIngredients.length > 0 && (
+                  <div className="space-y-1 max-h-28 overflow-y-auto">
+                    {newDishForm.recipeIngredients.map((r, i) => {
+                      const matchedIng = inventory.find(inv => inv.id === r.ingredientId);
+                      return (
+                        <div key={i} className="flex justify-between items-center text-xs p-1.5 bg-white rounded-lg border border-slate-200">
+                          <span className="font-bold text-slate-800">{matchedIng?.name || r.ingredientId}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-500">{r.amount} {matchedIng?.unit}</span>
+                            <button
+                              type="button"
+                              onClick={() => setNewDishForm(prev => ({
+                                ...prev,
+                                recipeIngredients: prev.recipeIngredients.filter((_, idx) => idx !== i)
+                              }))}
+                              className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setAddItemModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs transition-all cursor-pointer active:scale-95"
+                >
+                  Create Menu Item
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      
       {/* MODAL: CHECKOUT & SETTLEMENT */}
       {checkoutModalOpen && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
