@@ -5656,7 +5656,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           const existing = prev.items.find(i => i.id === selectedDish.id);
                           const updatedItems = existing
                             ? prev.items.map(i => i.id === selectedDish.id ? { ...i, qty: i.qty + 1 } : i)
-                            : [...prev.items, { ...selectedDish, cartItemId: `bill_${Date.now()}`, qty: 1, notes: '' }];
+                            : [...prev.items, { ...selectedDish, cartItemId: `bill_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
                           return { ...prev, items: updatedItems };
                         });
                       }
@@ -5734,20 +5734,25 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     const originalItems = originalOrder?.items || [];
                     const updatedItems = editingBill.items || [];
                     const changes = [];
+                    const newlyAddedOrIncremented = [];
 
+                    // 1. Detect additions and quantity increases
                     updatedItems.forEach(item => {
                       const prev = originalItems.find(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
                       if (!prev) {
                         changes.push(`ADDED "${item.name}" (Qty: ${item.qty}, ${settings.currency} ${(item.price * item.qty).toFixed(2)})`);
+                        newlyAddedOrIncremented.push({ ...item, qty: item.qty });
                       } else if (item.qty > prev.qty) {
                         const diff = item.qty - prev.qty;
                         changes.push(`INCREASED "${item.name}" (+${diff}, now ${item.qty})`);
+                        newlyAddedOrIncremented.push({ ...item, qty: diff });
                       } else if (item.qty < prev.qty) {
                         const diff = prev.qty - item.qty;
                         changes.push(`DECREASED "${item.name}" (-${diff}, now ${item.qty})`);
                       }
                     });
 
+                    // 2. Detect deleted/voided items
                     originalItems.forEach(item => {
                       const stillExists = updatedItems.some(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
                       if (!stillExists) {
@@ -5757,8 +5762,31 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                     const changeSummary = changes.length > 0 ? changes.join(' | ') : 'No line item quantity modifications';
 
+                    // 3. Save updated bill to state
                     setActiveOrders(prev => prev.map(o => o.orderId === editingBill.orderId ? editingBill : o));
 
+                    // 4. Automatically print KOT and BOT for added/incremented items
+                    if (newlyAddedOrIncremented.length > 0 && settings.autoPrintOrder !== false) {
+                      const kitchenItems = newlyAddedOrIncremented.filter(i => i.department === 'Kitchen');
+                      const barItems = newlyAddedOrIncremented.filter(i => i.department === 'Bar');
+
+                      if (kitchenItems.length > 0 || barItems.length > 0) {
+                        triggerAutoPrint({
+                          type: 'KOT_BOT_DISPATCH',
+                          data: {
+                            order: {
+                              ...editingBill,
+                              sentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                              isAddon: true
+                            },
+                            kitchenItems,
+                            barItems
+                          }
+                        }, `${editingBill.tableName} • Add-on Ticket Auto-Printed`);
+                      }
+                    }
+
+                    // 5. Differential audit logging
                     recordAuditLog(
                       'BILL_MODIFIED_DIFF',
                       editingBill.orderId,
@@ -6182,11 +6210,224 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       >
         {activePrintSlip && (
           <>
+            
+            {/* MODAL: EDIT ACTIVE BILL (Billing Queue) */}
+      {editBillModalOpen && editingBill && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Edit Active Bill: {editingBill.tableName}</h3>
+                <p className="text-xs text-slate-500 font-mono">Order #{editingBill.orderId}</p>
+              </div>
+              <button onClick={() => setEditBillModalOpen(false)} className="text-slate-400 hover:text-slate-900 cursor-pointer">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                <span className="text-xs font-bold text-slate-800">Add Item to Bill</span>
+                <div className="flex gap-2">
+                  <select
+                    id="addDishToBillSelect"
+                    className="flex-1 px-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900"
+                  >
+                    {menuItems.map(dish => (
+                      <option key={dish.id} value={dish.id}>{dish.name} - {settings.currency} {dish.price.toFixed(2)}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const selectEl = document.getElementById('addDishToBillSelect');
+                      const selectedDish = menuItems.find(m => m.id === selectEl?.value);
+                      if (selectedDish) {
+                        setEditingBill(prev => {
+                          const existing = prev.items.find(i => i.id === selectedDish.id);
+                          const updatedItems = existing
+                            ? prev.items.map(i => i.id === selectedDish.id ? { ...i, qty: i.qty + 1 } : i)
+                            : [...prev.items, { ...selectedDish, cartItemId: `bill_${Date.now()}`, qty: 1, notes: '' }];
+                          return { ...prev, items: updatedItems };
+                        });
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer"
+                  >
+                    + Add
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2 max-h-56 overflow-y-auto">
+                <span className="text-xs font-black uppercase text-slate-400">Current Items</span>
+                {editingBill.items.map(item => (
+                  <div key={item.cartItemId || item.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-xs text-slate-900">{item.name}</p>
+                      <span className="font-mono text-xs text-[#ff5500]">{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingBill(prev => ({
+                            ...prev,
+                            items: prev.items.map(i => (i.cartItemId || i.id) === (item.cartItemId || item.id) ? { ...i, qty: Math.max(1, i.qty - 1) } : i)
+                          }));
+                        }}
+                        className="h-6 w-6 bg-white border border-slate-200 rounded text-xs font-bold cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono font-bold text-xs">{item.qty}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingBill(prev => ({
+                            ...prev,
+                            items: prev.items.map(i => (i.cartItemId || i.id) === (item.cartItemId || item.id) ? { ...i, qty: i.qty + 1 } : i)
+                          }));
+                        }}
+                        className="h-6 w-6 bg-white border border-slate-200 rounded text-xs font-bold cursor-pointer"
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingBill(prev => ({
+                            ...prev,
+                            items: prev.items.filter(i => (i.cartItemId || i.id) !== (item.cartItemId || item.id))
+                          }));
+                        }}
+                        className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditBillModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const originalOrder = activeOrders.find(o => o.orderId === editingBill.orderId);
+                    const originalItems = originalOrder?.items || [];
+                    const updatedItems = editingBill.items || [];
+                    const changes = [];
+                    const newlyAddedOrIncremented = [];
+
+                    // 1. Detect additions and quantity increases
+                    updatedItems.forEach(item => {
+                      const prev = originalItems.find(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
+                      if (!prev) {
+                        changes.push(`ADDED "${item.name}" (Qty: ${item.qty}, ${settings.currency} ${(item.price * item.qty).toFixed(2)})`);
+                        newlyAddedOrIncremented.push({ ...item, qty: item.qty });
+                      } else if (item.qty > prev.qty) {
+                        const diff = item.qty - prev.qty;
+                        changes.push(`INCREASED "${item.name}" (+${diff}, now ${item.qty})`);
+                        newlyAddedOrIncremented.push({ ...item, qty: diff });
+                      } else if (item.qty < prev.qty) {
+                        const diff = prev.qty - item.qty;
+                        changes.push(`DECREASED "${item.name}" (-${diff}, now ${item.qty})`);
+                      }
+                    });
+
+                    // 2. Detect removed items
+                    originalItems.forEach(item => {
+                      const stillExists = updatedItems.some(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
+                      if (!stillExists) {
+                        changes.push(`REMOVED "${item.name}" (was Qty: ${item.qty}, ${settings.currency} ${(item.price * item.qty).toFixed(2)})`);
+                      }
+                    });
+
+                    const changeSummary = changes.length > 0 ? changes.join(' | ') : 'No line item quantity modifications';
+
+                    // 3. Save updated bill to active orders
+                    setActiveOrders(prev => prev.map(o => o.orderId === editingBill.orderId ? editingBill : o));
+
+                    // 4. Auto-print supplementary KOT/BOT tickets if new items or increased counts exist
+                    if (newlyAddedOrIncremented.length > 0 && settings.autoPrintOrder !== false) {
+                      const kitchenItems = newlyAddedOrIncremented.filter(i => i.department === 'Kitchen');
+                      const barItems = newlyAddedOrIncremented.filter(i => i.department === 'Bar');
+
+                      if (kitchenItems.length > 0 || barItems.length > 0) {
+                        triggerAutoPrint({
+                          type: 'KOT_BOT_DISPATCH',
+                          data: {
+                            order: {
+                              ...editingBill,
+                              sentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                              isAddon: true
+                            },
+                            kitchenItems,
+                            barItems
+                          }
+                        }, `${editingBill.tableName} • Add-on KOT/BOT Printed`);
+                      }
+                    }
+
+                    // 5. Differential audit logging
+                    recordAuditLog(
+                      'BILL_MODIFIED_DIFF',
+                      editingBill.orderId,
+                      `Saved changes on Bill #${editingBill.orderId} (${editingBill.tableName}): ${changeSummary}`
+                    );
+
+                    setEditBillModalOpen(false);
+                  }}
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer"
+                >
+                  Save Changes to Bill
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STREAMLINED NON-BLOCKING PRINT NOTIFICATION TOAST */}
+      {printNotice && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 backdrop-blur-md transition-all">
+          <div className="h-9 w-9 rounded-xl bg-orange-500/20 text-[#ff5500] flex items-center justify-center shrink-0">
+            <Printer className="h-5 w-5 animate-pulse" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-white">{printNotice.title}</p>
+            <p className="text-[10px] text-slate-400 font-mono mt-0.5">{printNotice.detail}</p>
+          </div>
+        </div>
+      )}
+
+      {/* HIDDEN OFF-SCREEN THERMAL PRINT AREA */}
+      <div
+        id="thermal-print-area"
+        style={{
+          fontSize: settings.receiptFontSize || '11px',
+          fontFamily: settings.receiptFontFamily || 'monospace',
+          padding: settings.receiptMargin || '2mm'
+        }}
+        className="hidden print:block w-full bg-white text-slate-900 leading-tight space-y-4"
+      >
+        {activePrintSlip && (
+          <>
             {activePrintSlip.type === 'KOT_BOT_DISPATCH' && (
               <div className="space-y-4">
                 {activePrintSlip.data.kitchenItems?.length > 0 && (
                   <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
-                    <p className="font-black text-xs">** KITCHEN ORDER TICKET (KOT) **</p>
+                    <p className="font-black text-xs">
+                      {activePrintSlip.data.order?.isAddon ? '** KITCHEN ADD-ON TICKET (KOT) **' : '** KITCHEN ORDER TICKET (KOT) **'}
+                    </p>
                     <p className="font-bold text-xs mt-1">{activePrintSlip.data.order.tableName}</p>
                     <p className="text-[10px]">Time: {activePrintSlip.data.order.sentAt}</p>
                     <div className="text-left py-2 space-y-1">
@@ -6202,7 +6443,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                 {activePrintSlip.data.barItems?.length > 0 && (
                   <div className="border-b-2 border-dashed border-slate-800 pb-3 text-center">
-                    <p className="font-black text-xs">** BAR ORDER TICKET (BOT) **</p>
+                    <p className="font-black text-xs">
+                      {activePrintSlip.data.order?.isAddon ? '** BAR ADD-ON TICKET (BOT) **' : '** BAR ORDER TICKET (BOT) **'}
+                    </p>
                     <p className="font-bold text-xs mt-1">{activePrintSlip.data.order.tableName}</p>
                     <p className="text-[10px]">Time: {activePrintSlip.data.order.sentAt}</p>
                     <div className="text-left py-2 space-y-1">
