@@ -1746,19 +1746,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     setCart([]);
   };
   
-  const getNextInvoiceNumber = () => {
-    // 1. Find the highest existing invoice number in your transactions ledger
-    const maxExisting = transactions.reduce((max, t) => {
-      const match = (t.invoiceNo || '').match(/INV-(\d+)/);
-      return match ? Math.max(max, parseInt(match[1], 10)) : max;
-    }, 0);
-
-    // 2. Increment by 1
-    const nextSeq = maxExisting + 1;
-
-    // 3. Format with 5-digit padding: INV-00001, INV-00002...
-    return `INV-${String(nextSeq).padStart(5, '0')}`;
-  };
   
   const handleCompleteSettlement = () => {
     const targetOrder = settlingOrder || {
