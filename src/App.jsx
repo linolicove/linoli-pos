@@ -2837,6 +2837,158 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             </div>
           </div>
         )}
+         
+        {/* VIEW 2: BILLING & SETTLEMENT QUEUE */}
+        {activeTab === 'billing' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Billing &amp; Settlement Queue</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Manage active tables, edit line items, print temporary bills, and settle final accounts.
+                </p>
+              </div>
+              <span className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-700">
+                {activeOrders.length} Open Bills
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {activeOrders.length === 0 ? (
+                <div className="col-span-full h-64 bg-white rounded-2xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
+                  <Receipt className="h-10 w-10 mb-2 stroke-[1]" />
+                  <p className="text-sm font-bold text-slate-700">No active tables pending billing</p>
+                  <p className="text-xs mt-1">Send an order from the POS Terminal to populate this list.</p>
+                </div>
+              ) : (
+                activeOrders.map(order => {
+                  const fin = calculateOrderFinancials(order);
+                  return (
+                    <div key={order.orderId} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-[#ff5500]">
+                              {order.mode}
+                            </span>
+                            <h3 className="text-base font-extrabold text-slate-900 mt-1">{order.tableName}</h3>
+                            <p className="text-xs text-slate-500">Waitstaff: {order.server} • {order.sentAt}</p>
+                          </div>
+                          <span className="text-lg font-black font-mono text-[#ff5500]">
+                            {settings.currency} {fin.total.toFixed(2)}
+                          </span>
+                        </div>
+
+                        <div className="bg-slate-50 rounded-xl p-3 my-3 space-y-1.5 text-xs max-h-40 overflow-y-auto border border-slate-100">
+                          {order.items.map((item, idx) => (
+                            <div key={idx} className="flex justify-between">
+                              <span className="font-bold text-slate-800">{item.qty}x {item.name}</span>
+                              <span className="font-mono text-slate-500">{settings.currency} {(item.price * item.qty).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 space-y-2">
+                        <div className="grid grid-cols-3 gap-1.5 text-xs">
+                          {/* Edit Items by loading directly into POS Terminal */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // 1. Stage items into POS cart
+                              setCart(order.items ? JSON.parse(JSON.stringify(order.items)) : []);
+                              
+                              // 2. Set mode and table
+                              setOrderMode(order.mode || 'DINING');
+                              if (order.tableId) {
+                                const tbl = floorTables.find(t => t.id === order.tableId);
+                                if (tbl) setSelectedTable(tbl);
+                              } else {
+                                setTakeawayInfo(prev => ({
+                                  ...prev,
+                                  name: order.customerName || 'Walk-in Guest',
+                                  token: order.tableName || 'TK-101'
+                                }));
+                              }
+                              
+                              // 3. Keep tax, service, discount states
+                              setServiceChargeActive(order.serviceChargeActive !== false);
+                              setTaxActive(Boolean(order.taxActive));
+                              setDiscountPercent(order.discountPercent || 0);
+
+                              // 4. Mark active bill reference so Send Order knows to print add-on slips
+                              setSettlingOrder(order);
+
+                              // 5. Switch to POS terminal view
+                              setActiveTab('pos');
+                            }}
+                            className="py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <Edit3 className="h-3 w-3 text-[#ff5500]" /> Edit in POS
+                          </button>
+                          
+                          {/* Print Proforma Temp Bill */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerAutoPrint({
+                                type: 'TEMP_BILL',
+                                data: {
+                                  table: order.tableName,
+                                  server: order.server,
+                                  items: order.items,
+                                  subtotal: fin.subtotal,
+                                  discount: fin.discount,
+                                  service: fin.service,
+                                  tax: fin.tax,
+                                  total: fin.total
+                                }
+                              }, `Proforma Bill for ${order.tableName}`);
+                            }}
+                            className="py-1.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-700 font-bold flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Printer className="h-3 w-3" /> Temp Bill
+                          </button>
+
+                          {/* Settle Bill */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSettlingOrder(order);
+                              setPaymentMethod('CASH');
+                              setCheckoutModalOpen(true);
+                            }}
+                            className="py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                          >
+                            <DollarSign className="h-3 w-3" /> Settle
+                          </button>
+                        </div>
+
+                        {/* Admin-Only Active Bill Deletion */}
+                        {currentUser.role === 'Administrator' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveOrders(prev => prev.filter(o => o.orderId !== order.orderId));
+                              if (order.tableId) {
+                                setFloorTables(prev => prev.map(t => t.id === order.tableId ? { ...t, status: 'VACANT', currentOrderRef: null } : t));
+                              }
+                              recordAuditLog('ADMIN_DELETE_ACTIVE_BILL', order.orderId, `Admin deleted open bill ${order.orderId} (${order.tableName})`);
+                            }}
+                            className="w-full py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1 transition-colors border border-rose-200 cursor-pointer"
+                            title="Admin Only: Delete this active open bill"
+                          >
+                            <Trash2 className="h-3 w-3" /> Delete Active Bill (Admin)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
 
         {/* VIEW 3: SALES & REVENUE REPORTS WITH DATE FILTERS */}
         {activeTab === 'reports' && (
