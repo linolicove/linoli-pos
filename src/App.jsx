@@ -334,6 +334,56 @@ export default function App() {
   const [transactions, setTransactions] = usePersistentState('linoli_transactions', []);
   const [auditLogs, setAuditLogs] = usePersistentState('linoli_audit_logs', []);
   const [cancelledTickets, setCancelledTickets] = usePersistentState('linoli_cancelled_tickets', []);
+  // Persistent sequential counters for sequential numbering
+  const [seqCounters, setSeqCounters] = usePersistentState('linoli_seq_counters', {
+    order: 1,
+    invoice: 1,
+    cashOut: 1
+  });
+  // Sequential Number Helpers
+  const getNextOrderNumber = () => {
+    let nextNum = seqCounters.order || 1;
+    // Fallback: If existing active orders or transactions exist, ensure no collisions
+    const maxActive = activeOrders.reduce((max, o) => {
+      const match = (o.orderId || '').match(/ORD-(\d+)/);
+      return match ? Math.max(max, parseInt(match[1], 10)) : max;
+    }, 0);
+    const maxTrans = transactions.reduce((max, t) => {
+      const match = (t.orderRef || '').match(/ORD-(\d+)/);
+      return match ? Math.max(max, parseInt(match[1], 10)) : max;
+    }, 0);
+    nextNum = Math.max(nextNum, maxActive + 1, maxTrans + 1);
+
+    setSeqCounters(prev => ({ ...prev, order: nextNum + 1 }));
+    return `ORD-${String(nextNum).padStart(5, '0')}`;
+  };
+
+  const getNextInvoiceNumber = () => {
+    let nextNum = seqCounters.invoice || 1;
+    // Fallback: Ensure no collision with recorded invoices
+    const maxInv = transactions.reduce((max, t) => {
+      const match = (t.invoiceNo || '').match(/INV-(\d+)/);
+      return match ? Math.max(max, parseInt(match[1], 10)) : max;
+    }, 0);
+    nextNum = Math.max(nextNum, maxInv + 1);
+
+    setSeqCounters(prev => ({ ...prev, invoice: nextNum + 1 }));
+    return `INV-${String(nextNum).padStart(5, '0')}`;
+  };
+
+  const getNextCashOutNumber = () => {
+    let nextNum = seqCounters.cashOut || 1;
+    const allPayouts = Array.isArray(expenses) ? expenses : [];
+    const maxCo = allPayouts.reduce((max, c) => {
+      const match = (c.id || '').match(/CO-(\d+)/);
+      return match ? Math.max(max, parseInt(match[1], 10)) : max;
+    }, 0);
+    nextNum = Math.max(nextNum, maxCo + 1);
+
+    setSeqCounters(prev => ({ ...prev, cashOut: nextNum + 1 }));
+    return `CO-${String(nextNum).padStart(5, '0')}`;
+  };
+
   // Tracks unsettled cash discrepancy carried across shifts
   const [unsettledVariance, setUnsettledVariance] = usePersistentState('linoli_unsettled_variance', 0);
 // Persistent stock movement difference & intake ledger
@@ -1645,7 +1695,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     // =========================================================================
     // CASE B: Standard New Order Creation
     // =========================================================================
-    const newOrderId = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newOrderId = getNextOrderNumber();
 
     const orderPayload = {
       orderId: newOrderId,
@@ -1698,7 +1748,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
   const handleCompleteSettlement = () => {
     const targetOrder = settlingOrder || {
-      orderId: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+      orderId: getNextOrderNumber(),
       mode: orderMode,
       tableName: orderMode === 'DINING' ? selectedTable.name : takeawayInfo.token,
       tableId: orderMode === 'DINING' ? selectedTable.id : null,
@@ -1740,7 +1790,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     }));
 
     const newInvoice = {
-      invoiceNo: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+      invoiceNo: getNextInvoiceNumber(),
       orderRef: targetOrder.orderId,
       shiftId: currentShift.shiftId,
       date: `${getLocalDateStr()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
@@ -4509,7 +4559,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                           const isManager = currentUser.role === 'Administrator' || currentUser.role === 'Manager';
                           const newCashOut = {
-                            id: `CO-${Date.now().toString().slice(-6)}`,
+                            id: getNextCashOutNumber(),
                             shiftId: currentShift.shiftId,
                             amount: amt,
                             category: cashOutForm.category,
