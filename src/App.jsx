@@ -2994,7 +2994,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         {activeTab === 'reports' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <div className="flex items-center gap-6 border-b border-slate-200 pb-3 text-xs font-bold overflow-x-auto">
-              {['Daily Overview', 'All Items Sales', 'Sales Detail', 'KOT Report', 'BOT Report', 'Sales Summary', 'Food vs Beverage', 'Stock Usage', 'Stock Movement Ledger', 'Audit Trail'].map(sub => (
+              {['Daily Overview', 'All Items Sales', 'Sales Detail', 'Cash Out Report', 'KOT Report', 'BOT Report', 'Sales Summary', 'Food vs Beverage', 'Stock Usage', 'Stock Movement Ledger', 'Audit Trail'].map(sub => (
                 <button
                   key={sub}
                   type="button"
@@ -3241,6 +3241,132 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           );
                         })
                       )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            
+            {/* Subtab: Cash Out & Expense Disbursement Report */}
+            {reportSubTab === 'Cash Out Report' && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Cash Out &amp; Expense Disbursements Report</h3>
+                    <p className="text-xs text-slate-500">All drawer cash disbursements, categorized expenses, and approval audit records</p>
+                  </div>
+
+                  {(() => {
+                    const allRecords = Array.isArray(expenses) ? expenses : [];
+                    const filtered = allRecords.filter(exp => {
+                      const expDate = exp.date || extractDateStr(exp.createdAt);
+                      if (!expDate) return true;
+                      if (reportStartDate && expDate < reportStartDate) return false;
+                      if (reportEndDate && expDate > reportEndDate) return false;
+                      return true;
+                    });
+                    const totalDisbursed = filtered
+                      .filter(p => p.status === 'APPROVED' || !p.status)
+                      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+
+                    return (
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 bg-rose-50 text-rose-700 font-mono font-bold text-xs rounded-xl border border-rose-200">
+                          Total Approved: {settings.currency} {totalDisbursed.toFixed(2)}
+                        </span>
+                        <span className="px-3 py-1 bg-slate-100 font-mono font-bold text-xs rounded-xl text-slate-700">
+                          {filtered.length} Requests
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5 px-3">Voucher Ref</th>
+                        <th className="py-2.5 px-3">Date &amp; Time</th>
+                        <th className="py-2.5 px-3">Shift ID</th>
+                        <th className="py-2.5 px-3">Category</th>
+                        <th className="py-2.5 px-3">Recipient / Paid To</th>
+                        <th className="py-2.5 px-3">Description / Reason</th>
+                        <th className="py-2.5 px-3 text-right">Amount</th>
+                        <th className="py-2.5 px-3 text-center">Status</th>
+                        <th className="py-2.5 px-3">Approved By</th>
+                        <th className="py-2.5 px-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(() => {
+                        const allRecords = Array.isArray(expenses) ? expenses : [];
+                        const filtered = allRecords.filter(exp => {
+                          const expDate = exp.date || extractDateStr(exp.createdAt);
+                          if (!expDate) return true;
+                          if (reportStartDate && expDate < reportStartDate) return false;
+                          if (reportEndDate && expDate > reportEndDate) return false;
+                          return true;
+                        });
+
+                        if (filtered.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={10} className="py-8 text-center text-slate-400 italic">
+                                No cash-out expense disbursements recorded in this date range.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return filtered.map(item => {
+                          const isApproved = item.status === 'APPROVED' || !item.status;
+                          const isPending = item.status === 'PENDING';
+
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50">
+                              <td className="py-3 px-3 font-mono font-bold text-slate-800">{item.id}</td>
+                              <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{item.date || getLocalDateStr()} {item.createdAt || item.time}</td>
+                              <td className="py-3 px-3 font-mono text-[11px] text-slate-600">{item.shiftId || 'N/A'}</td>
+                              <td className="py-3 px-3 font-medium text-slate-800">{item.category}</td>
+                              <td className="py-3 px-3 text-slate-700 font-semibold">{item.recipient || 'General Expense'}</td>
+                              <td className="py-3 px-3 text-slate-600 italic max-w-xs truncate" title={item.reason}>{item.reason}</td>
+                              <td className="py-3 px-3 text-right font-mono font-black text-slate-900">
+                                {settings.currency} {(parseFloat(item.amount) || 0).toFixed(2)}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                  isApproved
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : isPending
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-rose-100 text-rose-800'
+                                }`}>
+                                  {item.status || 'APPROVED'}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-slate-700">
+                                {item.approvedBy ? `${item.approvedBy} (${item.approvedAt || 'Verified'})` : <span className="text-slate-400">Pending</span>}
+                              </td>
+                              <td className="py-3 px-3 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    triggerAutoPrint({
+                                      type: 'CASH_OUT_VOUCHER',
+                                      data: item
+                                    }, `Reprint Cash Out Ref ${item.id}`);
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                                  title="Reprint Cash Out Voucher"
+                                >
+                                  <Printer className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -3610,132 +3736,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           </tr>
                         ))
                       )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Subtab: Cash Out & Expense Disbursement Report */}
-            {reportSubTab === 'Cash Out Report' && (
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900 uppercase">Cash Out &amp; Expense Disbursements Report</h3>
-                    <p className="text-xs text-slate-500">All drawer cash disbursements, categorized expenses, and approval audit records</p>
-                  </div>
-
-                  {(() => {
-                    const allRecords = Array.isArray(expenses) ? expenses : [];
-                    const filtered = allRecords.filter(exp => {
-                      const expDate = exp.date || extractDateStr(exp.createdAt);
-                      if (!expDate) return true;
-                      if (reportStartDate && expDate < reportStartDate) return false;
-                      if (reportEndDate && expDate > reportEndDate) return false;
-                      return true;
-                    });
-                    const totalDisbursed = filtered
-                      .filter(p => p.status === 'APPROVED' || !p.status)
-                      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-
-                    return (
-                      <div className="flex items-center gap-2">
-                        <span className="px-3 py-1 bg-rose-50 text-rose-700 font-mono font-bold text-xs rounded-xl border border-rose-200">
-                          Total Approved: {settings.currency} {totalDisbursed.toFixed(2)}
-                        </span>
-                        <span className="px-3 py-1 bg-slate-100 font-mono font-bold text-xs rounded-xl text-slate-700">
-                          {filtered.length} Requests
-                        </span>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                      <tr>
-                        <th className="py-2.5 px-3">Voucher Ref</th>
-                        <th className="py-2.5 px-3">Date &amp; Time</th>
-                        <th className="py-2.5 px-3">Shift ID</th>
-                        <th className="py-2.5 px-3">Category</th>
-                        <th className="py-2.5 px-3">Recipient / Paid To</th>
-                        <th className="py-2.5 px-3">Description / Reason</th>
-                        <th className="py-2.5 px-3 text-right">Amount</th>
-                        <th className="py-2.5 px-3 text-center">Status</th>
-                        <th className="py-2.5 px-3">Approved By</th>
-                        <th className="py-2.5 px-3 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(() => {
-                        const allRecords = Array.isArray(expenses) ? expenses : [];
-                        const filtered = allRecords.filter(exp => {
-                          const expDate = exp.date || extractDateStr(exp.createdAt);
-                          if (!expDate) return true;
-                          if (reportStartDate && expDate < reportStartDate) return false;
-                          if (reportEndDate && expDate > reportEndDate) return false;
-                          return true;
-                        });
-
-                        if (filtered.length === 0) {
-                          return (
-                            <tr>
-                              <td colSpan={10} className="py-8 text-center text-slate-400 italic">
-                                No cash-out expense disbursements recorded in this date range.
-                              </td>
-                            </tr>
-                          );
-                        }
-
-                        return filtered.map(item => {
-                          const isApproved = item.status === 'APPROVED' || !item.status;
-                          const isPending = item.status === 'PENDING';
-
-                          return (
-                            <tr key={item.id} className="hover:bg-slate-50">
-                              <td className="py-3 px-3 font-mono font-bold text-slate-800">{item.id}</td>
-                              <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{item.date || getLocalDateStr()} {item.createdAt || item.time}</td>
-                              <td className="py-3 px-3 font-mono text-[11px] text-slate-600">{item.shiftId || 'N/A'}</td>
-                              <td className="py-3 px-3 font-medium text-slate-800">{item.category}</td>
-                              <td className="py-3 px-3 text-slate-700 font-semibold">{item.recipient || 'General Expense'}</td>
-                              <td className="py-3 px-3 text-slate-600 italic max-w-xs truncate" title={item.reason}>{item.reason}</td>
-                              <td className="py-3 px-3 text-right font-mono font-black text-slate-900">
-                                {settings.currency} {(parseFloat(item.amount) || 0).toFixed(2)}
-                              </td>
-                              <td className="py-3 px-3 text-center">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                                  isApproved
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : isPending
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-rose-100 text-rose-800'
-                                }`}>
-                                  {item.status || 'APPROVED'}
-                                </span>
-                              </td>
-                              <td className="py-3 px-3 text-slate-700">
-                                {item.approvedBy ? `${item.approvedBy} (${item.approvedAt || 'Verified'})` : <span className="text-slate-400">Pending</span>}
-                              </td>
-                              <td className="py-3 px-3 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    triggerAutoPrint({
-                                      type: 'CASH_OUT_VOUCHER',
-                                      data: item
-                                    }, `Reprint Cash Out Ref ${item.id}`);
-                                  }}
-                                  className="p-1.5 text-slate-400 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-                                  title="Reprint Cash Out Voucher"
-                                >
-                                  <Printer className="h-3.5 w-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })()}
                     </tbody>
                   </table>
                 </div>
