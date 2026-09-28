@@ -423,7 +423,7 @@ export default function App() {
     openedDate: getLocalDateStr(),
     openedAt: '09:00 AM',
     openedBy: 'System Administrator',
-    startingFloat: 10000.00,
+    startingFloat: 0.00,
     status: 'OPEN',
     payouts: []
   });
@@ -4320,27 +4320,29 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                 return (
                   <div className="flex items-center gap-2.5 shrink-0">
-                    {/* Settle Drawer Button: Manually sets new base float */}
+                    {/* Settle Drawer Button: Manually sets new base float without 10000 fallback or auto-matching counts */}
                     <button
                       type="button"
                       onClick={() => {
-                        const inputVal = prompt(`Enter new base float to bank and settle drawer:`, currentShiftFloat.toString());
+                        const currentFloatVal = Number(currentShift.startingFloat) || 0;
+                        const inputVal = prompt(
+                          `Enter new base float to bank and settle drawer:`,
+                          currentFloatVal.toString()
+                        );
                         if (inputVal !== null) {
                           const parsed = parseFloat(inputVal);
-                          const targetFloat = !isNaN(parsed) && parsed >= 0 ? parsed : 10000.00;
+                          const targetFloat = !isNaN(parsed) && parsed >= 0 ? parsed : currentFloatVal;
 
-                          setRunningFloat(targetFloat);
                           setCurrentShift(prev => ({
                             ...prev,
                             startingFloat: targetFloat
                           }));
-                          setDenominations(buildDenominationsMatchingAmount(targetFloat));
                           setUnsettledVariance(0);
 
                           recordAuditLog(
                             'DRAWER_SETTLED_MANUAL',
                             currentShift.shiftId,
-                            `Manager/Admin ${currentUser.name} manually set float to ${settings.currency} ${targetFloat.toFixed(2)}.`
+                            `Manager/Admin ${currentUser.name} manually set float to ${settings.currency} ${targetFloat.toFixed(2)}. Unsettled variance reset to 0.`
                           );
                         }
                       }}
@@ -4350,13 +4352,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       <span>Settle &amp; Bank Drawer</span>
                     </button>
 
-                    {/* Close Shift: Guaranteed to preserve float from previous close */}
+                    {/* Close Shift: Keeps exact previous float and leaves denominations intact */}
                     <button
                       type="button"
                       onClick={() => {
-                        // 1. Lock the float from current shift so it can never revert
-                        const exactPreviousFloat = currentShiftFloat;
-                        setRunningFloat(exactPreviousFloat);
+                        // 1. Keep the previous starting float exactly as it was
+                        const previousFloat = Number(currentShift.startingFloat) || 0;
 
                         const closedShift = {
                           ...currentShift,
@@ -4365,7 +4366,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           closedBy: currentUser.name,
                           status: 'CLOSED',
                           metrics: {
-                            startingFloat: exactPreviousFloat,
+                            startingFloat: previousFloat,
                             cashSales: shiftCashSales,
                             cardSales: shiftCardSales,
                             otherSales: shiftOtherSales,
@@ -4398,7 +4399,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           return t;
                         }));
 
-                        // 2. Open new shift retaining the EXACT SAME float as previous close
+                        // 2. Open new shift: Keep startingFloat EXACTLY the same as previous close
                         const nextDate = getLocalDateStr();
                         const shiftSequence = Date.now().toString().slice(-4);
                         const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
@@ -4408,19 +4409,24 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           openedDate: nextDate,
                           openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                           openedBy: currentUser.name,
-                          startingFloat: exactPreviousFloat, // Never reverts to 10000; stays as previous close
+                          startingFloat: previousFloat, // Retains exact previous close float
                           status: 'OPEN',
                           payouts: []
                         });
 
-                        // 3. Pre-match cash count denominations to this exact float so variance starts at $0.00
-                        setDenominations(buildDenominationsMatchingAmount(exactPreviousFloat));
-                        setUnsettledVariance(0);
+                        // 3. DO NOT reset or match denominations.
+                        // Leave denominations completely untouched so whatever the cashier entered stays entered.
+
+                        const shiftVarianceText = shiftVariance === 0 
+                          ? 'Balanced' 
+                          : shiftVariance > 0 
+                          ? `Overage of ${settings.currency} ${shiftVariance.toFixed(2)}` 
+                          : `Shortage of ${settings.currency} ${Math.abs(shiftVariance).toFixed(2)}`;
 
                         recordAuditLog(
                           'SHIFT_CLOSED_Z_REPORT',
                           closedShift.shiftId,
-                          `Shift closed by ${currentUser.name}. Float carried forward at ${settings.currency} ${exactPreviousFloat.toFixed(2)}. Cash count initialized to match float.`
+                          `Shift closed by ${currentUser.name}. Float preserved at ${settings.currency} ${previousFloat.toFixed(2)}. Denomination counts remained as entered. Status: ${shiftVarianceText}.`
                         );
                       }}
                       className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
@@ -6003,31 +6009,38 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       Administrator Data Purge (Reset Test Data)
                     </h3>
                     <p className="text-[11px] text-rose-700 mt-0.5">
-                      Clear test transactions, reset all tables to VACANT, and start with a clean ledger.
+                      Clear test transactions, reset all tables to VACANT, and start with a clean ledger without overriding the cash float.
                     </p>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => {
+                      if (!window.confirm("Are you sure you want to purge all test transactions and reset tables to VACANT? Active cash float and note counts will be preserved.")) {
+                        return;
+                      }
+
                       setTransactions([]);
                       setActiveOrders([]);
                       setCancelledTickets([]);
                       setAuditLogs([]);
                       setFloorTables(prev => prev.map(t => ({ ...t, status: 'VACANT', currentOrderRef: null })));
-                      setCurrentShift({
+                      
+                      // Keep current shift float intact rather than forcing a hardcoded number
+                      setCurrentShift(prev => ({
                         shiftId: `SHIFT-${getLocalDateStr().replace(/-/g, '')}-01`,
                         openedDate: getLocalDateStr(),
                         openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                         openedBy: currentUser.name,
-                        startingFloat: 15000.00,
+                        startingFloat: Number(prev.startingFloat) || 0.00,
                         status: 'OPEN',
                         payouts: []
-                      });
+                      }));
+
                       recordAuditLog('ADMIN_RESET_LEDGER', 'ALL', `Administrator ${currentUser.name} purged all sales and reset tables.`);
                       setSettingsNotice({
                         title: 'All Invoices & Orders Cleared',
-                        detail: 'Ledger cleared and all floor tables set to VACANT.'
+                        detail: 'Ledger cleared, floor tables set to VACANT, active cash float retained.'
                       });
                       setTimeout(() => setSettingsNotice(null), 4000);
                     }}
