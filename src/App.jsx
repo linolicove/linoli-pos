@@ -4290,45 +4290,49 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 }
 
                 let countedCash = 0;
-                let hasCounted = false;
                 if (denominations && typeof denominations === 'object') {
                   Object.entries(denominations).forEach(([denom, count]) => {
-                    const n = Number(count) || 0;
-                    if (n > 0) hasCounted = true;
-                    countedCash += Number(denom) * n;
+                    countedCash += Number(denom) * (Number(count) || 0);
                   });
                 }
 
                 const expectedCash = Number(((currentShift.startingFloat || 0) + shiftCashSales - totalCashOut).toFixed(2));
-                const shiftVariance = hasCounted ? Number((countedCash - expectedCash).toFixed(2)) : 0;
-                const totalCumulativeVariance = Number(((Number(unsettledVariance) || 0) + shiftVariance).toFixed(2));
+                const shiftVariance = Number((countedCash - expectedCash).toFixed(2));
+                const netTotalVariance = Number(((Number(unsettledVariance) || 0) + shiftVariance).toFixed(2));
+
+                const buildDenominationsMatchingAmount = (target) => {
+                  let rem = Math.floor(target);
+                  const result = { 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 };
+                  const denoms = [5000, 1000, 500, 100, 50, 20];
+                  for (const d of denoms) {
+                    if (rem >= d) {
+                      result[d] = Math.floor(rem / d);
+                      rem %= d;
+                    }
+                  }
+                  return result;
+                };
 
                 return (
                   <div className="flex items-center gap-2.5 shrink-0">
-                    {/* EXPLICIT MANUAL SETTLE & BANK DRAWER: Only clears cash and note counts when explicitly invoked */}
+                    {/* Settle Drawer Button: explicitly re-baselines physical float and clears discrepancy */}
                     <button
                       type="button"
                       onClick={() => {
-                        if (window.confirm(`Perform drawer cash settlement? This will record all accumulated drawer cash, bank current funds, and reset the cash drawer back to baseline float (${settings.currency} 10,000.00).`)) {
-                          // 1. Reset physical note counts
-                          setDenominations({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
-
-                          // 2. Clear cumulative discrepancy
-                          setUnsettledVariance(0);
-
-                          // 3. Reset shift float to standard baseline
+                        const standardFloat = 10000.00;
+                        if (window.confirm(`Perform drawer cash settlement? This will bank drawer sales and reset the baseline cash float to ${settings.currency} ${standardFloat.toFixed(2)} with zero variance.`)) {
                           setCurrentShift(prev => ({
                             ...prev,
-                            startingFloat: 10000.00
+                            startingFloat: standardFloat
                           }));
+                          setDenominations(buildDenominationsMatchingAmount(standardFloat));
+                          setUnsettledVariance(0);
 
                           recordAuditLog(
                             'DRAWER_SETTLED_MANUAL',
                             currentShift.shiftId,
-                            `Manager/Admin ${currentUser.name} manually settled and banked drawer cash. Reset float to ${settings.currency} 10,000.00 and cleared physical note count.`
+                            `Drawer settled and banked by ${currentUser.name}. Float reset to ${settings.currency} ${standardFloat.toFixed(2)}.`
                           );
-
-                          alert('Drawer cash settled and banked successfully.');
                         }
                       }}
                       className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
@@ -4337,17 +4341,11 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       <span>Settle &amp; Bank Drawer</span>
                     </button>
 
-                    {/* CLOSE SHIFT & PRINT Z-REPORT: Rolls over full un-cleared cash balance into the next shift */}
+                    {/* Close Shift: Keeps float identical to previous close and pre-matches cash count to float */}
                     <button
                       type="button"
                       onClick={() => {
-                        // 1. Keep track of cumulative variance without auto-zeroing
-                        if (hasCounted) {
-                          setUnsettledVariance(totalCumulativeVariance);
-                        }
-
-                        // 2. Preserve total running cash balance currently resting in drawer
-                        const runningCashBalance = hasCounted && countedCash > 0 ? countedCash : expectedCash;
+                        const previousFloat = Number(currentShift.startingFloat) || 10000.00;
 
                         const closedShift = {
                           ...currentShift,
@@ -4356,7 +4354,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           closedBy: currentUser.name,
                           status: 'CLOSED',
                           metrics: {
-                            startingFloat: currentShift.startingFloat,
+                            startingFloat: previousFloat,
                             cashSales: shiftCashSales,
                             cardSales: shiftCardSales,
                             otherSales: shiftOtherSales,
@@ -4365,22 +4363,22 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             cashOutTotal: totalCashOut,
                             approvedPayouts,
                             expectedCash,
-                            countedCash: hasCounted ? countedCash : expectedCash,
+                            countedCash,
                             variance: shiftVariance,
-                            carriedDiscrepancy: hasCounted ? totalCumulativeVariance : Number(unsettledVariance) || 0,
+                            carriedDiscrepancy: netTotalVariance,
                             denominations: { ...denominations }
                           }
                         };
 
                         setShiftHistory(prev => [closedShift, ...prev]);
 
-                        // 3. Print Z-Report
+                        // Print Z-Report
                         triggerAutoPrint({
                           type: 'Z_REPORT',
                           data: closedShift
                         }, `Shift ${closedShift.shiftId} Closed`);
 
-                        // 4. Tag invoices to this closed shift
+                        // Associate invoices to this closed shift
                         setTransactions(prev => prev.map(t => {
                           const matchesThisShift = t.shiftId === currentShift.shiftId || (!t.shiftId && extractDateStr(t.date) === currentShift.openedDate);
                           if (matchesThisShift) {
@@ -4389,7 +4387,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           return t;
                         }));
 
-                        // 5. Open new shift: Carries forward the running cash balance without resetting or banking
+                        // 1. Keep cash float identical to previous close
                         const nextDate = getLocalDateStr();
                         const shiftSequence = Date.now().toString().slice(-4);
                         const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
@@ -4399,16 +4397,18 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           openedDate: nextDate,
                           openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                           openedBy: currentUser.name,
-                          startingFloat: runningCashBalance, // Retains full drawer cash balance
+                          startingFloat: previousFloat,
                           status: 'OPEN',
                           payouts: []
                         });
 
-                        // Note: denominations are NOT cleared so physical count remains until cashier re-counts
+                        // 2. Pre-match cash count to the cash float so variance initializes to zero
+                        setDenominations(buildDenominationsMatchingAmount(previousFloat));
 
-                        const shiftVarianceText = !hasCounted 
-                          ? 'Cash count not modified (Drawer balance retained continuously)' 
-                          : shiftVariance === 0 
+                        // 3. Reset persistent unsettled discrepancy so the new shift starts at zero variance
+                        setUnsettledVariance(0);
+
+                        const shiftVarianceText = shiftVariance === 0 
                           ? 'Balanced' 
                           : shiftVariance > 0 
                           ? `Overage of ${settings.currency} ${shiftVariance.toFixed(2)}` 
@@ -4417,7 +4417,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         recordAuditLog(
                           'SHIFT_CLOSED_Z_REPORT',
                           closedShift.shiftId,
-                          `Shift closed by ${currentUser.name}. Full running cash balance of ${settings.currency} ${runningCashBalance.toFixed(2)} preserved into ${newShiftId}. Status: ${shiftVarianceText}.`
+                          `Shift closed by ${currentUser.name}. Float preserved at ${settings.currency} ${previousFloat.toFixed(2)}. Cash count initialized to match float. Status: ${shiftVarianceText}.`
                         );
                       }}
                       className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
@@ -4453,30 +4453,27 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               }
 
               let countedCash = 0;
-              let hasCounted = false;
               if (denominations && typeof denominations === 'object') {
                 Object.entries(denominations).forEach(([denom, count]) => {
-                  const n = Number(count) || 0;
-                  if (n > 0) hasCounted = true;
-                  countedCash += Number(denom) * n;
+                  countedCash += Number(denom) * (Number(count) || 0);
                 });
               }
 
               const expectedCash = Number(((currentShift.startingFloat || 0) + shiftCashSales - totalApprovedCashOut).toFixed(2));
-              const currentShiftVariance = hasCounted ? Number((countedCash - expectedCash).toFixed(2)) : 0;
+              const currentShiftVariance = Number((countedCash - expectedCash).toFixed(2));
               const carriedShortage = Number(unsettledVariance) || 0;
               const netTotalVariance = Number((currentShiftVariance + carriedShortage).toFixed(2));
 
               return (
                 <>
-                  {/* KPI ROW: TOTAL PERSISTENT DRAWER CASH TRACKING */}
+                  {/* KPI ROW */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
                       <p className="text-[10px] font-black uppercase text-slate-400">Opening Float</p>
                       <p className="text-xl font-black font-mono text-slate-900 mt-1">
                         {settings.currency} {currentShift.startingFloat.toFixed(2)}
                       </p>
-                      <span className="text-[10px] text-slate-400 font-medium">Brought forward into shift</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Brought forward float</span>
                     </div>
 
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -4484,7 +4481,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       <p className="text-xl font-black font-mono text-emerald-600 mt-1">
                         +{settings.currency} {shiftCashSales.toFixed(2)}
                       </p>
-                      <span className="text-[10px] text-slate-400 font-medium">Collected during shift</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Collected this shift</span>
                     </div>
 
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -4499,33 +4496,30 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       <p className="text-xl font-black font-mono text-rose-600 mt-1">
                         -{settings.currency} {totalApprovedCashOut.toFixed(2)}
                       </p>
-                      <span className="text-[10px] text-slate-400 font-medium">Disbursed from drawer</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Disbursed expenses</span>
                     </div>
 
-                    {/* PRIMARY DRAWER BALANCE CARD (NEVER CLEARED) */}
                     <div className="bg-white p-4 rounded-2xl border-2 border-[#ff5500]/30 bg-orange-50/20 shadow-xs">
-                      <p className="text-[10px] font-black uppercase text-[#ff5500]">Total Cash in Drawer</p>
+                      <p className="text-[10px] font-black uppercase text-[#ff5500]">Expected in Drawer</p>
                       <p className="text-2xl font-black font-mono text-slate-950 mt-1">
                         {settings.currency} {expectedCash.toFixed(2)}
                       </p>
                       <span className="text-[10px] text-slate-500 font-bold">Float + Cash Sales - CashOut</span>
                     </div>
 
-                    {/* PHYSICAL COUNT / VARIANCE CARD */}
+                    {/* DYNAMIC VARIANCE CARD: Updates live as the cashier edits denomination counts to balance to zero */}
                     <div className={`p-4 rounded-2xl border shadow-xs ${
-                      !hasCounted
-                        ? 'bg-slate-50 border-slate-200 text-slate-700'
-                        : currentShiftVariance === 0
+                      netTotalVariance === 0
                         ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
-                        : currentShiftVariance > 0
+                        : netTotalVariance > 0
                         ? 'bg-blue-50/70 border-blue-300 text-blue-950'
                         : 'bg-rose-50/70 border-rose-300 text-rose-950'
                     }`}>
                       <div className="flex items-center justify-between">
                         <p className="text-[10px] font-black uppercase tracking-wider opacity-75">
-                          {hasCounted ? 'Physical Count Variance' : 'Physical Note Count'}
+                          Drawer Variance
                         </p>
-                        {hasCounted && carriedShortage !== 0 && (
+                        {carriedShortage !== 0 && (
                           <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-rose-200 text-rose-900">
                             Carry: {settings.currency} {carriedShortage.toFixed(2)}
                           </span>
@@ -4533,21 +4527,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       </div>
 
                       <p className="text-xl font-black font-mono mt-1">
-                        {hasCounted ? (
-                          <>
-                            {netTotalVariance > 0 ? '+' : ''}{settings.currency} {netTotalVariance.toFixed(2)}
-                          </>
-                        ) : (
-                          `${settings.currency} ${countedCash.toFixed(2)}`
-                        )}
+                        {netTotalVariance > 0 ? '+' : ''}{settings.currency} {netTotalVariance.toFixed(2)}
                       </p>
 
                       <div className="flex items-center justify-between mt-0.5">
                         <span className="text-[10px] font-bold">
-                          {!hasCounted 
-                            ? 'Enter Note Breakdown Below' 
-                            : netTotalVariance === 0 
-                            ? '✓ Perfectly Balanced' 
+                          {netTotalVariance === 0 
+                            ? '✓ Balanced ($0.00)' 
                             : netTotalVariance > 0 
                             ? 'Overage' 
                             : 'Shortage'}
@@ -4621,7 +4607,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                           setExpenses(prev => [newCashOut, ...prev]);
 
-                          // Auto-print thermal disbursement voucher immediately
                           triggerAutoPrint({
                             type: 'CASH_OUT_VOUCHER',
                             data: newCashOut
@@ -4870,7 +4855,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               );
             })()}
 
-            {/* PHYSICAL DENOMINATION COUNTER WITH RUNNING TOTAL */}
+            {/* PHYSICAL DENOMINATION BREAKDOWN: Cashier edits counts to update variance live to balance to zero */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
@@ -4901,12 +4886,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <input
                       type="number"
                       min="0"
-                      value={denominations[denom] || ''}
+                      value={denominations[denom] !== undefined ? denominations[denom] : ''}
                       onChange={e => {
-                        const val = parseInt(e.target.value) || 0;
+                        const val = e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0);
                         setDenominations(prev => ({ ...prev, [denom]: val }));
                       }}
-                      placeholder="0 notes"
+                      placeholder="0"
                       className="w-full mt-2 px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-center text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#ff5500]"
                     />
                   </div>
