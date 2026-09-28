@@ -4304,89 +4304,128 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 const totalCumulativeVariance = Number(((Number(unsettledVariance) || 0) + shiftVariance).toFixed(2));
 
                 return (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // 1. Accumulate carryover deficit/overage only if notes were counted
-                      setUnsettledVariance(totalCumulativeVariance);
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    {/* EXPLICIT MANUAL SETTLE & BANK DRAWER: Only clears cash and note counts when explicitly invoked */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(`Perform drawer cash settlement? This will record all accumulated drawer cash, bank current funds, and reset the cash drawer back to baseline float (${settings.currency} 10,000.00).`)) {
+                          // 1. Reset physical note counts
+                          setDenominations({ 5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0 });
 
-                      // 2. Preserve all cash currently in the drawer for the incoming shift
-                      const carriedFloat = hasCounted && countedCash > 0 ? countedCash : expectedCash;
+                          // 2. Clear cumulative discrepancy
+                          setUnsettledVariance(0);
 
-                      const closedShift = {
-                        ...currentShift,
-                        closedDate: getLocalDateStr(),
-                        closedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        closedBy: currentUser.name,
-                        status: 'CLOSED',
-                        metrics: {
-                          startingFloat: currentShift.startingFloat,
-                          cashSales: shiftCashSales,
-                          cardSales: shiftCardSales,
-                          otherSales: shiftOtherSales,
-                          grossSales: shiftCashSales + shiftCardSales + shiftOtherSales,
-                          totalBills: shiftTotalBills,
-                          cashOutTotal: totalCashOut,
-                          approvedPayouts,
-                          expectedCash,
-                          countedCash: hasCounted ? countedCash : expectedCash,
-                          variance: shiftVariance,
-                          carriedDiscrepancy: totalCumulativeVariance,
-                          denominations: { ...denominations }
+                          // 3. Reset shift float to standard baseline
+                          setCurrentShift(prev => ({
+                            ...prev,
+                            startingFloat: 10000.00
+                          }));
+
+                          recordAuditLog(
+                            'DRAWER_SETTLED_MANUAL',
+                            currentShift.shiftId,
+                            `Manager/Admin ${currentUser.name} manually settled and banked drawer cash. Reset float to ${settings.currency} 10,000.00 and cleared physical note count.`
+                          );
+
+                          alert('Drawer cash settled and banked successfully.');
                         }
-                      };
+                      }}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span>Settle &amp; Bank Drawer</span>
+                    </button>
 
-                      setShiftHistory(prev => [closedShift, ...prev]);
-
-                      // 3. Print Z-Report
-                      triggerAutoPrint({
-                        type: 'Z_REPORT',
-                        data: closedShift
-                      }, `Shift ${closedShift.shiftId} Closed`);
-
-                      // 4. Tag invoices to this closed shift
-                      setTransactions(prev => prev.map(t => {
-                        const matchesThisShift = t.shiftId === currentShift.shiftId || (!t.shiftId && extractDateStr(t.date) === currentShift.openedDate);
-                        if (matchesThisShift) {
-                          return { ...t, shiftId: currentShift.shiftId };
+                    {/* CLOSE SHIFT & PRINT Z-REPORT: Rolls over full un-cleared cash balance into the next shift */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // 1. Keep track of cumulative variance without auto-zeroing
+                        if (hasCounted) {
+                          setUnsettledVariance(totalCumulativeVariance);
                         }
-                        return t;
-                      }));
 
-                      // 5. Roll over into new shift: KEEPS ALL CASH BALANCE AS NEW OPENING FLOAT
-                      const nextDate = getLocalDateStr();
-                      const shiftSequence = Date.now().toString().slice(-4);
-                      const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
+                        // 2. Preserve total running cash balance currently resting in drawer
+                        const runningCashBalance = hasCounted && countedCash > 0 ? countedCash : expectedCash;
 
-                      setCurrentShift({
-                        shiftId: newShiftId,
-                        openedDate: nextDate,
-                        openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        openedBy: currentUser.name,
-                        startingFloat: carriedFloat, // Retains full drawer cash balance
-                        status: 'OPEN',
-                        payouts: []
-                      });
+                        const closedShift = {
+                          ...currentShift,
+                          closedDate: getLocalDateStr(),
+                          closedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                          closedBy: currentUser.name,
+                          status: 'CLOSED',
+                          metrics: {
+                            startingFloat: currentShift.startingFloat,
+                            cashSales: shiftCashSales,
+                            cardSales: shiftCardSales,
+                            otherSales: shiftOtherSales,
+                            grossSales: shiftCashSales + shiftCardSales + shiftOtherSales,
+                            totalBills: shiftTotalBills,
+                            cashOutTotal: totalCashOut,
+                            approvedPayouts,
+                            expectedCash,
+                            countedCash: hasCounted ? countedCash : expectedCash,
+                            variance: shiftVariance,
+                            carriedDiscrepancy: hasCounted ? totalCumulativeVariance : Number(unsettledVariance) || 0,
+                            denominations: { ...denominations }
+                          }
+                        };
 
-                      const shiftVarianceText = !hasCounted 
-                        ? 'Count Not Performed (Retained Expected Balance)' 
-                        : shiftVariance === 0 
-                        ? 'Balanced' 
-                        : shiftVariance > 0 
-                        ? `Overage of ${settings.currency} ${shiftVariance.toFixed(2)}` 
-                        : `Shortage of ${settings.currency} ${Math.abs(shiftVariance).toFixed(2)}`;
+                        setShiftHistory(prev => [closedShift, ...prev]);
 
-                      recordAuditLog(
-                        'SHIFT_CLOSED_Z_REPORT',
-                        closedShift.shiftId,
-                        `Shift closed by ${currentUser.name}. Retained drawer cash balance of ${settings.currency} ${carriedFloat.toFixed(2)} rolled over into ${newShiftId}. Result: ${shiftVarianceText}.`
-                      );
-                    }}
-                    className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
-                  >
-                    <Lock className="h-4 w-4" />
-                    <span>Close Shift &amp; Print Z-Report</span>
-                  </button>
+                        // 3. Print Z-Report
+                        triggerAutoPrint({
+                          type: 'Z_REPORT',
+                          data: closedShift
+                        }, `Shift ${closedShift.shiftId} Closed`);
+
+                        // 4. Tag invoices to this closed shift
+                        setTransactions(prev => prev.map(t => {
+                          const matchesThisShift = t.shiftId === currentShift.shiftId || (!t.shiftId && extractDateStr(t.date) === currentShift.openedDate);
+                          if (matchesThisShift) {
+                            return { ...t, shiftId: currentShift.shiftId };
+                          }
+                          return t;
+                        }));
+
+                        // 5. Open new shift: Carries forward the running cash balance without resetting or banking
+                        const nextDate = getLocalDateStr();
+                        const shiftSequence = Date.now().toString().slice(-4);
+                        const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
+
+                        setCurrentShift({
+                          shiftId: newShiftId,
+                          openedDate: nextDate,
+                          openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                          openedBy: currentUser.name,
+                          startingFloat: runningCashBalance, // Retains full drawer cash balance
+                          status: 'OPEN',
+                          payouts: []
+                        });
+
+                        // Note: denominations are NOT cleared so physical count remains until cashier re-counts
+
+                        const shiftVarianceText = !hasCounted 
+                          ? 'Cash count not modified (Drawer balance retained continuously)' 
+                          : shiftVariance === 0 
+                          ? 'Balanced' 
+                          : shiftVariance > 0 
+                          ? `Overage of ${settings.currency} ${shiftVariance.toFixed(2)}` 
+                          : `Shortage of ${settings.currency} ${Math.abs(shiftVariance).toFixed(2)}`;
+
+                        recordAuditLog(
+                          'SHIFT_CLOSED_Z_REPORT',
+                          closedShift.shiftId,
+                          `Shift closed by ${currentUser.name}. Full running cash balance of ${settings.currency} ${runningCashBalance.toFixed(2)} preserved into ${newShiftId}. Status: ${shiftVarianceText}.`
+                        );
+                      }}
+                      className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
+                    >
+                      <Lock className="h-4 w-4" />
+                      <span>Close Shift &amp; Print Z-Report</span>
+                    </button>
+                  </div>
                 );
               })()}
             </div>
