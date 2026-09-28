@@ -420,13 +420,16 @@ export default function App() {
   // Shifts state
   const [currentShift, setCurrentShift] = usePersistentState('linoli_current_shift', {
     shiftId: `SHIFT-${getLocalDateStr().replace(/-/g, '')}-01`,
-    openedDate: getLocalDateStr(), // <-- ADD THIS
+    openedDate: getLocalDateStr(),
     openedAt: '09:00 AM',
-    openedBy: 'Marco Rossi',
+    openedBy: 'System Administrator',
     startingFloat: 10000.00,
     status: 'OPEN',
     payouts: []
   });
+
+  // Dedicated persistent running float that preserves cash across shift rollovers
+  const [runningFloat, setRunningFloat] = usePersistentState('linoli_running_float', 10000.00);
 
   const [shiftHistory, setShiftHistory] = usePersistentState('linoli_shift_history', []);
   const [denominations, setDenominations] = usePersistentState('linoli_denominations', {
@@ -4296,7 +4299,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   });
                 }
 
-                const expectedCash = Number(((currentShift.startingFloat || 0) + shiftCashSales - totalCashOut).toFixed(2));
+                // Preserve whatever float this shift was opened with
+                const currentShiftFloat = Number(currentShift.startingFloat) || Number(runningFloat) || 10000.00;
+                const expectedCash = Number((currentShiftFloat + shiftCashSales - totalCashOut).toFixed(2));
                 const shiftVariance = Number((countedCash - expectedCash).toFixed(2));
                 const netTotalVariance = Number(((Number(unsettledVariance) || 0) + shiftVariance).toFixed(2));
 
@@ -4315,23 +4320,27 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                 return (
                   <div className="flex items-center gap-2.5 shrink-0">
-                    {/* Settle Drawer Button: explicitly re-baselines physical float and clears discrepancy */}
+                    {/* Settle Drawer Button: Manually sets new base float */}
                     <button
                       type="button"
                       onClick={() => {
-                        const standardFloat = 10000.00;
-                        if (window.confirm(`Perform drawer cash settlement? This will bank drawer sales and reset the baseline cash float to ${settings.currency} ${standardFloat.toFixed(2)} with zero variance.`)) {
+                        const inputVal = prompt(`Enter new base float to bank and settle drawer:`, currentShiftFloat.toString());
+                        if (inputVal !== null) {
+                          const parsed = parseFloat(inputVal);
+                          const targetFloat = !isNaN(parsed) && parsed >= 0 ? parsed : 10000.00;
+
+                          setRunningFloat(targetFloat);
                           setCurrentShift(prev => ({
                             ...prev,
-                            startingFloat: standardFloat
+                            startingFloat: targetFloat
                           }));
-                          setDenominations(buildDenominationsMatchingAmount(standardFloat));
+                          setDenominations(buildDenominationsMatchingAmount(targetFloat));
                           setUnsettledVariance(0);
 
                           recordAuditLog(
                             'DRAWER_SETTLED_MANUAL',
                             currentShift.shiftId,
-                            `Drawer settled and banked by ${currentUser.name}. Float reset to ${settings.currency} ${standardFloat.toFixed(2)}.`
+                            `Manager/Admin ${currentUser.name} manually set float to ${settings.currency} ${targetFloat.toFixed(2)}.`
                           );
                         }
                       }}
@@ -4341,11 +4350,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       <span>Settle &amp; Bank Drawer</span>
                     </button>
 
-                    {/* Close Shift: Keeps float identical to previous close and pre-matches cash count to float */}
+                    {/* Close Shift: Guaranteed to preserve float from previous close */}
                     <button
                       type="button"
                       onClick={() => {
-                        const previousFloat = Number(currentShift.startingFloat) || 10000.00;
+                        // 1. Lock the float from current shift so it can never revert
+                        const exactPreviousFloat = currentShiftFloat;
+                        setRunningFloat(exactPreviousFloat);
 
                         const closedShift = {
                           ...currentShift,
@@ -4354,7 +4365,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           closedBy: currentUser.name,
                           status: 'CLOSED',
                           metrics: {
-                            startingFloat: previousFloat,
+                            startingFloat: exactPreviousFloat,
                             cashSales: shiftCashSales,
                             cardSales: shiftCardSales,
                             otherSales: shiftOtherSales,
@@ -4378,7 +4389,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           data: closedShift
                         }, `Shift ${closedShift.shiftId} Closed`);
 
-                        // Associate invoices to this closed shift
+                        // Tag invoices to this closed shift
                         setTransactions(prev => prev.map(t => {
                           const matchesThisShift = t.shiftId === currentShift.shiftId || (!t.shiftId && extractDateStr(t.date) === currentShift.openedDate);
                           if (matchesThisShift) {
@@ -4387,7 +4398,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           return t;
                         }));
 
-                        // 1. Keep cash float identical to previous close
+                        // 2. Open new shift retaining the EXACT SAME float as previous close
                         const nextDate = getLocalDateStr();
                         const shiftSequence = Date.now().toString().slice(-4);
                         const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
@@ -4397,27 +4408,19 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           openedDate: nextDate,
                           openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                           openedBy: currentUser.name,
-                          startingFloat: previousFloat,
+                          startingFloat: exactPreviousFloat, // Never reverts to 10000; stays as previous close
                           status: 'OPEN',
                           payouts: []
                         });
 
-                        // 2. Pre-match cash count to the cash float so variance initializes to zero
-                        setDenominations(buildDenominationsMatchingAmount(previousFloat));
-
-                        // 3. Reset persistent unsettled discrepancy so the new shift starts at zero variance
+                        // 3. Pre-match cash count denominations to this exact float so variance starts at $0.00
+                        setDenominations(buildDenominationsMatchingAmount(exactPreviousFloat));
                         setUnsettledVariance(0);
-
-                        const shiftVarianceText = shiftVariance === 0 
-                          ? 'Balanced' 
-                          : shiftVariance > 0 
-                          ? `Overage of ${settings.currency} ${shiftVariance.toFixed(2)}` 
-                          : `Shortage of ${settings.currency} ${Math.abs(shiftVariance).toFixed(2)}`;
 
                         recordAuditLog(
                           'SHIFT_CLOSED_Z_REPORT',
                           closedShift.shiftId,
-                          `Shift closed by ${currentUser.name}. Float preserved at ${settings.currency} ${previousFloat.toFixed(2)}. Cash count initialized to match float. Status: ${shiftVarianceText}.`
+                          `Shift closed by ${currentUser.name}. Float carried forward at ${settings.currency} ${exactPreviousFloat.toFixed(2)}. Cash count initialized to match float.`
                         );
                       }}
                       className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
