@@ -7,7 +7,8 @@ import {
   doc,
   onSnapshot,
   setDoc,
-  updateDoc
+  updateDoc,
+  deleteDoc
 } from "firebase/firestore";
 import {
   Bed,
@@ -21,7 +22,11 @@ import {
   CheckCircle2,
   Menu,
   X,
-  Building2
+  Building2,
+  SlidersHorizontal,
+  Edit2,
+  Check,
+  AlertTriangle
 } from "lucide-react";
 
 // --- 1. FIREBASE CONFIGURATION ---
@@ -51,7 +56,8 @@ const DEFAULT_SETTINGS = {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("rooms");
+  // Tabs: "frontdesk" | "room-admin" | "billing" | "inventory" | "staff" | "settings"
+  const [activeTab, setActiveTab] = useState("frontdesk");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Firestore Synchronized State
@@ -65,12 +71,23 @@ export default function App() {
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [printFormat, setPrintFormat] = useState("a4");
 
-  // Modals & Line Item Inputs
+  // Front Desk Check-in Modal
   const [checkInModalRoom, setCheckInModalRoom] = useState(null);
   const [guestForm, setGuestForm] = useState({ name: "", phone: "", nights: 1 });
   const [newItemDesc, setNewItemDesc] = useState("");
   const [newItemPrice, setNewItemPrice] = useState("");
   const [newItemQty, setNewItemQty] = useState("1");
+
+  // Room Management / Admin State
+  const [showAddRoomModal, setShowAddRoomModal] = useState(false);
+  const [newRoomForm, setNewRoomForm] = useState({
+    number: "",
+    type: "Ocean Breeze King",
+    rate: 180,
+    status: "available",
+  });
+  const [editingRoomId, setEditingRoomId] = useState(null);
+  const [editRoomRate, setEditRoomRate] = useState("");
 
   // --- 2. REAL-TIME FIRESTORE HOOKS ---
   useEffect(() => {
@@ -179,6 +196,47 @@ export default function App() {
 
   const updateRoomStatus = async (roomId, status) => {
     await updateDoc(doc(db, "rooms", roomId), { status });
+  };
+
+  // Create a new room in Firestore
+  const handleCreateRoom = async (e) => {
+    e.preventDefault();
+    if (!newRoomForm.number) return;
+
+    const roomId = newRoomForm.number.trim();
+    const newRoomData = {
+      id: roomId,
+      number: newRoomForm.number.trim(),
+      type: newRoomForm.type,
+      rate: Number(newRoomForm.rate) || 100,
+      status: newRoomForm.status,
+      folio: [],
+    };
+
+    await setDoc(doc(db, "rooms", roomId), newRoomData);
+    setShowAddRoomModal(false);
+    setNewRoomForm({
+      number: "",
+      type: "Ocean Breeze King",
+      rate: 180,
+      status: "available",
+    });
+  };
+
+  // Update room rate
+  const handleSaveRoomRate = async (roomId) => {
+    const rateVal = parseFloat(editRoomRate);
+    if (!isNaN(rateVal) && rateVal > 0) {
+      await updateDoc(doc(db, "rooms", roomId), { rate: rateVal });
+    }
+    setEditingRoomId(null);
+  };
+
+  // Delete Room
+  const handleDeleteRoom = async (roomId, roomNumber) => {
+    if (window.confirm(`Permanently remove Room #${roomNumber} from database?`)) {
+      await deleteDoc(doc(db, "rooms", roomId));
+    }
   };
 
   const handleCompleteCheckIn = async (e) => {
@@ -305,7 +363,8 @@ export default function App() {
 
         <nav className="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto">
           {[
-            { id: "rooms", label: "Rooms & Check-In", icon: Bed },
+            { id: "frontdesk", label: "Front Desk & Status", icon: Bed },
+            { id: "room-admin", label: "Room Management", icon: SlidersHorizontal },
             { id: "billing", label: "Billing & Print", icon: Receipt },
             { id: "inventory", label: "Stock & Minibar", icon: Boxes },
             { id: "staff", label: "Staff & Access", icon: Users },
@@ -345,26 +404,33 @@ export default function App() {
         {/* Mobile Drawer */}
         {mobileMenuOpen && (
           <div className="no-print md:hidden bg-[#091D26] border-b border-[#0F2D3C] p-4 space-y-2 z-50 text-white">
-            {["rooms", "billing", "inventory", "staff", "settings"].map((tab) => (
+            {[
+              { id: "frontdesk", label: "Front Desk" },
+              { id: "room-admin", label: "Room Management" },
+              { id: "billing", label: "Billing & Print" },
+              { id: "inventory", label: "Stock & Minibar" },
+              { id: "staff", label: "Staff & Access" },
+              { id: "settings", label: "Hotel Settings" },
+            ].map((item) => (
               <button
-                key={tab}
-                onClick={() => { setActiveTab(tab); setMobileMenuOpen(false); }}
-                className={`w-full text-left py-2 px-3 rounded text-sm capitalize ${activeTab === tab ? "bg-[#0D9488]" : ""}`}
+                key={item.id}
+                onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false); }}
+                className={`w-full text-left py-2 px-3 rounded text-sm ${activeTab === item.id ? "bg-[#0D9488]" : ""}`}
               >
-                {tab}
+                {item.label}
               </button>
             ))}
           </div>
         )}
 
         <main className="no-print flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {/* ROOMS TAB */}
-          {activeTab === "rooms" && (
+          {/* TAB 1: FRONT DESK (CHECK-IN / GUEST ASSIGNMENT) */}
+          {activeTab === "frontdesk" && (
             <div className="max-w-7xl mx-auto space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-2xl font-bold text-[#091D26] tracking-tight">Room Management</h2>
-                  <p className="text-sm text-slate-500">Live Firebase real-time status across all devices</p>
+                  <h2 className="text-2xl font-bold text-[#091D26] tracking-tight">Front Desk Board</h2>
+                  <p className="text-sm text-slate-500">Live guest assignments, check-ins, and turnover</p>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   <span className="bg-white border border-[#E6DFD3] px-3 py-1.5 rounded-lg shadow-sm">
@@ -386,7 +452,7 @@ export default function App() {
                       <div className="flex justify-between items-start mb-2">
                         <span className="text-2xl font-black text-[#091D26]">#{room.number}</span>
                         <span
-                          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${
                             room.status === "available"
                               ? "bg-[#CCFBF1] text-[#0F766E]"
                               : room.status === "occupied"
@@ -449,7 +515,7 @@ export default function App() {
                           onClick={() => updateRoomStatus(room.id, "available")}
                           className="w-full bg-[#E6DFD3] hover:bg-[#D3C8B7] text-[#091D26] py-2 rounded-lg text-xs font-medium"
                         >
-                          Clear
+                          Clear Maintenance
                         </button>
                       )}
                     </div>
@@ -459,7 +525,174 @@ export default function App() {
             </div>
           )}
 
-          {/* BILLING TAB */}
+          {/* TAB 2: ROOM MANAGEMENT (ADMIN & CONFIGURATION) */}
+          {activeTab === "room-admin" && (
+            <div className="max-w-7xl mx-auto space-y-6">
+              {/* Header with Add Room Button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-[#091D26] tracking-tight">Room Inventory & Configuration</h2>
+                  <p className="text-sm text-slate-500">Add, re-price, change status, and decommission rooms</p>
+                </div>
+                <button
+                  onClick={() => setShowAddRoomModal(true)}
+                  className="inline-flex items-center gap-2 bg-[#14B8A6] hover:bg-[#0D9488] text-white px-4 py-2.5 rounded-lg text-xs font-bold shadow-sm transition-all"
+                >
+                  <Plus className="w-4 h-4" /> Add New Room
+                </button>
+              </div>
+
+              {/* Status Overview Metric Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="bg-white border border-[#E6DFD3] rounded-xl p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase text-slate-400">Total Rooms</p>
+                  <p className="text-2xl font-black text-[#091D26] mt-1">{rooms.length}</p>
+                </div>
+                <div className="bg-white border border-[#E6DFD3] rounded-xl p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase text-[#0F766E]">Available</p>
+                  <p className="text-2xl font-black text-[#0F766E] mt-1">
+                    {rooms.filter((r) => r.status === "available").length}
+                  </p>
+                </div>
+                <div className="bg-white border border-[#E6DFD3] rounded-xl p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase text-amber-700">Cleaning</p>
+                  <p className="text-2xl font-black text-amber-700 mt-1">
+                    {rooms.filter((r) => r.status === "cleaning").length}
+                  </p>
+                </div>
+                <div className="bg-white border border-[#E6DFD3] rounded-xl p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase text-[#F43F5E]">Maintenance</p>
+                  <p className="text-2xl font-black text-[#F43F5E] mt-1">
+                    {rooms.filter((r) => r.status === "maintenance").length}
+                  </p>
+                </div>
+              </div>
+
+              {/* Room Table */}
+              <div className="bg-white rounded-xl border border-[#E6DFD3] shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#F3EFE6] border-b border-[#E6DFD3] uppercase font-semibold text-slate-500">
+                      <tr>
+                        <th className="p-3.5">Room #</th>
+                        <th className="p-3.5">Room Type</th>
+                        <th className="p-3.5">Rate / Night</th>
+                        <th className="p-3.5">Current Status</th>
+                        <th className="p-3.5 text-center">Change Status</th>
+                        <th className="p-3.5 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#F3EFE6]">
+                      {rooms.map((room) => (
+                        <tr key={room.id} className="hover:bg-[#FAF9F5] transition-colors">
+                          <td className="p-3.5 font-black text-base text-[#091D26]">#{room.number}</td>
+                          <td className="p-3.5 font-medium text-slate-700">{room.type}</td>
+                          <td className="p-3.5">
+                            {editingRoomId === room.id ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  className="w-20 border border-[#14B8A6] rounded px-2 py-1 text-xs focus:outline-none"
+                                  value={editRoomRate}
+                                  onChange={(e) => setEditRoomRate(e.target.value)}
+                                  autoFocus
+                                />
+                                <button
+                                  onClick={() => handleSaveRoomRate(room.id)}
+                                  className="p-1 bg-[#14B8A6] text-white rounded hover:bg-[#0D9488]"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => setEditingRoomId(null)}
+                                  className="p-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-900">{settings.currency}{room.rate}</span>
+                                <button
+                                  onClick={() => {
+                                    setEditingRoomId(room.id);
+                                    setEditRoomRate(room.rate);
+                                  }}
+                                  className="text-slate-400 hover:text-[#0D9488]"
+                                  title="Edit price"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3.5">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold capitalize ${
+                                room.status === "available"
+                                  ? "bg-[#CCFBF1] text-[#0F766E]"
+                                  : room.status === "occupied"
+                                  ? "bg-[#0F2D3C] text-white"
+                                  : room.status === "cleaning"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-[#FFE4E6] text-[#F43F5E]"
+                              }`}
+                            >
+                              {room.status}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-center">
+                            <div className="inline-flex rounded-lg border border-[#E6DFD3] p-0.5 bg-[#FAF9F5] gap-1">
+                              <button
+                                onClick={() => updateRoomStatus(room.id, "available")}
+                                className={`px-2 py-1 rounded text-[10px] font-semibold ${
+                                  room.status === "available" ? "bg-[#14B8A6] text-white" : "text-slate-600 hover:bg-white"
+                                }`}
+                              >
+                                Ready
+                              </button>
+                              <button
+                                onClick={() => updateRoomStatus(room.id, "cleaning")}
+                                className={`px-2 py-1 rounded text-[10px] font-semibold ${
+                                  room.status === "cleaning" ? "bg-amber-500 text-white" : "text-slate-600 hover:bg-white"
+                                }`}
+                              >
+                                Clean
+                              </button>
+                              <button
+                                onClick={() => updateRoomStatus(room.id, "maintenance")}
+                                className={`px-2 py-1 rounded text-[10px] font-semibold ${
+                                  room.status === "maintenance" ? "bg-[#F43F5E] text-white" : "text-slate-600 hover:bg-white"
+                                }`}
+                              >
+                                Out of Order
+                              </button>
+                            </div>
+                          </td>
+                          <td className="p-3.5 text-center">
+                            <button
+                              onClick={() => handleDeleteRoom(room.id, room.number)}
+                              disabled={room.status === "occupied"}
+                              className={`p-1.5 rounded transition-colors ${
+                                room.status === "occupied"
+                                  ? "text-slate-300 cursor-not-allowed"
+                                  : "text-[#F43F5E] hover:bg-[#FFE4E6]"
+                              }`}
+                              title={room.status === "occupied" ? "Cannot delete occupied room" : "Delete Room"}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: BILLING */}
           {activeTab === "billing" && currentRoom && (
             <div className="max-w-6xl mx-auto space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -602,7 +835,7 @@ export default function App() {
             </div>
           )}
 
-          {/* INVENTORY TAB */}
+          {/* TAB 4: INVENTORY */}
           {activeTab === "inventory" && (
             <div className="max-w-5xl mx-auto space-y-6">
               <div>
@@ -652,7 +885,7 @@ export default function App() {
             </div>
           )}
 
-          {/* STAFF TAB */}
+          {/* TAB 5: STAFF */}
           {activeTab === "staff" && (
             <div className="max-w-4xl mx-auto space-y-6">
               <div>
@@ -679,7 +912,7 @@ export default function App() {
             </div>
           )}
 
-          {/* SETTINGS TAB */}
+          {/* TAB 6: SETTINGS */}
           {activeTab === "settings" && (
             <div className="max-w-3xl mx-auto bg-white border border-[#E6DFD3] rounded-xl p-6 shadow-sm space-y-6">
               <div>
@@ -747,6 +980,82 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* ADD NEW ROOM MODAL */}
+      {showAddRoomModal && (
+        <div className="no-print fixed inset-0 bg-[#06151E]/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#E6DFD3]">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-lg text-[#091D26]">Add New Hotel Room</h3>
+              <button onClick={() => setShowAddRoomModal(false)} className="text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateRoom} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold mb-1">Room Number</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 301, 302, PH-A"
+                  value={newRoomForm.number}
+                  onChange={(e) => setNewRoomForm({ ...newRoomForm, number: e.target.value })}
+                  className="w-full border border-[#D3C8B7] rounded-lg p-2.5 focus:outline-none focus:ring-1 focus:ring-[#14B8A6]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Room Category / Type</label>
+                <select
+                  value={newRoomForm.type}
+                  onChange={(e) => setNewRoomForm({ ...newRoomForm, type: e.target.value })}
+                  className="w-full border border-[#D3C8B7] rounded-lg p-2.5 bg-white focus:outline-none focus:ring-1 focus:ring-[#14B8A6]"
+                >
+                  <option value="Ocean Breeze King">Ocean Breeze King</option>
+                  <option value="Lagoon View Double">Lagoon View Double</option>
+                  <option value="Coral Penthouse Suite">Coral Penthouse Suite</option>
+                  <option value="Family Beachside Villa">Family Beachside Villa</option>
+                  <option value="Standard Coastal Queen">Standard Coastal Queen</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Base Nightly Rate ({settings.currency})</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.01"
+                  value={newRoomForm.rate}
+                  onChange={(e) => setNewRoomForm({ ...newRoomForm, rate: e.target.value })}
+                  className="w-full border border-[#D3C8B7] rounded-lg p-2.5 focus:outline-none focus:ring-1 focus:ring-[#14B8A6]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Initial Status</label>
+                <select
+                  value={newRoomForm.status}
+                  onChange={(e) => setNewRoomForm({ ...newRoomForm, status: e.target.value })}
+                  className="w-full border border-[#D3C8B7] rounded-lg p-2.5 bg-white focus:outline-none focus:ring-1 focus:ring-[#14B8A6]"
+                >
+                  <option value="available">Available</option>
+                  <option value="cleaning">Needs Cleaning</option>
+                  <option value="maintenance">Under Maintenance</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-[#14B8A6] hover:bg-[#0D9488] text-white font-bold py-3 rounded-lg transition-colors mt-2"
+              >
+                Register Room to Cloud
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* CHECK-IN MODAL */}
       {checkInModalRoom && (
