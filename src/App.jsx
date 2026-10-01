@@ -461,6 +461,7 @@ export default function App() {
   const [serviceChargeActive, setServiceChargeActive] = useState(true);
   const [taxActive, setTaxActive] = useState(false);
   const [discountPercent, setDiscountPercent] = useState(0);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
   // Date Filter State for Reports
   const [reportStartDate, setReportStartDate] = useState(getLocalDateStr());
@@ -2314,644 +2315,352 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </header>
 
-{/* VIEW 1: POS TERMINAL */}
+{/* VIEW 1: POS TERMINAL (RESPONSIVE FOR MOBILE, TABS & DESKTOP) */}
         {activeTab === 'pos' && (
-          <div className="flex-1 flex overflow-hidden">
-            {/* Catalog Grid Area */}
-            <div className="flex-1 flex flex-col p-5 overflow-hidden min-h-0">
+          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+            
+            {/* Catalog Area (Full width on mobile/tablet, flex-1 on desktop) */}
+            <div className="flex-1 flex flex-col p-3 sm:p-5 overflow-hidden min-h-0">
               
-              {/* TOP BAR: HIGH-CONTRAST DARK DOCK FOR CATEGORIES & CONTROLS */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 mb-4 shrink-0 shadow-md flex items-center gap-3">
-                {/* CATEGORY SELECTOR BAR (EXPANDED HORIZONTAL SCROLL & HIGH VISIBILITY BLOCK LETTERS) */}
+              {/* Top Category & Filter Bar */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2 sm:p-2.5 mb-3 sm:mb-4 shrink-0 shadow-md flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+                
+                {/* Horizontal Scrollable Categories */}
                 <div 
-                  className="flex-1 min-w-0 overflow-x-auto pb-1.5 pt-0.5 scrollbar-thin"
-                  style={{
-                    scrollbarWidth: 'thin',
-                    scrollbarColor: '#475569 #1e293b'
-                  }}
+                  className="flex-1 min-w-0 overflow-x-auto pb-1 pt-0.5 scrollbar-thin flex items-center gap-1.5 sm:gap-2"
+                  style={{ WebkitOverflowScrolling: 'touch' }}
                 >
-                  <div className="flex items-center gap-2">
-                    {categoriesList.map((cat) => {
-                      const count = cat === 'All' 
-                        ? menuItems.length 
-                        : menuItems.filter(m => m.category === cat).length;
-                      const isSelected = selectedCategory === cat;
+                  {categoriesList.map((cat) => {
+                    const count = cat === 'All' 
+                      ? menuItems.length 
+                      : menuItems.filter(m => m.category === cat).length;
+                    const isSelected = selectedCategory === cat;
 
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => setSelectedCategory(cat)}
-                          className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-wider shrink-0 transition-all flex items-center gap-2 cursor-pointer shadow-xs ${
-                            isSelected
-                              ? 'bg-[#ff5500] text-white shadow-orange-500/40 ring-2 ring-[#ff5500]/50'
-                              : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 hover:border-slate-600'
-                          }`}
-                        >
-                          <span>{cat}</span>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                              isSelected
-                                ? 'bg-black/30 text-white'
-                                : 'bg-slate-900/80 text-slate-300 border border-slate-700/60'
-                            }`}
-                          >
-                            {count}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl font-black text-[11px] sm:text-xs uppercase tracking-wider shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#ff5500] text-white shadow-xs'
+                            : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                        }`}
+                      >
+                        <span>{cat}</span>
+                        <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                          isSelected ? 'bg-black/30 text-white' : 'bg-slate-900 text-slate-400'
+                        }`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {/* CONTROLS SEPARATOR */}
-                <div className="h-8 w-px bg-slate-800 shrink-0" />
-
-                {/* RIGHT CONTROLS: DENSITY SWITCHER + SEARCH */}
+                {/* Search Bar & View Mode Toggle */}
                 <div className="flex items-center gap-2 shrink-0">
-                  {/* Density switcher */}
-                  <div className="flex items-center bg-slate-800 border border-slate-700 rounded-xl p-0.5 shadow-inner">
+                  <div className="relative flex-1 sm:w-44 lg:w-48">
+                    <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={menuSearchQuery}
+                      onChange={e => setMenuSearchQuery(e.target.value)}
+                      placeholder="Search menu..."
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#ff5500]"
+                    />
+                  </div>
+
+                  {/* Density switcher (Hidden on smallest mobile screens to save space) */}
+                  <div className="hidden sm:flex items-center bg-slate-800 border border-slate-700 rounded-xl p-0.5">
                     <button
                       type="button"
                       onClick={() => setPosViewMode('grid')}
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        posViewMode === 'grid' 
-                          ? 'bg-[#ff5500] text-white shadow-xs' 
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                      title="Visual Grid"
+                      className={`p-1.5 rounded-lg ${posViewMode === 'grid' ? 'bg-[#ff5500] text-white' : 'text-slate-400'}`}
+                      title="Grid"
                     >
                       <LayoutGrid className="h-3.5 w-3.5" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setPosViewMode('compact')}
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        posViewMode === 'compact' 
-                          ? 'bg-[#ff5500] text-white shadow-xs' 
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                      title="Compact Tiles"
+                      className={`p-1.5 rounded-lg ${posViewMode === 'compact' ? 'bg-[#ff5500] text-white' : 'text-slate-400'}`}
+                      title="Compact"
                     >
                       <Grid className="h-3.5 w-3.5" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setPosViewMode('list')}
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        posViewMode === 'list' 
-                          ? 'bg-[#ff5500] text-white shadow-xs' 
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                      title="Compact List"
-                    >
-                      <Layers className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-
-                  {/* Search Input */}
-                  <div className="relative w-48">
-                    <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={menuSearchQuery}
-                      onChange={e => setMenuSearchQuery(e.target.value)}
-                      placeholder="Search 150+ items..."
-                      className="w-full pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#ff5500] focus:ring-1 focus:ring-[#ff5500]"
-                    />
                   </div>
                 </div>
               </div>
 
-              {/* Responsive fluid grid with multi-breakpoint scaling */}
-              <div className="flex-1 overflow-y-auto pr-1 min-h-0">
-                {(() => {
-                  const filteredDishes = menuItems.filter(item => {
-                    const matchCat = selectedCategory === 'All' || item.category === selectedCategory;
-                    const matchQuery = item.name.toLowerCase().includes(menuSearchQuery.toLowerCase());
-                    return matchCat && matchQuery;
-                  });
+              {/* Responsive Dishes Grid */}
+              <div className="flex-1 overflow-y-auto pr-0 sm:pr-1 min-h-0 pb-20 lg:pb-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3.5">
+                  {menuItems
+                    .filter(item => {
+                      const matchCat = selectedCategory === 'All' || item.category === selectedCategory;
+                      const matchQuery = item.name.toLowerCase().includes(menuSearchQuery.toLowerCase());
+                      return matchCat && matchQuery;
+                    })
+                    .map(dish => {
+                      const { cogs, portions } = calculateDishAvailability(dish.recipe);
+                      const isInCart = cart.some(i => i.id === dish.id);
 
-                  if (filteredDishes.length === 0) {
-                    return (
-                      <div className="h-64 flex flex-col items-center justify-center text-slate-400 text-center">
-                        <Coffee className="h-10 w-10 mb-2 stroke-[1]" />
-                        <p className="text-xs font-bold text-slate-600">No matching menu items</p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">Try searching a different item or category.</p>
-                      </div>
-                    );
-                  }
+                      return (
+                        <div
+                          key={dish.id}
+                          onClick={() => handleAddToCart(dish)}
+                          className={`bg-white rounded-2xl border-2 cursor-pointer active:scale-95 transition-all flex flex-col justify-between overflow-hidden shadow-xs hover:shadow-md ${
+                            isInCart
+                              ? 'border-[#ff5500] ring-2 ring-[#ff5500]/25'
+                              : 'border-slate-200'
+                          }`}
+                        >
+                          {dish.imageUrl ? (
+                            <div className="relative h-20 sm:h-24 w-full bg-slate-100 overflow-hidden shrink-0">
+                              <img src={dish.imageUrl} alt={dish.name} className="w-full h-full object-cover" />
+                              <span className="absolute bottom-1.5 right-1.5 px-2 py-0.5 rounded-md bg-black/80 text-white font-mono font-black text-[10px] sm:text-xs">
+                                {settings.currency} {dish.price.toFixed(0)}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="p-2 sm:p-2.5 pb-0 flex justify-between items-center">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                                {dish.department}
+                              </span>
+                              <span className="text-[11px] sm:text-xs font-mono font-black text-[#ff5500]">
+                                {settings.currency} {dish.price.toFixed(0)}
+                              </span>
+                            </div>
+                          )}
 
-                  if (posViewMode === 'compact') {
-                    return (
-                      <div className="bg-slate-100/70 p-3 rounded-2xl border border-slate-200 shadow-inner">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2.5">
-                          {filteredDishes.map(dish => {
-                            const { portions } = calculateDishAvailability(dish.recipe);
-                            const isInCart = cart.some(i => i.id === dish.id);
+                          <div className="p-2 sm:p-2.5 flex-1 flex flex-col justify-center">
+                            <h4 className="font-black text-xs sm:text-sm text-slate-900 line-clamp-2 leading-tight">
+                              {dish.name}
+                            </h4>
+                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                              {dish.category}
+                            </p>
+                          </div>
 
-                            return (
-                              <button
-                                key={dish.id}
-                                type="button"
-                                onClick={() => handleAddToCart(dish)}
-                                className={`p-3 rounded-xl border-2 text-left flex flex-col justify-between transition-all bg-white cursor-pointer active:scale-95 shadow-xs hover:shadow-md ${
-                                  isInCart
-                                    ? 'border-[#ff5500] ring-2 ring-[#ff5500]/25 shadow-orange-500/10'
-                                    : 'border-slate-300 hover:border-slate-400'
-                                }`}
-                              >
-                                <div>
-                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                                    dish.department === 'Bar' 
-                                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
-                                      : 'bg-rose-50 text-rose-700 border border-rose-200'
-                                  }`}>
-                                    {dish.department}
-                                  </span>
-                                  <p className="font-black text-xs text-slate-950 mt-1.5 line-clamp-1">
-                                    {dish.name}
-                                  </p>
-                                </div>
-                                <div className="mt-2.5 pt-2 border-t border-slate-100 flex justify-between items-center text-[10px]">
-                                  <span className="font-mono font-black text-[#ff5500]">
-                                    {settings.currency} {dish.price.toFixed(0)}
-                                  </span>
-                                  <span className={`font-bold ${portions <= 0 ? 'text-amber-600' : 'text-emerald-700'}`}>
-                                    {portions <= 0 ? '0 ready' : `${portions} left`}
-                                  </span>
-                                </div>
-                              </button>
-                            );
-                          })}
+                          <div className="p-2 border-t border-slate-100 flex items-center justify-between text-[10px] bg-slate-50/70">
+                            <span className={portions <= 0 ? 'text-amber-600 font-bold' : 'text-emerald-700 font-bold'}>
+                              {portions <= 0 ? '0 left' : `${portions} ready`}
+                            </span>
+                            <span className="text-slate-400 font-mono">
+                              BOM: {settings.currency} {cogs.toFixed(0)}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  }
-                  if (posViewMode === 'list') {
-                    return (
-                      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
-                        {filteredDishes.map(dish => {
-                          const { portions } = calculateDishAvailability(dish.recipe);
-                          return (
-                            <div
-                              key={dish.id}
-                              onClick={() => {
-                                setCart(prev => {
-                                  const existing = prev.find(i => i.id === dish.id);
-                                  if (existing) {
-                                    return prev.map(i => i.id === dish.id ? { ...i, qty: i.qty + 1 } : i);
-                                  }
-                                  return [...prev, { ...dish, cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
-                                });
-                              }}
-                              className="p-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors"
-                            >
-                              <div className="flex items-center gap-3">
-                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
-                                  dish.department === 'Bar' ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'
-                                }`}>
-                                  {dish.department}
-                                </span>
-                                <div>
-                                  <p className="font-bold text-xs text-slate-900">{dish.name}</p>
-                                  <span className="text-[10px] text-slate-400">{dish.category} • {dish.prepTime}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-4">
-                                <span className={`text-xs font-mono ${portions <= 0 ? 'text-amber-600 font-bold' : 'text-slate-500'}`}>
-                                  {portions <= 0 ? '0 ready' : `${portions} ready`}
-                                </span>
-                                <span className="font-mono font-bold text-sm text-[#ff5500]">{settings.currency} {dish.price.toFixed(2)}</span>
-                                <button className="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">+ Add</button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  }
-
-                  // Default Visual Grid with High-Contrast Canvas & Divided Cards
-                  return (
-                    <div className="bg-slate-100/80 p-3.5 rounded-3xl border border-slate-200/90 shadow-inner">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
-                        {filteredDishes.map(dish => {
-                          const { cogs, portions } = calculateDishAvailability(dish.recipe);
-                          const isInCart = cart.some(i => i.id === dish.id);
-
-                          return (
-                            <div
-                              key={dish.id}
-                              onClick={() => {
-                                setCart(prev => {
-                                  const existing = prev.find(i => i.id === dish.id);
-                                  if (existing) {
-                                    return prev.map(i => i.id === dish.id ? { ...i, qty: i.qty + 1 } : i);
-                                  }
-                                  return [...prev, { ...dish, cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
-                                });
-                              }}
-                              className={`bg-white rounded-2xl border-2 cursor-pointer active:scale-[0.98] overflow-hidden flex flex-col justify-between transition-all duration-150 shadow-xs hover:shadow-md hover:-translate-y-0.5 ${
-                                isInCart
-                                  ? 'border-[#ff5500] ring-2 ring-[#ff5500]/25 shadow-orange-500/15'
-                                  : 'border-slate-300 hover:border-slate-400'
-                              }`}
-                            >
-                              {dish.imageUrl ? (
-                                <div className="relative h-28 w-full bg-slate-100 overflow-hidden shrink-0 border-b border-slate-200">
-                                  <img
-                                    src={dish.imageUrl}
-                                    alt={dish.name}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                  />
-                                  <span className={`absolute top-2 left-2 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded shadow-xs text-white ${
-                                    dish.department === 'Bar' ? 'bg-indigo-600' : 'bg-rose-600'
-                                  }`}>
-                                    {dish.department}
-                                  </span>
-                                  <span className="absolute bottom-2 right-2 px-2.5 py-0.5 rounded-lg bg-black/80 backdrop-blur-xs text-white font-mono font-black text-xs shadow-xs">
-                                    {settings.currency} {dish.price.toFixed(2)}
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="p-3 pb-0 flex justify-between items-start">
-                                  <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${
-                                    dish.department === 'Bar'
-                                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                      : 'bg-rose-50 text-rose-700 border border-rose-200'
-                                  }`}>
-                                    {dish.department}
-                                  </span>
-                                  <span className="text-xs font-mono font-black text-[#ff5500]">
-                                    {settings.currency} {dish.price.toFixed(2)}
-                                  </span>
-                                </div>
-                              )}
-
-                              {/* Dish Title & Description / Category */}
-                              <div className="p-3.5 pb-2.5 flex-1 flex flex-col justify-center">
-                                <h4 className="font-black text-sm text-slate-950 leading-snug line-clamp-2 tracking-tight">
-                                  {dish.name}
-                                </h4>
-                                <p className="text-[11px] text-slate-600 font-bold mt-1 line-clamp-1 uppercase tracking-wide">
-                                  {dish.category || dish.description || 'General Menu'}
-                                </p>
-                              </div>
-
-                              {/* Card Bottom: Readiness & BOM Status */}
-                              <div className="p-3 pt-2 border-t border-slate-200/90 flex items-center justify-between text-[11px] bg-slate-50/70">
-                                {portions <= 0 ? (
-                                  <span className="text-amber-600 font-bold flex items-center gap-1 text-[10px]">
-                                    <AlertTriangle className="h-3 w-3" /> 0 ready
-                                  </span>
-                                ) : (
-                                  <span className="text-emerald-700 font-bold flex items-center gap-1 text-[10px]">
-                                    <CheckCircle2 className="h-3 w-3" /> {portions} ready
-                                  </span>
-                                )}
-                                <span className="text-slate-500 font-mono font-bold text-[10px]">
-                                  BOM: {settings.currency} {cogs.toFixed(0)}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
+                      );
+                    })}
+                </div>
               </div>
             </div>
 
-            {/* Right Ticket Bar */}
-            <div className="w-96 bg-white border-l border-slate-200 flex flex-col justify-between shrink-0 shadow-lg min-h-0">
-              <div className="p-3.5 border-b border-slate-200 space-y-2.5 shrink-0 bg-white">
-                
-                {/* ACTIVE BILL EDITING NOTIFICATION BANNER */}
-                {settlingOrder && (
-                  <div className="p-2.5 bg-amber-500/10 border-2 border-amber-500/40 rounded-xl flex items-center justify-between text-xs">
-                    <div>
-                      <span className="font-black text-amber-900 block leading-tight">
-                        Modifying Bill: {settlingOrder.tableName}
-                      </span>
-                      <span className="text-[10px] text-amber-700 font-mono font-bold">
-                        Ref #{settlingOrder.orderId}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSettlingOrder(null);
-                        setCart([]);
-                      }}
-                      className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 text-[10px] font-black rounded-lg transition-colors cursor-pointer"
-                    >
-                      Cancel Edit
-                    </button>
-                  </div>
-                )}
-
-                {/* Order Assignment with Tick Selectors */}
-                <div>
-                  <span className="text-[10px] font-black tracking-wider uppercase text-slate-400 block mb-1.5">
-                    Order Assignment
-                  </span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {/* Dining Tick Card */}
-                    <button
-                      type="button"
-                      onClick={() => setOrderMode('DINING')}
-                      className={`flex items-center justify-between px-2.5 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                        orderMode === 'DINING'
-                          ? 'bg-orange-50/80 border-[#ff5500] text-slate-900 shadow-xs'
-                          : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <Grid className="h-3.5 w-3.5 text-[#ff5500]" />
-                        <span>Dine-In Table</span>
-                      </div>
-                      <div className={`h-4 w-4 rounded-full flex items-center justify-center border transition-all ${
-                        orderMode === 'DINING'
-                          ? 'bg-[#ff5500] border-[#ff5500] text-white'
-                          : 'border-slate-300 bg-white'
-                      }`}>
-                        {orderMode === 'DINING' && <Check className="h-2.5 w-2.5 stroke-[3]" />}
-                      </div>
-                    </button>
-
-                    {/* Takeaway Tick Card */}
-                    <button
-                      type="button"
-                      onClick={() => setOrderMode('TAKEAWAY')}
-                      className={`flex items-center justify-between px-2.5 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                        orderMode === 'TAKEAWAY'
-                          ? 'bg-orange-50/80 border-[#ff5500] text-slate-900 shadow-xs'
-                          : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <ShoppingBag className="h-3.5 w-3.5 text-[#ff5500]" />
-                        <span>Takeaway</span>
-                      </div>
-                      <div className={`h-4 w-4 rounded-full flex items-center justify-center border transition-all ${
-                        orderMode === 'TAKEAWAY'
-                          ? 'bg-[#ff5500] border-[#ff5500] text-white'
-                          : 'border-slate-300 bg-white'
-                      }`}>
-                        {orderMode === 'TAKEAWAY' && <Check className="h-2.5 w-2.5 stroke-[3]" />}
-                      </div>
-                    </button>
-                  </div>
+            {/* Mobile / Tablet Floating Cart Bar (Shows on screens < lg) */}
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-30 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-xl flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileCartOpen(true)}
+                className="flex-1 py-2.5 px-4 bg-slate-900 text-white rounded-xl font-black text-xs flex items-center justify-between cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-[#ff5500]" />
+                  <span>View Ticket ({cart.reduce((a, b) => a + b.qty, 0)} items)</span>
                 </div>
+                <span className="font-mono text-[#ff5500] text-sm font-black">
+                  {settings.currency} {cartGrandTotal.toFixed(2)}
+                </span>
+              </button>
 
-                {/* Inline Table / Guest Picker based on ticked mode */}
-                {orderMode === 'DINING' ? (
-                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <label className="font-bold text-slate-700 flex items-center gap-1">
-                        <span>Assigned Table:</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setAllocationModalOpen(true)}
-                        className="text-[10px] font-bold text-[#ff5500] hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <LayoutGrid className="h-3 w-3" /> View Floor Map
-                      </button>
-                    </div>
+              <button
+                type="button"
+                disabled={cart.length === 0}
+                onClick={handleSendOrder}
+                className="py-2.5 px-4 bg-[#ff5500] hover:bg-orange-600 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-sm disabled:opacity-40 cursor-pointer"
+              >
+                <Send className="h-4 w-4" />
+                <span>Send</span>
+              </button>
+            </div>
 
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={selectedTable.id}
-                        onChange={(e) => {
-                          const tbl = floorTables.find(t => t.id === e.target.value);
-                          if (tbl) setSelectedTable(tbl);
-                        }}
-                        className="flex-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                      >
-                        {floorTables.map(t => (
-                          <option key={t.id} value={t.id}>
-                            {t.name} ({t.zone}) - {t.capacity} Seats [{t.status}]
-                          </option>
-                        ))}
-                      </select>
+            {/* Backdrop for Mobile Ticket Slide-Up */}
+            {mobileCartOpen && (
+              <div 
+                onClick={() => setMobileCartOpen(false)}
+                className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-2xs z-40"
+              />
+            )}
 
-                      <div className="flex items-center bg-white border border-slate-200 rounded-lg px-1.5 py-0.5" title="Guest Count">
-                        <button
-                          type="button"
-                          onClick={() => setGuestCount(Math.max(1, guestCount - 1))}
-                          className="text-xs font-bold px-1 text-slate-500 hover:text-slate-900 cursor-pointer"
-                        >
-                          -
-                        </button>
-                        <span className="text-xs font-bold px-1.5 font-mono text-slate-800">{guestCount}p</span>
-                        <button
-                          type="button"
-                          onClick={() => setGuestCount(guestCount + 1)}
-                          className="text-xs font-bold px-1 text-slate-500 hover:text-slate-900 cursor-pointer"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-700">Takeaway Details:</span>
-                      <span className="font-mono font-bold text-xs bg-orange-100 text-[#ff5500] px-2 py-0.5 rounded-md">
-                        Token: {takeawayInfo.token}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        value={takeawayInfo.name}
-                        onChange={(e) => setTakeawayInfo(prev => ({ ...prev, name: e.target.value }))}
-                        placeholder="Guest Name"
-                        className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                      />
-                      <input
-                        type="text"
-                        value={takeawayInfo.phone}
-                        onChange={(e) => setTakeawayInfo(prev => ({ ...prev, phone: e.target.value }))}
-                        placeholder="Phone (Optional)"
-                        className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Surcharges and Discounts */}
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setServiceChargeActive(!serviceChargeActive)}
-                    className={`py-1 px-2 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-                      serviceChargeActive
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                        : 'bg-slate-50 border-slate-200 text-slate-400'
-                    }`}
-                  >
-                    Service ({settings.serviceChargeRate}%): {serviceChargeActive ? 'ON' : 'OFF'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTaxActive(!taxActive)}
-                    className={`py-1 px-2 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-                      taxActive
-                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
-                        : 'bg-slate-50 border-slate-200 text-slate-400'
-                    }`}
-                  >
-                    Tax ({settings.taxRate}%): {taxActive ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-
-                {/* Discount Presets */}
-                <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Discount:</span>
-                  <div className="flex gap-1 mt-1">
-                    {[0, 5, 10, 15, 20].map(pct => (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => setDiscountPercent(pct)}
-                        className={`flex-1 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
-                          discountPercent === pct
-                            ? 'bg-slate-900 text-white border-slate-900'
-                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {pct === 0 ? 'None' : `${pct}%`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            {/* Ticket Drawer: Regular Sidebar on Desktop (lg+), Slide-Up Modal Drawer on Mobile/Tablet */}
+            <div className={`
+              fixed lg:static inset-x-0 bottom-0 z-50 lg:z-auto
+              w-full lg:w-96 max-h-[85vh] lg:max-h-full
+              bg-white border-t lg:border-t-0 lg:border-l border-slate-200
+              flex flex-col justify-between shrink-0 shadow-2xl lg:shadow-none
+              rounded-t-3xl lg:rounded-none transition-transform duration-300 ease-in-out
+              ${mobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}
+            `}>
+              
+              {/* Mobile Drawer Close Header */}
+              <div className="lg:hidden flex items-center justify-between p-3 border-b border-slate-100">
+                <span className="font-black text-xs uppercase text-slate-800">Current Order Ticket</span>
+                <button
+                  type="button"
+                  onClick={() => setMobileCartOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-900 rounded-lg"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
 
-              {/* Cart item list with scroll containment */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-2.5 min-h-0">
+              {/* Ticket Controls (Table selector, Dining/Takeaway, Discounts) */}
+              <div className="p-3 sm:p-3.5 border-b border-slate-200 space-y-2.5 shrink-0 bg-white">
+                {/* Dining / Takeaway Selector */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOrderMode('DINING')}
+                    className={`flex items-center justify-between px-2.5 py-1.5 sm:py-2 rounded-xl border text-xs font-bold ${
+                      orderMode === 'DINING'
+                        ? 'bg-orange-50 border-[#ff5500] text-slate-900'
+                        : 'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}
+                  >
+                    <span>Dine-In</span>
+                    {orderMode === 'DINING' && <Check className="h-3 w-3 text-[#ff5500]" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setOrderMode('TAKEAWAY')}
+                    className={`flex items-center justify-between px-2.5 py-1.5 sm:py-2 rounded-xl border text-xs font-bold ${
+                      orderMode === 'TAKEAWAY'
+                        ? 'bg-orange-50 border-[#ff5500] text-slate-900'
+                        : 'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}
+                  >
+                    <span>Takeaway</span>
+                    {orderMode === 'TAKEAWAY' && <Check className="h-3 w-3 text-[#ff5500]" />}
+                  </button>
+                </div>
+
+                {/* Table Picker */}
+                {orderMode === 'DINING' && (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedTable.id}
+                      onChange={e => {
+                        const tbl = floorTables.find(t => t.id === e.target.value);
+                        if (tbl) setSelectedTable(tbl);
+                      }}
+                      className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    >
+                      {floorTables.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.capacity}p) - [{t.status}]
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-xs">
+                      <button onClick={() => setGuestCount(Math.max(1, guestCount - 1))} className="font-bold px-1 text-slate-500">-</button>
+                      <span className="font-bold font-mono px-1">{guestCount}p</span>
+                      <button onClick={() => setGuestCount(guestCount + 1)} className="font-bold px-1 text-slate-500">+</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Cart Line Items */}
+              <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 max-h-52 lg:max-h-none min-h-0">
                 {cart.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-6">
-                    <Monitor className="h-10 w-10 mb-2 stroke-[1]" />
-                    <p className="text-xs font-bold text-slate-600">Ticket is empty</p>
-                    <p className="text-[11px] text-slate-400 mt-1">Tap items to build order.</p>
+                  <div className="py-6 text-center text-slate-400 text-xs italic">
+                    Ticket is empty. Tap menu items to add.
                   </div>
                 ) : (
                   cart.map(item => (
-                    <div key={item.cartItemId} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-xs font-bold text-slate-900">{item.name}</p>
-                          <p className="text-xs font-mono font-bold text-[#ff5500] mt-0.5">
-                            {settings.currency} {(item.price * item.qty).toFixed(2)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCart(prev => prev.map(i => i.cartItemId === item.cartItemId ? { ...i, qty: Math.max(1, i.qty - 1) } : i));
-                            }}
-                            className="h-6 w-6 rounded-md bg-white border border-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold cursor-pointer"
-                          >
-                            -
-                          </button>
-                          <span className="text-xs font-bold w-5 text-center font-mono">{item.qty}</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCart(prev => prev.map(i => i.cartItemId === item.cartItemId ? { ...i, qty: i.qty + 1 } : i));
-                            }}
-                            className="h-6 w-6 rounded-md bg-white border border-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold cursor-pointer"
-                          >
-                            +
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCart(prev => prev.filter(i => i.cartItemId !== item.cartItemId));
-                            }}
-                            className="h-6 w-6 rounded-md bg-white border border-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold hover:bg-slate-100 cursor-pointer"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+                    <div key={item.cartItemId} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-slate-900 leading-tight">{item.name}</p>
+                        <span className="text-[11px] font-mono text-[#ff5500] font-bold">
+                          {settings.currency} {(item.price * item.qty).toFixed(2)}
+                        </span>
                       </div>
 
-                      <input
-                        type="text"
-                        value={item.notes || ''}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setCart(prev => prev.map(i => i.cartItemId === item.cartItemId ? { ...i, notes: val } : i));
-                        }}
-                        placeholder="Add kitchen/bar modifier note..."
-                        className="w-full mt-2 text-[11px] px-2 py-1 bg-white border border-slate-200 rounded text-slate-700 placeholder-slate-400 focus:outline-none focus:border-[#ff5500]"
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleDecrementCartItem(item)}
+                          className="h-6 w-6 bg-white border border-slate-200 rounded-md font-bold text-xs"
+                        >
+                          -
+                        </button>
+                        <span className="font-mono font-bold text-xs w-4 text-center">{item.qty}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleIncrementCartItem(item)}
+                          className="h-6 w-6 bg-white border border-slate-200 rounded-md font-bold text-xs"
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCartItem(item)}
+                          className="p-1 text-slate-400 hover:text-rose-600"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
               </div>
 
-              {/* Order totals and actions */}
-              <div className="p-4 border-t border-slate-200 bg-slate-50 space-y-3 shrink-0">
-                <div className="space-y-1 text-xs text-slate-600">
-                  <div className="flex justify-between">
-                    <span>Subtotal</span>
-                    <span className="font-mono font-bold text-slate-900">{settings.currency} {cartSubtotal.toFixed(2)}</span>
+              {/* Totals & Submit Buttons */}
+              <div className="p-3 sm:p-4 border-t border-slate-200 bg-slate-50 space-y-2 shrink-0">
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Subtotal:</span>
+                    <span className="font-mono font-bold">{settings.currency} {cartSubtotal.toFixed(2)}</span>
                   </div>
-                  {discountPercent > 0 && (
-                    <div className="flex justify-between text-rose-600 font-medium">
-                      <span>Discount ({discountPercent}%)</span>
-                      <span className="font-mono">-{settings.currency} {cartDiscountAmount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {serviceChargeActive && (
-                    <div className="flex justify-between text-emerald-700 font-medium">
-                      <span>Service Charge ({settings.serviceChargeRate}%)</span>
-                      <span className="font-mono">+{settings.currency} {cartServiceCharge.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {taxActive && (
-                    <div className="flex justify-between text-indigo-700 font-medium">
-                      <span>Taxes ({settings.taxRate}%):</span>
-                      <span className="font-mono">+{settings.currency} {cartTax.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
-                    <span>Grand Total</span>
-                    <span className="font-mono text-base text-[#ff5500]">{settings.currency} {cartGrandTotal.toFixed(2)}</span>
+                  <div className="flex justify-between font-black text-sm text-slate-900 pt-1 border-t border-slate-200">
+                    <span>Grand Total:</span>
+                    <span className="font-mono text-base text-[#ff5500]">
+                      {settings.currency} {cartGrandTotal.toFixed(2)}
+                    </span>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  disabled={cart.length === 0}
-                  onClick={handleSendOrder}
-                  className="w-full py-3 bg-[#ff5500] hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm shadow-orange-600/30 disabled:opacity-40 cursor-pointer"
-                >
-                  <Send className="h-4 w-4" />
-                  <span>{settlingOrder ? 'Save & Send Add-On (KOT / BOT)' : 'Send Order (Prints KOT / BOT)'}</span>
-                </button>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={cart.length === 0}
+                    onClick={() => {
+                      handleSendOrder();
+                      setMobileCartOpen(false);
+                    }}
+                    className="py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 disabled:opacity-40"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    <span>Send Order</span>
+                  </button>
 
-                <button
-                  type="button"
-                  disabled={cart.length === 0}
-                  onClick={() => {
-                    setPaymentMethod('CASH');
-                    setCheckoutModalOpen(true);
-                  }}
-                  className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer"
-                >
-                  <Receipt className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Direct Settle &amp; Pay ({settings.currency} {cartGrandTotal.toFixed(2)})</span>
-                </button>
+                  <button
+                    type="button"
+                    disabled={cart.length === 0}
+                    onClick={() => {
+                      setPaymentMethod('CASH');
+                      setCheckoutModalOpen(true);
+                      setMobileCartOpen(false);
+                    }}
+                    className="py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 disabled:opacity-40"
+                  >
+                    <Receipt className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Settle Bill</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -4701,7 +4410,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         }}
                         className="space-y-3"
                       >
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="block text-[10px] font-extrabold uppercase text-slate-500 mb-1">
                               Amount ({settings.currency})
@@ -6310,7 +6019,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       {/* EDIT MENU ITEM MODAL */}
       {isEditModalOpen && editingMenuItem && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-lg p-4 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <h3 className="text-base font-black text-slate-900">Edit Dish / Item</h3>
@@ -6352,7 +6061,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               }}
               className="mt-4 space-y-4"
             >
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Item Name</label>
                   <input
@@ -6378,7 +6087,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
                   <select
@@ -6977,7 +6686,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               }}
               className="mt-4 space-y-4"
             >
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Item Name</label>
                   <input
@@ -7003,7 +6712,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
                   <select
@@ -7088,45 +6797,80 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
 
               {/* RECIPE INGREDIENT BOM BUILDER */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+              <div className="p-3 sm:p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                 <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <BookOpen className="h-3.5 w-3.5 text-[#ff5500]" /> Link Recipe Ingredients (BOM)
                 </span>
-                <div className="flex gap-2">
-                  <select id="editDishIngSelect" className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900">
+
+                {/* Stacks vertically on mobile (flex-col), inline on tablets & desktop (sm:flex-row) */}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={editDishBomInput.ingredientId || (inventory[0]?.id || '')}
+                    onChange={(e) => setEditDishBomInput(prev => ({ ...prev, ingredientId: e.target.value }))}
+                    className="w-full sm:flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                  >
                     {inventory.map(ing => (
-                      <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                      <option key={ing.id} value={ing.id} style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>
+                        {ing.name} ({ing.unit})
+                      </option>
                     ))}
                   </select>
-                  <input
-                    id="editDishIngAmount"
-                    type="number"
-                    min="0.1"
-                    step="any"
-                    placeholder="Qty/portion"
-                    className="w-28 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sel = document.getElementById('editDishIngSelect');
-                      const amtInput = document.getElementById('editDishIngAmount');
-                      const ingId = sel?.value;
-                      const amt = parseFloat(amtInput?.value);
-                      if (!ingId || isNaN(amt) || amt <= 0) return;
 
-                      setEditingMenuItem(prev => ({
-                        ...prev,
-                        recipe: [...(prev.recipe || []), { ingredientId: ingId, amount: amt }]
-                      }));
-                      if (amtInput) amtInput.value = '';
-                    }}
-                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    + Add
-                  </button>
+                  {/* Quantity input & Add button paired together */}
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="any"
+                      value={editDishBomInput.amount}
+                      onChange={(e) => setEditDishBomInput(prev => ({ ...prev, amount: e.target.value }))}
+                      placeholder="Qty/portion"
+                      className="flex-1 sm:w-28 px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        const ingId = editDishBomInput.ingredientId || (inventory[0]?.id || '');
+                        const amt = parseFloat(editDishBomInput.amount);
+
+                        if (!ingId) {
+                          alert('Please select an ingredient.');
+                          return;
+                        }
+                        if (isNaN(amt) || amt <= 0) {
+                          alert('Please enter a valid quantity greater than 0.');
+                          return;
+                        }
+
+                        setEditingMenuItem(prev => {
+                          const currentRecipe = Array.isArray(prev.recipe) ? [...prev.recipe] : [];
+                          const existingIdx = currentRecipe.findIndex(r => r.ingredientId === ingId);
+
+                          if (existingIdx >= 0) {
+                            currentRecipe[existingIdx] = {
+                              ...currentRecipe[existingIdx],
+                              amount: Number((currentRecipe[existingIdx].amount + amt).toFixed(2))
+                            };
+                            return { ...prev, recipe: currentRecipe };
+                          } else {
+                            return { ...prev, recipe: [...currentRecipe, { ingredientId: ingId, amount: amt }] };
+                          }
+                        });
+
+                        setEditDishBomInput(prev => ({ ...prev, amount: '' }));
+                      }}
+                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
+                    >
+                      + Add
+                    </button>
+                  </div>
                 </div>
-
+                
                 {editingMenuItem.recipe && editingMenuItem.recipe.length > 0 && (
                   <div className="space-y-1 max-h-28 overflow-y-auto">
                     {editingMenuItem.recipe.map((r, i) => {
@@ -7184,7 +6928,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             if (e.target === e.currentTarget) setAddItemModalOpen(false);
           }}
         >
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 relative max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-lg p-4 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Plus className="h-5 w-5 text-[#ff5500]" />
@@ -7242,7 +6986,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               }}
               className="mt-4 space-y-4"
             >
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Dish Name *</label>
                   <input
@@ -7271,7 +7015,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Department</label>
                   <select
@@ -7298,7 +7042,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Prep Time</label>
                   <input
@@ -7357,43 +7101,78 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
 
               {/* RECIPE BOM BUILDER */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+              <div className="p-3 sm:p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                 <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <BookOpen className="h-3.5 w-3.5 text-[#ff5500]" /> Link Recipe Ingredients (BOM)
                 </span>
-                <div className="flex gap-2">
-                  <select id="newDishIngSelect" className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900">
+
+                {/* Stacks vertically on mobile (flex-col), inline on tablets & desktop (sm:flex-row) */}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={newBomSelect.ingredientId || (inventory[0]?.id || '')}
+                    onChange={(e) => setNewBomSelect(prev => ({ ...prev, ingredientId: e.target.value }))}
+                    className="w-full sm:flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                  >
                     {inventory.map(ing => (
-                      <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                      <option key={ing.id} value={ing.id} style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>
+                        {ing.name} ({ing.unit})
+                      </option>
                     ))}
                   </select>
-                  <input
-                    id="newDishIngAmount"
-                    type="number"
-                    min="0.1"
-                    step="any"
-                    placeholder="Qty/portion"
-                    className="w-28 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sel = document.getElementById('newDishIngSelect');
-                      const amtInput = document.getElementById('newDishIngAmount');
-                      const ingId = sel?.value;
-                      const amt = parseFloat(amtInput?.value);
-                      if (!ingId || isNaN(amt) || amt <= 0) return;
 
-                      setNewDishForm(prev => ({
-                        ...prev,
-                        recipeIngredients: [...(prev.recipeIngredients || []), { ingredientId: ingId, amount: amt }]
-                      }));
-                      if (amtInput) amtInput.value = '';
-                    }}
-                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    + Add
-                  </button>
+                  {/* Quantity input & Add button paired together */}
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="any"
+                      value={newBomSelect.amount}
+                      onChange={(e) => setNewBomSelect(prev => ({ ...prev, amount: e.target.value }))}
+                      placeholder="Qty/portion"
+                      className="flex-1 sm:w-28 px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        const ingId = newBomSelect.ingredientId || (inventory[0]?.id || '');
+                        const amt = parseFloat(newBomSelect.amount);
+
+                        if (!ingId) {
+                          alert('Please select an ingredient from the list.');
+                          return;
+                        }
+                        if (isNaN(amt) || amt <= 0) {
+                          alert('Please enter a valid quantity greater than 0.');
+                          return;
+                        }
+
+                        setNewDishForm(prev => {
+                          const currentList = Array.isArray(prev.recipeIngredients) ? [...prev.recipeIngredients] : [];
+                          const existingIdx = currentList.findIndex(r => r.ingredientId === ingId);
+
+                          if (existingIdx >= 0) {
+                            currentList[existingIdx] = {
+                              ...currentList[existingIdx],
+                              amount: Number((currentList[existingIdx].amount + amt).toFixed(2))
+                            };
+                            return { ...prev, recipeIngredients: currentList };
+                          } else {
+                            return { ...prev, recipeIngredients: [...currentList, { ingredientId: ingId, amount: amt }] };
+                          }
+                        });
+
+                        setNewBomSelect(prev => ({ ...prev, amount: '' }));
+                      }}
+                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
+                    >
+                      + Add
+                    </button>
+                  </div>
                 </div>
 
                 {newDishForm.recipeIngredients && newDishForm.recipeIngredients.length > 0 && (
@@ -8304,7 +8083,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Role / Access Level</label>
                   <select
@@ -8463,7 +8242,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
                   <select
@@ -8609,7 +8388,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Qty Received ({inventoryMap[receiveStockForm.ingredientId]?.unit || 'units'})
@@ -8642,7 +8421,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Supplier / Vendor</label>
                   <input
@@ -8740,7 +8519,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Floor Zone</label>
                   <select
@@ -8833,7 +8612,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
                   <select
@@ -8944,7 +8723,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             }
           }}
         >
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 relative max-h-[90vh] overflow-y-auto space-y-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-lg p-4 sm:p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Sliders className="h-5 w-5 text-[#ff5500]" />
@@ -9002,17 +8781,19 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             })()}
 
             {/* Add Ingredient Bar */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+            <div className="p-3 sm:p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
               <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <BookOpen className="h-3.5 w-3.5 text-[#ff5500]" /> Select Raw Material to Add
               </span>
-              <div className="flex gap-2">
+
+              {/* Stacks vertically on phones (flex-col), inline on tablets & up (sm:flex-row) */}
+              <div className="flex flex-col sm:flex-row gap-2">
                 <select
                   value={tempIngredientSelect.ingredientId || inventory[0]?.id || ''}
                   onChange={(e) =>
                     setTempIngredientSelect((prev) => ({ ...prev, ingredientId: e.target.value }))
                   }
-                  className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  className="w-full sm:flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
                   style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
                 >
                   {inventory.map((ing) => (
@@ -9022,25 +8803,28 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   ))}
                 </select>
 
-                <input
-                  type="number"
-                  min="0.01"
-                  step="any"
-                  value={tempIngredientSelect.amount}
-                  onChange={(e) =>
-                    setTempIngredientSelect((prev) => ({ ...prev, amount: e.target.value }))
-                  }
-                  placeholder="Qty/portion"
-                  className="w-28 px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
-                />
+                {/* Sub-row for Qty and Button: fills the line on mobile, snaps inline on desktop */}
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="any"
+                    value={tempIngredientSelect.amount}
+                    onChange={(e) =>
+                      setTempIngredientSelect((prev) => ({ ...prev, amount: e.target.value }))
+                    }
+                    placeholder="Qty/portion"
+                    className="flex-1 sm:w-28 px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  />
 
-                <button
-                  type="button"
-                  onClick={handleAddIngredientToRecipe}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
-                >
-                  + Add
-                </button>
+                  <button
+                    type="button"
+                    onClick={handleAddIngredientToRecipe}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
+                  >
+                    + Add
+                  </button>
+                </div>
               </div>
             </div>
 
