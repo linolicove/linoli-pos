@@ -2315,25 +2315,38 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </header>
 
-{/* VIEW 1: POS TERMINAL (RESPONSIVE FOR MOBILE, TABS & DESKTOP) */}
+{/* VIEW 1: POS TERMINAL FRONT VIEW (MOBILE, TAB & DESKTOP COMPATIBLE) */}
         {activeTab === 'pos' && (
-          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
-            
-            {/* Catalog Area (Full width on mobile/tablet, flex-1 on desktop) */}
-            <div className="flex-1 flex flex-col p-3 sm:p-5 overflow-hidden min-h-0">
+          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-slate-100 min-h-0">
+            {/* LEFT / CENTER: MENU ITEMS CATALOG */}
+            <div className="flex-1 flex flex-col p-3 sm:p-4 overflow-hidden min-h-0">
               
-              {/* Top Category & Filter Bar */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2 sm:p-2.5 mb-3 sm:mb-4 shrink-0 shadow-md flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-                
-                {/* Horizontal Scrollable Categories */}
+              {/* TOP DARK CATEGORY & SEARCH BAR */}
+              <div className="bg-[#0f172a] rounded-2xl p-2.5 mb-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-3 shrink-0 shadow-sm">
+                {/* Horizontal Category Pills */}
                 <div 
-                  className="flex-1 min-w-0 overflow-x-auto pb-1 pt-0.5 scrollbar-thin flex items-center gap-1.5 sm:gap-2"
+                  className="flex-1 flex items-center gap-2 overflow-x-auto no-scrollbar scrollbar-none py-0.5"
                   style={{ WebkitOverflowScrolling: 'touch' }}
                 >
-                  {categoriesList.map((cat) => {
-                    const count = cat === 'All' 
-                      ? menuItems.length 
-                      : menuItems.filter(m => m.category === cat).length;
+                  {/* ALL PILL */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCategory('All')}
+                    className={`px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-black uppercase tracking-wider shrink-0 flex items-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
+                      selectedCategory === 'All'
+                        ? 'bg-[#ff5500] text-white shadow-xs'
+                        : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                    }`}
+                  >
+                    <span>ALL</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-black/30 text-white">
+                      {menuItems.length}
+                    </span>
+                  </button>
+
+                  {/* DYNAMIC CATEGORY PILLS */}
+                  {categoriesList.filter(c => c !== 'All').map(cat => {
+                    const count = menuItems.filter(m => m.category === cat).length;
                     const isSelected = selectedCategory === cat;
 
                     return (
@@ -2341,16 +2354,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         key={cat}
                         type="button"
                         onClick={() => setSelectedCategory(cat)}
-                        className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl font-black text-[11px] sm:text-xs uppercase tracking-wider shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                        className={`px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-black uppercase tracking-wider shrink-0 flex items-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-[#ff5500] text-white shadow-xs'
                             : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
                         }`}
                       >
                         <span>{cat}</span>
-                        <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                          isSelected ? 'bg-black/30 text-white' : 'bg-slate-900 text-slate-400'
-                        }`}>
+                        <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-black/30 text-slate-300">
                           {count}
                         </span>
                       </button>
@@ -2358,44 +2369,44 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   })}
                 </div>
 
-                {/* Search Bar & View Mode Toggle */}
+                {/* VIEW SWITCHER & SEARCH INPUT */}
                 <div className="flex items-center gap-2 shrink-0">
-                  <div className="relative flex-1 sm:w-44 lg:w-48">
+                  <div className="hidden sm:flex items-center gap-1 text-slate-400">
+                    <button 
+                      type="button" 
+                      onClick={() => setPosViewMode('grid')}
+                      className={`p-1.5 rounded-lg ${posViewMode === 'grid' ? 'bg-[#ff5500] text-white' : 'hover:bg-slate-800 text-slate-400'}`}
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setPosViewMode('compact')}
+                      className={`p-1.5 rounded-lg ${posViewMode === 'compact' ? 'bg-[#ff5500] text-white' : 'hover:bg-slate-800 text-slate-400'}`}
+                    >
+                      <Grid className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="relative flex-1 sm:w-56">
                     <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
                       value={menuSearchQuery}
                       onChange={e => setMenuSearchQuery(e.target.value)}
-                      placeholder="Search menu..."
-                      className="w-full pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#ff5500]"
+                      placeholder="Search items..."
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-800/80 border border-slate-700/60 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-none focus:border-[#ff5500]"
                     />
-                  </div>
-
-                  {/* Density switcher (Hidden on smallest mobile screens to save space) */}
-                  <div className="hidden sm:flex items-center bg-slate-800 border border-slate-700 rounded-xl p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setPosViewMode('grid')}
-                      className={`p-1.5 rounded-lg ${posViewMode === 'grid' ? 'bg-[#ff5500] text-white' : 'text-slate-400'}`}
-                      title="Grid"
-                    >
-                      <LayoutGrid className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPosViewMode('compact')}
-                      className={`p-1.5 rounded-lg ${posViewMode === 'compact' ? 'bg-[#ff5500] text-white' : 'text-slate-400'}`}
-                      title="Compact"
-                    >
-                      <Grid className="h-3.5 w-3.5" />
-                    </button>
                   </div>
                 </div>
               </div>
 
-              {/* Responsive Dishes Grid */}
-              <div className="flex-1 overflow-y-auto pr-0 sm:pr-1 min-h-0 pb-20 lg:pb-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2.5 sm:gap-3.5">
+              {/* RESPONSIVE ITEM CARDS GRID: 2 cols on mobile -> 3-4 on tablet -> 5-6 on desktop */}
+              <div 
+                className="flex-1 overflow-y-auto pr-1"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+              >
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5 sm:gap-3 pb-6">
                   {menuItems
                     .filter(item => {
                       const matchCat = selectedCategory === 'All' || item.category === selectedCategory;
@@ -2404,50 +2415,63 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     })
                     .map(dish => {
                       const { cogs, portions } = calculateDishAvailability(dish.recipe);
+                      const isBar = dish.department === 'Bar';
                       const isInCart = cart.some(i => i.id === dish.id);
 
                       return (
                         <div
                           key={dish.id}
                           onClick={() => handleAddToCart(dish)}
-                          className={`bg-white rounded-2xl border-2 cursor-pointer active:scale-95 transition-all flex flex-col justify-between overflow-hidden shadow-xs hover:shadow-md ${
+                          className={`bg-white rounded-2xl border p-2.5 sm:p-3 flex flex-col justify-between cursor-pointer transition-all hover:shadow-md active:scale-98 min-h-[135px] sm:min-h-[145px] ${
                             isInCart
-                              ? 'border-[#ff5500] ring-2 ring-[#ff5500]/25'
-                              : 'border-slate-200'
+                              ? 'border-[#ff5500] ring-2 ring-[#ff5500]/20 shadow-xs'
+                              : 'border-slate-200 shadow-2xs hover:border-slate-300'
                           }`}
                         >
-                          {dish.imageUrl ? (
-                            <div className="relative h-20 sm:h-24 w-full bg-slate-100 overflow-hidden shrink-0">
-                              <img src={dish.imageUrl} alt={dish.name} className="w-full h-full object-cover" />
-                              <span className="absolute bottom-1.5 right-1.5 px-2 py-0.5 rounded-md bg-black/80 text-white font-mono font-black text-[10px] sm:text-xs">
-                                {settings.currency} {dish.price.toFixed(0)}
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="p-2 sm:p-2.5 pb-0 flex justify-between items-center">
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-                                {dish.department}
-                              </span>
-                              <span className="text-[11px] sm:text-xs font-mono font-black text-[#ff5500]">
-                                {settings.currency} {dish.price.toFixed(0)}
-                              </span>
-                            </div>
-                          )}
+                          {/* Top Row: Department Tag & Price */}
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                              isBar 
+                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
+                                : 'bg-rose-50 text-rose-700 border border-rose-200'
+                            }`}>
+                              {dish.department || 'KITCHEN'}
+                            </span>
+                            <span className="font-mono font-bold text-xs text-amber-700">
+                              {settings.currency} {dish.price.toFixed(2)}
+                            </span>
+                          </div>
 
-                          <div className="p-2 sm:p-2.5 flex-1 flex flex-col justify-center">
-                            <h4 className="font-black text-xs sm:text-sm text-slate-900 line-clamp-2 leading-tight">
+                          {/* Center: Dish Name & Category */}
+                          <div className="my-1.5 sm:my-2">
+                            <h4 className="font-black text-xs text-slate-900 leading-tight line-clamp-2">
                               {dish.name}
                             </h4>
-                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5 truncate">
                               {dish.category}
                             </p>
                           </div>
 
-                          <div className="p-2 border-t border-slate-100 flex items-center justify-between text-[10px] bg-slate-50/70">
-                            <span className={portions <= 0 ? 'text-amber-600 font-bold' : 'text-emerald-700 font-bold'}>
-                              {portions <= 0 ? '0 left' : `${portions} ready`}
+                          {/* Bottom Row: Portions Ready & BOM Cost */}
+                          <div className="flex items-center justify-between text-[10px] pt-1.5 border-t border-slate-100">
+                            <span className={`flex items-center gap-1 font-bold ${
+                              portions <= 0 
+                                ? 'text-amber-600' 
+                                : 'text-emerald-700'
+                            }`}>
+                              {portions <= 0 ? (
+                                <>
+                                  <AlertTriangle className="h-3 w-3" />
+                                  <span>0 ready</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="h-3 w-3 stroke-[3]" />
+                                  <span>{portions} ready</span>
+                                </>
+                              )}
                             </span>
-                            <span className="text-slate-400 font-mono">
+                            <span className="text-slate-400 font-mono text-[9px]">
                               BOM: {settings.currency} {cogs.toFixed(0)}
                             </span>
                           </div>
@@ -2458,131 +2482,179 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-            {/* Mobile / Tablet Floating Cart Bar (Shows on screens < lg) */}
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-30 p-3 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-xl flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => setMobileCartOpen(true)}
-                className="flex-1 py-2.5 px-4 bg-slate-900 text-white rounded-xl font-black text-xs flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <Receipt className="h-4 w-4 text-[#ff5500]" />
-                  <span>View Ticket ({cart.reduce((a, b) => a + b.qty, 0)} items)</span>
-                </div>
-                <span className="font-mono text-[#ff5500] text-sm font-black">
-                  {settings.currency} {cartGrandTotal.toFixed(2)}
+            {/* RIGHT: ORDER ASSIGNMENT & TICKET PANEL (w-full on mobile, w-[360px] on desktop) */}
+            <div className="w-full lg:w-[360px] max-h-[48vh] lg:max-h-full bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col justify-between shrink-0 shadow-sm">
+              {/* TOP HEADER CONTROLS */}
+              <div className="p-3 sm:p-4 space-y-2.5 sm:space-y-3.5 border-b border-slate-100 overflow-y-auto">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                  ORDER ASSIGNMENT
                 </span>
-              </button>
 
-              <button
-                type="button"
-                disabled={cart.length === 0}
-                onClick={handleSendOrder}
-                className="py-2.5 px-4 bg-[#ff5500] hover:bg-orange-600 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-sm disabled:opacity-40 cursor-pointer"
-              >
-                <Send className="h-4 w-4" />
-                <span>Send</span>
-              </button>
-            </div>
-
-            {/* Backdrop for Mobile Ticket Slide-Up */}
-            {mobileCartOpen && (
-              <div 
-                onClick={() => setMobileCartOpen(false)}
-                className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-2xs z-40"
-              />
-            )}
-
-            {/* Ticket Drawer: Regular Sidebar on Desktop (lg+), Slide-Up Modal Drawer on Mobile/Tablet */}
-            <div className={`
-              fixed lg:static inset-x-0 bottom-0 z-50 lg:z-auto
-              w-full lg:w-96 max-h-[85vh] lg:max-h-full
-              bg-white border-t lg:border-t-0 lg:border-l border-slate-200
-              flex flex-col justify-between shrink-0 shadow-2xl lg:shadow-none
-              rounded-t-3xl lg:rounded-none transition-transform duration-300 ease-in-out
-              ${mobileCartOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}
-            `}>
-              
-              {/* Mobile Drawer Close Header */}
-              <div className="lg:hidden flex items-center justify-between p-3 border-b border-slate-100">
-                <span className="font-black text-xs uppercase text-slate-800">Current Order Ticket</span>
-                <button
-                  type="button"
-                  onClick={() => setMobileCartOpen(false)}
-                  className="p-1 text-slate-400 hover:text-slate-900 rounded-lg"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Ticket Controls (Table selector, Dining/Takeaway, Discounts) */}
-              <div className="p-3 sm:p-3.5 border-b border-slate-200 space-y-2.5 shrink-0 bg-white">
-                {/* Dining / Takeaway Selector */}
+                {/* Dine-In vs Takeaway Buttons */}
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setOrderMode('DINING')}
-                    className={`flex items-center justify-between px-2.5 py-1.5 sm:py-2 rounded-xl border text-xs font-bold ${
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                       orderMode === 'DINING'
-                        ? 'bg-orange-50 border-[#ff5500] text-slate-900'
-                        : 'bg-slate-50 border-slate-200 text-slate-500'
+                        ? 'border-[#ff5500] bg-white text-slate-900 ring-2 ring-[#ff5500]/10'
+                        : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
                     }`}
                   >
-                    <span>Dine-In</span>
-                    {orderMode === 'DINING' && <Check className="h-3 w-3 text-[#ff5500]" />}
+                    <div className="flex items-center gap-1.5">
+                      <LayoutGrid className="h-3.5 w-3.5 text-[#ff5500]" />
+                      <span>Dine-In Table</span>
+                    </div>
+                    {orderMode === 'DINING' && (
+                      <span className="h-4 w-4 rounded-full bg-[#ff5500] text-white flex items-center justify-center text-[10px]">
+                        ✓
+                      </span>
+                    )}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setOrderMode('TAKEAWAY')}
-                    className={`flex items-center justify-between px-2.5 py-1.5 sm:py-2 rounded-xl border text-xs font-bold ${
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                       orderMode === 'TAKEAWAY'
-                        ? 'bg-orange-50 border-[#ff5500] text-slate-900'
-                        : 'bg-slate-50 border-slate-200 text-slate-500'
+                        ? 'border-[#ff5500] bg-white text-slate-900 ring-2 ring-[#ff5500]/10'
+                        : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
                     }`}
                   >
-                    <span>Takeaway</span>
-                    {orderMode === 'TAKEAWAY' && <Check className="h-3 w-3 text-[#ff5500]" />}
+                    <div className="flex items-center gap-1.5">
+                      <ShoppingBag className="h-3.5 w-3.5 text-slate-400" />
+                      <span>Takeaway</span>
+                    </div>
+                    {orderMode === 'TAKEAWAY' ? (
+                      <span className="h-4 w-4 rounded-full bg-[#ff5500] text-white flex items-center justify-center text-[10px]">
+                        ✓
+                      </span>
+                    ) : (
+                      <span className="h-4 w-4 rounded-full border border-slate-300" />
+                    )}
                   </button>
                 </div>
 
-                {/* Table Picker */}
+                {/* Assigned Table & Guest Selector */}
                 {orderMode === 'DINING' && (
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedTable.id}
-                      onChange={e => {
-                        const tbl = floorTables.find(t => t.id === e.target.value);
-                        if (tbl) setSelectedTable(tbl);
-                      }}
-                      className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                    >
-                      {floorTables.map(t => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} ({t.capacity}p) - [{t.status}]
-                        </option>
-                      ))}
-                    </select>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[11px] font-bold text-slate-700">Assigned Table:</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setActiveTab('floor')}
+                        className="text-[10px] font-bold text-[#ff5500] hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <LayoutGrid className="h-3 w-3" />
+                        <span>View Floor Map</span>
+                      </button>
+                    </div>
 
-                    <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-xs">
-                      <button onClick={() => setGuestCount(Math.max(1, guestCount - 1))} className="font-bold px-1 text-slate-500">-</button>
-                      <span className="font-bold font-mono px-1">{guestCount}p</span>
-                      <button onClick={() => setGuestCount(guestCount + 1)} className="font-bold px-1 text-slate-500">+</button>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selectedTable.id}
+                        onChange={e => {
+                          const tbl = floorTables.find(t => t.id === e.target.value);
+                          if (tbl) setSelectedTable(tbl);
+                        }}
+                        className="flex-1 px-3 py-1.5 sm:py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#ff5500] cursor-pointer"
+                      >
+                        {floorTables.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} - {t.capacity} Seats [{t.status}]
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className="flex items-center bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-xs text-slate-700 font-mono font-bold">
+                        <button 
+                          type="button" 
+                          onClick={() => setGuestCount(Math.max(1, guestCount - 1))}
+                          className="px-1 text-slate-400 hover:text-slate-900"
+                        >
+                          -
+                        </button>
+                        <span className="px-1">{guestCount}p</span>
+                        <button 
+                          type="button" 
+                          onClick={() => setGuestCount(guestCount + 1)}
+                          className="px-1 text-slate-400 hover:text-slate-900"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
+
+                {/* Service Charge & Tax Toggle Buttons */}
+                <div className="grid grid-cols-2 gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setServiceChargeEnabled(!serviceChargeEnabled)}
+                    className={`py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                      serviceChargeEnabled
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                        : 'border-slate-200 bg-slate-50 text-slate-400'
+                    }`}
+                  >
+                    Service (10%): {serviceChargeEnabled ? 'ON' : 'OFF'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTaxEnabled(!taxEnabled)}
+                    className={`py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                      taxEnabled
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                        : 'border-slate-200 bg-slate-50 text-slate-400'
+                    }`}
+                  >
+                    Tax (8%): {taxEnabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                {/* Discount Pills */}
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">
+                    DISCOUNT:
+                  </span>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {[0, 5, 10, 15, 20].map(disc => (
+                      <button
+                        key={disc}
+                        type="button"
+                        onClick={() => setDiscountPercent(disc)}
+                        className={`py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          discountPercent === disc
+                            ? 'bg-[#0f172a] text-white shadow-xs'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {disc === 0 ? 'None' : `${disc}%`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              {/* Cart Line Items */}
-              <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 max-h-52 lg:max-h-none min-h-0">
+              {/* TICKET ITEMS LIST / EMPTY STATE */}
+              <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 min-h-0 max-h-40 lg:max-h-none">
                 {cart.length === 0 ? (
-                  <div className="py-6 text-center text-slate-400 text-xs italic">
-                    Ticket is empty. Tap menu items to add.
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2 py-6">
+                    <div className="p-2.5 bg-slate-50 rounded-2xl border border-slate-100">
+                      <Monitor className="h-6 w-6 text-slate-300 stroke-[1.5]" />
+                    </div>
+                    <p className="font-bold text-xs text-slate-600">Ticket is empty</p>
+                    <p className="text-[11px] text-slate-400">Tap items to build order.</p>
                   </div>
                 ) : (
                   cart.map(item => (
-                    <div key={item.cartItemId} className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                      <div>
+                    <div 
+                      key={item.cartItemId} 
+                      className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between"
+                    >
+                      <div className="space-y-0.5">
                         <p className="text-xs font-bold text-slate-900 leading-tight">{item.name}</p>
                         <span className="text-[11px] font-mono text-[#ff5500] font-bold">
                           {settings.currency} {(item.price * item.qty).toFixed(2)}
@@ -2593,7 +2665,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         <button
                           type="button"
                           onClick={() => handleDecrementCartItem(item)}
-                          className="h-6 w-6 bg-white border border-slate-200 rounded-md font-bold text-xs"
+                          className="h-6 w-6 bg-white border border-slate-200 rounded-md font-bold text-xs hover:bg-slate-100 cursor-pointer"
                         >
                           -
                         </button>
@@ -2601,14 +2673,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         <button
                           type="button"
                           onClick={() => handleIncrementCartItem(item)}
-                          className="h-6 w-6 bg-white border border-slate-200 rounded-md font-bold text-xs"
+                          className="h-6 w-6 bg-white border border-slate-200 rounded-md font-bold text-xs hover:bg-slate-100 cursor-pointer"
                         >
                           +
                         </button>
                         <button
                           type="button"
                           onClick={() => handleRemoveCartItem(item)}
-                          className="p-1 text-slate-400 hover:text-rose-600"
+                          className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -2618,33 +2690,43 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 )}
               </div>
 
-              {/* Totals & Submit Buttons */}
-              <div className="p-3 sm:p-4 border-t border-slate-200 bg-slate-50 space-y-2 shrink-0">
+              {/* BOTTOM TOTALS & CHECKOUT ACTIONS */}
+              <div className="p-3 sm:p-4 border-t border-slate-100 bg-white space-y-2 shrink-0">
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between text-slate-600">
-                    <span>Subtotal:</span>
+                    <span>Subtotal</span>
                     <span className="font-mono font-bold">{settings.currency} {cartSubtotal.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between font-black text-sm text-slate-900 pt-1 border-t border-slate-200">
-                    <span>Grand Total:</span>
+                  {serviceChargeEnabled && (
+                    <div className="flex justify-between text-emerald-600">
+                      <span>Service Charge (10%)</span>
+                      <span className="font-mono font-bold">+{settings.currency} {cartServiceCharge.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {taxEnabled && (
+                    <div className="flex justify-between text-slate-600">
+                      <span>Tax (8%)</span>
+                      <span className="font-mono font-bold">+{settings.currency} {cartTax.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-black text-sm text-slate-900 pt-1.5 border-t border-slate-100">
+                    <span>Grand Total</span>
                     <span className="font-mono text-base text-[#ff5500]">
                       {settings.currency} {cartGrandTotal.toFixed(2)}
                     </span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                {/* ACTION BUTTONS */}
+                <div className="space-y-1.5 pt-1">
                   <button
                     type="button"
                     disabled={cart.length === 0}
-                    onClick={() => {
-                      handleSendOrder();
-                      setMobileCartOpen(false);
-                    }}
-                    className="py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 disabled:opacity-40"
+                    onClick={handleSendOrder}
+                    className="w-full py-2.5 sm:py-3 bg-[#ff9966] hover:bg-[#ff8844] text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                   >
-                    <Send className="h-3.5 w-3.5" />
-                    <span>Send Order</span>
+                    <Send className="h-4 w-4" />
+                    <span>SEND ORDER (PRINTS KOT / BOT)</span>
                   </button>
 
                   <button
@@ -2653,12 +2735,11 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     onClick={() => {
                       setPaymentMethod('CASH');
                       setCheckoutModalOpen(true);
-                      setMobileCartOpen(false);
                     }}
-                    className="py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 disabled:opacity-40"
+                    className="w-full py-2 sm:py-2.5 bg-slate-400/80 hover:bg-slate-500 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                   >
-                    <Receipt className="h-3.5 w-3.5 text-emerald-400" />
-                    <span>Settle Bill</span>
+                    <Receipt className="h-4 w-4" />
+                    <span>Direct Settle &amp; Pay ({settings.currency} {cartGrandTotal.toFixed(2)})</span>
                   </button>
                 </div>
               </div>
@@ -6870,7 +6951,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     </button>
                   </div>
                 </div>
-                
+
                 {editingMenuItem.recipe && editingMenuItem.recipe.length > 0 && (
                   <div className="space-y-1 max-h-28 overflow-y-auto">
                     {editingMenuItem.recipe.map((r, i) => {
