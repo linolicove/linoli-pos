@@ -532,6 +532,71 @@ export default function App() {
   const [editingDishForRecipe, setEditingDishForRecipe] = useState(null);
   const [currentRecipeIngredients, setCurrentRecipeIngredients] = useState([]);
   const [tempIngredientSelect, setTempIngredientSelect] = useState({ ingredientId: '', amount: '' });
+  const [editDishBomInput, setEditDishBomInput] = useState({ ingredientId: '', amount: '' });
+  const handleAddIngredientToRecipe = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    const ingId = tempIngredientSelect.ingredientId || (inventory[0]?.id || '');
+    const amountVal = parseFloat(tempIngredientSelect.amount);
+
+    if (!ingId) {
+      alert('Please select an ingredient.');
+      return;
+    }
+
+    if (isNaN(amountVal) || amountVal <= 0) {
+      alert('Please enter a valid amount greater than 0.');
+      return;
+    }
+
+    setCurrentRecipeIngredients((prev) => {
+      const existingIndex = prev.findIndex((r) => r.ingredientId === ingId);
+      if (existingIndex >= 0) {
+        return prev.map((r, i) =>
+          i === existingIndex
+            ? { ...r, amount: Number((r.amount + amountVal).toFixed(2)) }
+            : r
+        );
+      }
+      return [...prev, { ingredientId: ingId, amount: amountVal }];
+    });
+
+    setTempIngredientSelect((prev) => ({ ...prev, amount: '' }));
+  };
+
+  const handleRemoveIngredientFromRecipe = (indexToRemove) => {
+    setCurrentRecipeIngredients((prev) =>
+      prev.filter((_, idx) => idx !== indexToRemove)
+    );
+  };
+
+  const handleSaveRecipeConfiguration = (e) => {
+    if (e) e.preventDefault();
+    if (!editingDishForRecipe) return;
+
+    setMenuItems((prev) =>
+      prev.map((dish) =>
+        dish.id === editingDishForRecipe.id
+          ? { ...dish, recipe: currentRecipeIngredients }
+          : dish
+      )
+    );
+
+    recordAuditLog(
+      'RECIPE_UPDATED',
+      editingDishForRecipe.id,
+      `Updated BOM recipe for ${editingDishForRecipe.name} (${currentRecipeIngredients.length} linked raw materials)`
+    );
+
+    setRecipeConfigModalOpen(false);
+    setEditingDishForRecipe(null);
+    setCurrentRecipeIngredients([]);
+    setTempIngredientSelect({ ingredientId: '', amount: '' });
+  };
+  
  // Refs to prevent premature uploads and re-render loops
   const isCloudSynced = useRef(false);
   const prevOrdersRef = useRef('');
@@ -6256,6 +6321,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 onClick={() => {
                   setIsEditModalOpen(false);
                   setEditingMenuItem(null);
+                  setEditDishBomInput({ ingredientId: '', amount: '' });
                 }}
                 className="text-slate-400 hover:text-slate-900 cursor-pointer"
               >
@@ -6282,6 +6348,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                 setIsEditModalOpen(false);
                 setEditingMenuItem(null);
+                setEditDishBomInput({ ingredientId: '', amount: '' });
               }}
               className="mt-4 space-y-4"
             >
@@ -6395,62 +6462,106 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              {/* RECIPE INGREDIENT BOM BUILDER */}
+              {/* RECIPE INGREDIENT BOM BUILDER (FIXED) */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                 <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <BookOpen className="h-3.5 w-3.5 text-[#ff5500]" /> Link Recipe Ingredients (BOM)
                 </span>
+                
                 <div className="flex gap-2">
-                  <select id="editDishIngSelect" className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900">
+                  <select
+                    value={editDishBomInput.ingredientId || (inventory[0]?.id || '')}
+                    onChange={(e) => setEditDishBomInput(prev => ({ ...prev, ingredientId: e.target.value }))}
+                    className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                    style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                  >
                     {inventory.map(ing => (
-                      <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                      <option key={ing.id} value={ing.id} style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>
+                        {ing.name} ({ing.unit})
+                      </option>
                     ))}
                   </select>
+
                   <input
-                    id="editDishIngAmount"
                     type="number"
-                    min="0.1"
+                    min="0.01"
                     step="any"
+                    value={editDishBomInput.amount}
+                    onChange={(e) => setEditDishBomInput(prev => ({ ...prev, amount: e.target.value }))}
                     placeholder="Qty/portion"
-                    className="w-28 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900"
+                    className="w-28 px-2.5 py-1.5 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
                   />
+
                   <button
                     type="button"
-                    onClick={() => {
-                      const sel = document.getElementById('editDishIngSelect');
-                      const amtInput = document.getElementById('editDishIngAmount');
-                      const ingId = sel?.value;
-                      const amt = parseFloat(amtInput?.value);
-                      if (!ingId || isNaN(amt) || amt <= 0) return;
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
 
-                      setEditingMenuItem(prev => ({
-                        ...prev,
-                        recipe: [...(prev.recipe || []), { ingredientId: ingId, amount: amt }]
-                      }));
-                      if (amtInput) amtInput.value = '';
+                      const ingId = editDishBomInput.ingredientId || inventory[0]?.id;
+                      const amt = parseFloat(editDishBomInput.amount);
+
+                      if (!ingId) {
+                        alert('Please select an ingredient.');
+                        return;
+                      }
+                      if (isNaN(amt) || amt <= 0) {
+                        alert('Please enter a valid amount greater than 0.');
+                        return;
+                      }
+
+                      setEditingMenuItem(prev => {
+                        const currentRecipe = Array.isArray(prev.recipe) ? [...prev.recipe] : [];
+                        const existingIdx = currentRecipe.findIndex(r => r.ingredientId === ingId);
+
+                        if (existingIdx >= 0) {
+                          currentRecipe[existingIdx] = {
+                            ...currentRecipe[existingIdx],
+                            amount: Number((currentRecipe[existingIdx].amount + amt).toFixed(2))
+                          };
+                          return { ...prev, recipe: currentRecipe };
+                        } else {
+                          return { ...prev, recipe: [...currentRecipe, { ingredientId: ingId, amount: amt }] };
+                        }
+                      });
+
+                      setEditDishBomInput(prev => ({ ...prev, amount: '' }));
                     }}
-                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 active:scale-95"
                   >
                     + Add
                   </button>
                 </div>
 
-                {editingMenuItem.recipe && editingMenuItem.recipe.length > 0 && (
-                  <div className="space-y-1 max-h-28 overflow-y-auto">
+                {editingMenuItem.recipe && editingMenuItem.recipe.length > 0 ? (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pt-1">
                     {editingMenuItem.recipe.map((r, i) => {
                       const matchedIng = inventory.find(inv => inv.id === r.ingredientId);
+                      const unitCost = matchedIng ? (matchedIng.cost * r.amount) : 0;
                       return (
-                        <div key={i} className="flex justify-between items-center text-xs p-1.5 bg-white rounded-lg border border-slate-200">
-                          <span className="font-bold text-slate-800">{matchedIng?.name || r.ingredientId}</span>
+                        <div key={`${r.ingredientId}_${i}`} className="flex justify-between items-center text-xs p-2 bg-white rounded-xl border border-slate-200">
+                          <div>
+                            <span className="font-bold text-slate-900">{matchedIng?.name || r.ingredientId}</span>
+                            <span className="text-[10px] text-slate-400 block font-mono">
+                              Cost: {settings.currency} {unitCost.toFixed(2)}
+                            </span>
+                          </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-slate-500">{r.amount} {matchedIng?.unit}</span>
+                            <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg text-xs">
+                              {r.amount} {matchedIng?.unit || 'units'}
+                            </span>
                             <button
                               type="button"
-                              onClick={() => setEditingMenuItem(prev => ({
-                                ...prev,
-                                recipe: prev.recipe.filter((_, idx) => idx !== i)
-                              }))}
-                              className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setEditingMenuItem(prev => ({
+                                  ...prev,
+                                  recipe: prev.recipe.filter((_, idx) => idx !== i)
+                                }));
+                              }}
+                              className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors cursor-pointer"
+                              title="Remove ingredient"
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
@@ -6459,6 +6570,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       );
                     })}
                   </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400 italic pt-1">No ingredients linked yet. Select an ingredient, enter qty, and click &ldquo;+ Add&rdquo;.</p>
                 )}
               </div>
 
@@ -6468,6 +6581,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   onClick={() => {
                     setIsEditModalOpen(false);
                     setEditingMenuItem(null);
+                    setEditDishBomInput({ ingredientId: '', amount: '' });
                   }}
                   className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-200 cursor-pointer"
                 >
@@ -8815,6 +8929,187 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      
+      {/* MODAL: CONFIGURE DISH RECIPE & BOM PORTIONS */}
+      {recipeConfigModalOpen && editingDishForRecipe && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 text-slate-900"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setRecipeConfigModalOpen(false);
+              setEditingDishForRecipe(null);
+            }
+          }}
+        >
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 relative max-h-[90vh] overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Sliders className="h-5 w-5 text-[#ff5500]" />
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Configure Recipe: {editingDishForRecipe.name}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Link raw inventory ingredients and set portion requirements
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecipeConfigModalOpen(false);
+                  setEditingDishForRecipe(null);
+                }}
+                className="text-slate-400 hover:text-slate-900 p-1 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Live Financial & Portion Projection */}
+            {(() => {
+              const { cogs, portions } = calculateDishAvailability(currentRecipeIngredients);
+              const margin =
+                editingDishForRecipe.price > 0
+                  ? (((editingDishForRecipe.price - cogs) / editingDishForRecipe.price) * 100).toFixed(1)
+                  : 0;
+
+              return (
+                <div className="grid grid-cols-3 gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Selling Price</span>
+                    <p className="font-mono font-black text-[#ff5500] text-sm mt-0.5">
+                      {settings.currency} {editingDishForRecipe.price.toFixed(2)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Total COGS</span>
+                    <p className="font-mono font-black text-slate-900 text-sm mt-0.5">
+                      {settings.currency} {cogs.toFixed(2)}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Gross Margin</span>
+                    <p className="font-mono font-black text-emerald-600 text-sm mt-0.5">
+                      {margin}% ({portions} left)
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Add Ingredient Bar */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <BookOpen className="h-3.5 w-3.5 text-[#ff5500]" /> Select Raw Material to Add
+              </span>
+              <div className="flex gap-2">
+                <select
+                  value={tempIngredientSelect.ingredientId || inventory[0]?.id || ''}
+                  onChange={(e) =>
+                    setTempIngredientSelect((prev) => ({ ...prev, ingredientId: e.target.value }))
+                  }
+                  className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                  style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                >
+                  {inventory.map((ing) => (
+                    <option key={ing.id} value={ing.id} style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>
+                      {ing.name} ({ing.stock} {ing.unit} in stock)
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  value={tempIngredientSelect.amount}
+                  onChange={(e) =>
+                    setTempIngredientSelect((prev) => ({ ...prev, amount: e.target.value }))
+                  }
+                  placeholder="Qty/portion"
+                  className="w-28 px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono bg-white text-slate-900 focus:outline-none focus:border-[#ff5500]"
+                />
+
+                <button
+                  type="button"
+                  onClick={handleAddIngredientToRecipe}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
+
+            {/* Ingredients Table */}
+            <div className="space-y-2">
+              <span className="font-black text-slate-400 uppercase tracking-wider text-[10px]">
+                Linked BOM Ingredients ({currentRecipeIngredients.length})
+              </span>
+
+              {currentRecipeIngredients.length === 0 ? (
+                <div className="p-6 text-center text-slate-400 italic text-xs border border-dashed border-slate-200 rounded-2xl">
+                  No ingredients configured for this dish yet. Select an ingredient above and tap &ldquo;+ Add&rdquo;.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {currentRecipeIngredients.map((item, idx) => {
+                    const ing = inventoryMap[item.ingredientId];
+                    const lineCost = ing ? ing.cost * item.amount : 0;
+                    return (
+                      <div
+                        key={`${item.ingredientId}_${idx}`}
+                        className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                      >
+                        <div>
+                          <p className="font-bold text-slate-900">{ing?.name || item.ingredientId}</p>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            Cost: {settings.currency} {lineCost.toFixed(2)} ({settings.currency} {ing?.cost || 0}/{ing?.unit || 'unit'})
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-800">
+                            {item.amount} {ing?.unit || 'units'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveIngredientFromRecipe(idx)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors"
+                            title="Remove Ingredient"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setRecipeConfigModalOpen(false);
+                  setEditingDishForRecipe(null);
+                }}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRecipeConfiguration}
+                className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
+              >
+                Save Recipe BOM
+              </button>
+            </div>
           </div>
         </div>
       )}
