@@ -2315,14 +2315,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </header>
 
-{/* VIEW 1: POS TERMINAL FRONT VIEW (MOBILE, TAB & DESKTOP COMPATIBLE) */}
+{/* VIEW 1: POS TERMINAL FRONT VIEW */}
         {activeTab === 'pos' && (
-          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-slate-100 min-h-0">
+          <div className="flex-1 flex overflow-hidden bg-slate-100">
             {/* LEFT / CENTER: MENU ITEMS CATALOG */}
-            <div className="flex-1 flex flex-col p-3 sm:p-4 overflow-hidden min-h-0">
+            <div className="flex-1 flex flex-col p-4 overflow-hidden min-h-0">
               
               {/* TOP DARK CATEGORY & SEARCH BAR */}
-              <div className="bg-[#0f172a] rounded-2xl p-2.5 mb-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-3 shrink-0 shadow-sm">
+              <div className="bg-[#0f172a] rounded-2xl p-2.5 mb-3 flex items-center justify-between gap-3 shrink-0 shadow-sm">
                 {/* Horizontal Category Pills */}
                 <div 
                   className="flex-1 flex items-center gap-2 overflow-x-auto no-scrollbar scrollbar-none py-0.5"
@@ -2332,7 +2332,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   <button
                     type="button"
                     onClick={() => setSelectedCategory('All')}
-                    className={`px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-black uppercase tracking-wider shrink-0 flex items-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
+                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider shrink-0 flex items-center gap-2 transition-all cursor-pointer ${
                       selectedCategory === 'All'
                         ? 'bg-[#ff5500] text-white shadow-xs'
                         : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
@@ -2354,7 +2354,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         key={cat}
                         type="button"
                         onClick={() => setSelectedCategory(cat)}
-                        className={`px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-black uppercase tracking-wider shrink-0 flex items-center gap-1.5 sm:gap-2 transition-all cursor-pointer ${
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider shrink-0 flex items-center gap-2 transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-[#ff5500] text-white shadow-xs'
                             : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
@@ -2371,7 +2371,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                 {/* VIEW SWITCHER & SEARCH INPUT */}
                 <div className="flex items-center gap-2 shrink-0">
-                  <div className="hidden sm:flex items-center gap-1 text-slate-400">
+                  <div className="flex items-center gap-1 text-slate-400">
                     <button 
                       type="button" 
                       onClick={() => setPosViewMode('grid')}
@@ -2386,27 +2386,33 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     >
                       <Grid className="h-4 w-4" />
                     </button>
+                    <button 
+                      type="button"
+                      className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400"
+                    >
+                      <Layers className="h-4 w-4" />
+                    </button>
                   </div>
 
-                  <div className="relative flex-1 sm:w-56">
+                  <div className="relative w-56">
                     <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
                       value={menuSearchQuery}
                       onChange={e => setMenuSearchQuery(e.target.value)}
-                      placeholder="Search items..."
+                      placeholder="Search 150+ items..."
                       className="w-full pl-8 pr-3 py-1.5 bg-slate-800/80 border border-slate-700/60 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-none focus:border-[#ff5500]"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* RESPONSIVE ITEM CARDS GRID: 2 cols on mobile -> 3-4 on tablet -> 5-6 on desktop */}
+              {/* 6-COLUMN ITEM CARDS GRID */}
               <div 
                 className="flex-1 overflow-y-auto pr-1"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5 sm:gap-3 pb-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 pb-6">
                   {menuItems
                     .filter(item => {
                       const matchCat = selectedCategory === 'All' || item.category === selectedCategory;
@@ -2422,7 +2428,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         <div
                           key={dish.id}
                           onClick={() => handleAddToCart(dish)}
-                          className={`bg-white rounded-2xl border p-2.5 sm:p-3 flex flex-col justify-between cursor-pointer transition-all hover:shadow-md active:scale-98 min-h-[135px] sm:min-h-[145px] ${
+                          className={`bg-white rounded-2xl border p-3 flex flex-col justify-between cursor-pointer transition-all hover:shadow-md active:scale-98 min-h-[145px] ${
                             isInCart
                               ? 'border-[#ff5500] ring-2 ring-[#ff5500]/20 shadow-xs'
                               : 'border-slate-200 shadow-2xs hover:border-slate-300'
@@ -2443,7 +2449,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           </div>
 
                           {/* Center: Dish Name & Category */}
-                          <div className="my-1.5 sm:my-2">
+                          <div className="my-2">
                             <h4 className="font-black text-xs text-slate-900 leading-tight line-clamp-2">
                               {dish.name}
                             </h4>
@@ -2482,10 +2488,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-            {/* RIGHT: ORDER ASSIGNMENT & TICKET PANEL (w-full on mobile, w-[360px] on desktop) */}
-            <div className="w-full lg:w-[360px] max-h-[48vh] lg:max-h-full bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col justify-between shrink-0 shadow-sm">
+            {/* RIGHT: ORDER ASSIGNMENT & TICKET PANEL */}
+            <div className="w-[360px] bg-white border-l border-slate-200 flex flex-col justify-between shrink-0 shadow-sm">
               {/* TOP HEADER CONTROLS */}
-              <div className="p-3 sm:p-4 space-y-2.5 sm:space-y-3.5 border-b border-slate-100 overflow-y-auto">
+              <div className="p-4 space-y-3.5 border-b border-slate-100">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
                   ORDER ASSIGNMENT
                 </span>
@@ -2557,7 +2563,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           const tbl = floorTables.find(t => t.id === e.target.value);
                           if (tbl) setSelectedTable(tbl);
                         }}
-                        className="flex-1 px-3 py-1.5 sm:py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#ff5500] cursor-pointer"
+                        className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#ff5500] cursor-pointer"
                       >
                         {floorTables.map(t => (
                           <option key={t.id} value={t.id}>
@@ -2588,7 +2594,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 )}
 
                 {/* Service Charge & Tax Toggle Buttons */}
-                <div className="grid grid-cols-2 gap-2 pt-0.5">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => setServiceChargeEnabled(!serviceChargeEnabled)}
@@ -2639,11 +2645,11 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
 
               {/* TICKET ITEMS LIST / EMPTY STATE */}
-              <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 min-h-0 max-h-40 lg:max-h-none">
+              <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
                 {cart.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2 py-6">
-                    <div className="p-2.5 bg-slate-50 rounded-2xl border border-slate-100">
-                      <Monitor className="h-6 w-6 text-slate-300 stroke-[1.5]" />
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2 py-10">
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                      <Monitor className="h-8 w-8 text-slate-300 stroke-[1.5]" />
                     </div>
                     <p className="font-bold text-xs text-slate-600">Ticket is empty</p>
                     <p className="text-[11px] text-slate-400">Tap items to build order.</p>
@@ -2691,7 +2697,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
 
               {/* BOTTOM TOTALS & CHECKOUT ACTIONS */}
-              <div className="p-3 sm:p-4 border-t border-slate-100 bg-white space-y-2 shrink-0">
+              <div className="p-4 border-t border-slate-100 bg-white space-y-2.5 shrink-0">
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between text-slate-600">
                     <span>Subtotal</span>
@@ -2717,13 +2723,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 </div>
 
-                {/* ACTION BUTTONS */}
-                <div className="space-y-1.5 pt-1">
+                {/* ACTION BUTTONS MATCHING SCREENSHOT */}
+                <div className="space-y-2 pt-1">
                   <button
                     type="button"
                     disabled={cart.length === 0}
                     onClick={handleSendOrder}
-                    className="w-full py-2.5 sm:py-3 bg-[#ff9966] hover:bg-[#ff8844] text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                    className="w-full py-3 bg-[#ff9966] hover:bg-[#ff8844] text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                   >
                     <Send className="h-4 w-4" />
                     <span>SEND ORDER (PRINTS KOT / BOT)</span>
@@ -2736,7 +2742,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       setPaymentMethod('CASH');
                       setCheckoutModalOpen(true);
                     }}
-                    className="w-full py-2 sm:py-2.5 bg-slate-400/80 hover:bg-slate-500 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                    className="w-full py-2.5 bg-slate-400/80 hover:bg-slate-500 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                   >
                     <Receipt className="h-4 w-4" />
                     <span>Direct Settle &amp; Pay ({settings.currency} {cartGrandTotal.toFixed(2)})</span>
