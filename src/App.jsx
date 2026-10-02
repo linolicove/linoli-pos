@@ -4419,7 +4419,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       <button
                         type="button"
                         onClick={() => {
-                          const baseFloatToKeep = openingFloat;
+                          const effectiveCountedCash = hasCounted ? countedCash : expectedCash;
+                          const effectiveOpeningFloat = Number(currentShift.startingFloat) || 10000.00;
 
                           const closedShift = {
                             ...currentShift,
@@ -4428,7 +4429,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             closedBy: currentUser.name,
                             status: 'CLOSED',
                             metrics: {
-                              startingFloat: openingFloat,
+                              startingFloat: effectiveOpeningFloat,
                               cashSales: shiftCashSales,
                               cardSales: shiftCardSales,
                               otherSales: shiftOtherSales,
@@ -4437,14 +4438,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                               cashOutTotal: totalApprovedCashOut,
                               approvedPayouts,
                               expectedCash,
-                              countedCash,
+                              countedCash: effectiveCountedCash,
                               variance: currentShiftVariance,
                               carriedDiscrepancy: netTotalVariance,
                               denominations: { ...denominations }
                             }
                           };
 
-                          // 1. Archive closed shift
+                          // 1. Save to shift archive
                           setShiftHistory(prev => [closedShift, ...prev]);
 
                           // 2. Print Z-Report
@@ -4459,7 +4460,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             return matchesThisShift ? { ...t, shiftId: currentShift.shiftId } : t;
                           }));
 
-                          // 4. Open fresh shift with preserved base float
+                          // 4. Open new shift using the physical note count as the new base float
                           const nextDate = getLocalDateStr();
                           const shiftSequence = Date.now().toString().slice(-4);
                           const newShiftId = `SHIFT-${nextDate.replace(/-/g, '')}-${shiftSequence}`;
@@ -4469,15 +4470,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             openedDate: nextDate,
                             openedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                             openedBy: currentUser.name,
-                            startingFloat: baseFloatToKeep,
+                            startingFloat: effectiveCountedCash, // Physical note total becomes the new opening float
                             status: 'OPEN',
                             payouts: []
                           });
 
-                          // 5. Zero out denomination note counts for the incoming cashier
-                          setDenominations({
-                            5000: 0, 1000: 0, 500: 0, 100: 0, 50: 0, 20: 0
-                          });
+                          // NOTE: We deliberately do NOT call setDenominations(...) to reset.
+                          // The physical note counts stay intact in the drawer inputs.
 
                           const shiftVarianceText = currentShiftVariance === 0 
                             ? 'Balanced ($0.00)' 
@@ -4488,7 +4487,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           recordAuditLog(
                             'SHIFT_CLOSED_Z_REPORT',
                             closedShift.shiftId,
-                            `Shift closed by ${currentUser.name}. Expected: ${settings.currency} ${expectedCash.toFixed(2)}, Counted: ${settings.currency} ${countedCash.toFixed(2)}. Result: ${shiftVarianceText}. Base float of ${settings.currency} ${baseFloatToKeep.toFixed(2)} passed to ${newShiftId}.`
+                            `Shift closed by ${currentUser.name}. Physical count of ${settings.currency} ${effectiveCountedCash.toFixed(2)} retained as opening float for ${newShiftId}. Note counts preserved. Result: ${shiftVarianceText}.`
                           );
                         }}
                         className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer shrink-0"
