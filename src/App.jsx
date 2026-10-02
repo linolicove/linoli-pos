@@ -8028,14 +8028,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <p className="text-[10px] text-slate-400 text-center mt-1">Default Admin PIN: 1234</p>
               </div>
 
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setCashOutApprovalModal({ open: false, item: null, managerPin: '', error: '' })}
-                  className="flex-1 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
-                >
-                  Cancel
-                </button>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                {/* REJECT BUTTON */}
                 <button
                   type="button"
                   onClick={() => {
@@ -8046,15 +8040,62 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     }
 
                     const targetItem = cashOutApprovalModal.item;
+                    const updated = {
+                      ...targetItem,
+                      status: 'REJECTED',
+                      rejectedBy: manager.name
+                    };
+
                     setCurrentShift(prev => ({
                       ...prev,
-                      payouts: prev.payouts.map(p => p.id === targetItem.id ? {
-                        ...p,
-                        status: 'APPROVED',
-                        approvedBy: manager.name,
-                        approvedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      } : p)
+                      payouts: prev.payouts.map(p => p.id === targetItem.id ? updated : p)
                     }));
+
+                    setExpenses(prev => prev.map(p => p.id === targetItem.id ? updated : p));
+
+                    recordAuditLog(
+                      'CASH_OUT_REJECTED',
+                      targetItem.id,
+                      `Manager ${manager.name} rejected cash out request ${targetItem.id} of ${settings.currency} ${targetItem.amount}`
+                    );
+
+                    setCashOutApprovalModal({ open: false, item: null, managerPin: '', error: '' });
+                  }}
+                  className="py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  ✕ Reject
+                </button>
+
+                {/* APPROVE BUTTON */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const manager = staffList.find(s => (s.role === 'Administrator' || s.role === 'Manager') && s.pin === cashOutApprovalModal.managerPin.trim());
+                    if (!manager) {
+                      setCashOutApprovalModal(prev => ({ ...prev, error: 'Invalid Manager/Admin PIN' }));
+                      return;
+                    }
+
+                    const targetItem = cashOutApprovalModal.item;
+                    const updated = {
+                      ...targetItem,
+                      status: 'APPROVED',
+                      approvedBy: manager.name,
+                      approvedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    };
+
+                    setCurrentShift(prev => ({
+                      ...prev,
+                      payouts: prev.payouts.map(p => p.id === targetItem.id ? updated : p)
+                    }));
+
+                    setExpenses(prev => prev.map(p => p.id === targetItem.id ? updated : p));
+
+                    // Auto-print thermal disbursement voucher upon manager sign-off
+                    triggerAutoPrint({
+                      type: 'CASH_OUT_VOUCHER',
+                      data: updated
+                    }, `Authorized Voucher #${targetItem.id}`);
 
                     recordAuditLog(
                       'CASH_OUT_APPROVED_PIN',
@@ -8064,9 +8105,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                     setCashOutApprovalModal({ open: false, item: null, managerPin: '', error: '' });
                   }}
-                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer"
+                  className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer transition-colors"
                 >
-                  Authorize Payout
+                  ✓ Approve &amp; Print
                 </button>
               </div>
             </div>
