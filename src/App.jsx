@@ -76,7 +76,7 @@ const ROLE_PERMISSIONS = {
 };
 
 const INITIAL_STAFF = [
-  { id: 'usr_admin', name: 'System Administrator', role: 'Administrator', pin: '2022', avatar: 'SA', email: 'admin@linolicove.com' }
+  { id: 'usr_admin', name: 'System Administrator', role: 'Administrator', pin: '0512', avatar: 'SA', email: 'admin@linolicove.com' }
 ];
 
 const INITIAL_RAW_INVENTORY = [
