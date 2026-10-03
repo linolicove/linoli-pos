@@ -67,11 +67,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 
 const ROLE_PERMISSIONS = {
   Administrator: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'accounting','vendor_bills','payroll', 'staff', 'settings'],
-  Manager: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin','payroll', 'settings'],
+  Manager: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin','vendor_bills','payroll', 'settings'],
   Cashier: ['pos', 'billing', 'tables', 'shifts', 'reports'],
   'Kitchen Chef': ['kds', 'recipes', 'stock'],
   Bartender: ['bar', 'recipes', 'stock'],
-  Accountant: ['stock', 'reports','payroll', 'accounting'],
+  Accountant: ['stock', 'reports','payroll','vendor_bills', 'accounting'],
   'Floor Server': ['pos', 'tables', 'billing']
 };
 
