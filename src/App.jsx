@@ -34,8 +34,8 @@ import {
   ShieldCheck,
   Percent,
   TrendingUp,
-  TrendingDown, // <-- ADD THIS
-  PieChart,     // <-- ADD THIS
+  TrendingDown,
+  PieChart,
   RefreshCw,
   Eye,
   Sliders,
@@ -56,7 +56,8 @@ import {
   Building,
   HardDrive,
   Mail,
-  Briefcase
+  Briefcase,
+  FileText
 } from 'lucide-react';
 import { syncToCloud, subscribeToCloud } from './firebase'; // <-- ADD THIS LINE
 import * as pdfjsLib from 'pdfjs-dist';
@@ -65,7 +66,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 const ROLE_PERMISSIONS = {
-  Administrator: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'accounting','payroll', 'staff', 'settings'],
+  Administrator: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'accounting','vendor_bills','payroll', 'staff', 'settings'],
   Manager: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin','payroll', 'settings'],
   Cashier: ['pos', 'billing', 'tables', 'shifts', 'reports'],
   'Kitchen Chef': ['kds', 'recipes', 'stock'],
@@ -491,6 +492,23 @@ export default function App() {
   const [posViewMode, setPosViewMode] = useState('grid'); // 'grid' | 'compact' | 'list'
   const [adminMenuCategory, setAdminMenuCategory] = useState('All');
 
+  // Generic Excel exporter using the already installed XLSX package
+const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') => {
+  if (!Array.isArray(dataRows) || dataRows.length === 0) {
+    alert('No data available to export for the selected date range.');
+    return;
+  }
+  try {
+    const worksheet = XLSX.utils.json_to_sheet(dataRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Report Data');
+    XLSX.writeFile(workbook, `${filenamePrefix}_${getLocalDateStr()}.xlsx`);
+  } catch (err) {
+    console.error('Excel Export Error:', err);
+    alert('Failed to generate Excel file: ' + err.message);
+  }
+};
+  
   // Persistent collections
   const [staffList, setStaffList] = usePersistentState('linoli_staff_list', INITIAL_STAFF);
   const [currentUser, setCurrentUser] = useState(INITIAL_STAFF[0]);
@@ -507,6 +525,20 @@ export default function App() {
     invoice: 1,
     cashOut: 1
   });
+  const [vendorBills, setVendorBills] = usePersistentState('linoli_vendor_bills', []);
+  const [addVendorBillModalOpen, setAddVendorBillModalOpen] = useState(false);
+  const [vendorBillForm, setVendorBillForm] = useState({
+    invoiceNumber: '',
+    vendorName: '',
+    category: 'Food & Beverage Supply',
+    billDate: getLocalDateStr(),
+    dueDate: getLocalDateStr(),
+    amount: '',
+    paymentMethod: 'BANK_TRANSFER', // 'BANK_TRANSFER' | 'CHEQUE' | 'CREDIT_CARD' | 'ONLINE_PAYMENT'
+    paymentStatus: 'PAID', // 'PAID' | 'UNPAID' | 'PARTIAL'
+    notes: ''
+  });
+  const prevVendorBillsRef = useRef('');
 
   const [accountingPeriod, setAccountingPeriod] = useState('ALL'); // 'ALL' | 'TODAY' | 'THIS_MONTH' | 'LAST_MONTH'
 
@@ -992,6 +1024,17 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         setAccountingPeriod(remoteSettings.period);
       }
     });
+    // Receive external vendor bills & invoices from cloud
+    const unsubVendorBills = subscribeToCloud('vendor_bills', (remoteBills) => {
+      isCloudSynced.current = true;
+      if (Array.isArray(remoteBills)) {
+        const serialized = JSON.stringify(remoteBills);
+        if (prevVendorBillsRef.current === serialized) return;
+        prevVendorBillsRef.current = serialized;
+        setVendorBills(remoteBills);
+        localStorage.setItem('linoli_vendor_bills', serialized);
+      }
+    });
     
     return () => {
       if (typeof unsubOrders === 'function') unsubOrders();
@@ -1007,6 +1050,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       if (typeof unsubAttendance === 'function') unsubAttendance();
       if (typeof unsubPayroll === 'function') unsubPayroll();
       if (typeof unsubAccounting === 'function') unsubAccounting();
+      if (typeof unsubVendorBills === 'function') unsubVendorBills();
     };
   }, []);
 
@@ -1144,6 +1188,17 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       syncToCloud('accounting_settings', { period: accountingPeriod });
     }
   }, [accountingPeriod]);
+
+  useEffect(() => {
+    if (!isCloudSynced.current) return;
+    if (vendorBills !== undefined) {
+      const current = JSON.stringify(vendorBills);
+      if (current !== prevVendorBillsRef.current) {
+        prevVendorBillsRef.current = current;
+        syncToCloud('vendor_bills', vendorBills);
+      }
+    }
+  }, [vendorBills]);
 
   const handleCreateStaff = (e) => {
     e.preventDefault();
@@ -2414,10 +2469,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     );
   }
 
+  {/* Global CSS fix for select dropdowns & dual thermal / standard PDF print styles */}
   return (
     <div className="flex h-screen w-full bg-[#0b0f19] text-zinc-100 font-sans select-none overflow-hidden antialiased">
-      
-      {/* Global CSS fix for select dropdowns & options to prevent white-on-white text */}
+      {/* Global CSS fix for select dropdowns & dual thermal / standard PDF print styles */}
       <style>{`
         select, option {
           color: #0f172a !important;
@@ -2429,26 +2484,76 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         }
 
         @media print {
-          @page {
-            margin: ${settings.receiptMargin || '2mm'};
-            size: auto;
-          }
+          /* 1. Global Print Cleanups */
           *, *::before, *::after {
             box-sizing: border-box !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
+
+          /* Hide UI Chrome (Navigation, Sidebar Drawer, Edge Tabs, Floating Buttons, Notifications) */
+          aside,
+          header,
+          button,
+          input,
+          .fixed,
+          nav,
+          [title="Touch to Open Menu"] {
+            display: none !important;
+          }
+
           body {
             background-color: #ffffff !important;
             color: #000000 !important;
             margin: 0 !important;
             padding: 0 !important;
           }
-          body * {
-            visibility: hidden !important;
+
+          /* 2. Standard Document & PDF Report Print Mode (A4 / Letter Clean Layout) */
+          body:not(:has(#thermal-print-area:not(:empty))) {
+            @page {
+              size: auto;
+              margin: 10mm;
+            }
           }
-          #thermal-print-area, #thermal-print-area * {
+
+          main {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            overflow: visible !important;
+            display: block !important;
+            height: auto !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+
+          /* Ensure report tables, borders, and rows remain clean and legible in PDF */
+          table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            color: #000000 !important;
+          }
+
+          th, td {
+            color: #000000 !important;
+            border-bottom: 1px solid #cbd5e1 !important;
+            padding: 6px 8px !important;
+          }
+
+          thead {
+            display: table-header-group !important;
+          }
+
+          tr {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          /* 3. Dedicated Thermal Receipt Spooler (Active when thermal-print-area is targeted) */
+          #thermal-print-area:not(:empty) {
             visibility: visible !important;
-          }
-          #thermal-print-area {
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
@@ -2463,12 +2568,19 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             font-size: ${settings.receiptFontSize || '11px'} !important;
             font-family: ${settings.receiptFontFamily || 'monospace'} !important;
             line-height: 1.25 !important;
+            display: block !important;
           }
+
+          #thermal-print-area * {
+            visibility: visible !important;
+          }
+
           #thermal-print-area .border-dashed,
           #thermal-print-area .border-t,
           #thermal-print-area .border-b {
             border-color: #000000 !important;
           }
+
           #thermal-print-area div {
             break-inside: avoid;
           }
@@ -2579,6 +2691,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
             {[
               { id: 'menu_admin', name: 'Menu Management', icon: ClipboardList, badgeText: '+Add' },
+              { id: 'vendor_bills', name: 'Vendor Bills & Invoices', icon: FileText }, // <-- ADD THIS
               { id: 'accounting', name: 'Accounting & P&L', icon: PieChart }, // <-- ADD THIS
               { id: 'staff', name: 'Staff Management', icon: Users },
               { id: 'payroll', name: 'Employment & Payroll', icon: Briefcase },
@@ -3529,8 +3642,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               ))}
             </div>
 
-            {/* Date Filters Header */}
-            <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shadow-xs">
+            {/* Date Filters & Export Action Bar */}
+            <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 shadow-xs">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
                   <Calendar className="h-3.5 w-3.5 text-[#ff5500]" /> Date Filter:
@@ -3550,25 +3663,175 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 />
               </div>
 
-              <div className="flex items-center gap-1.5 overflow-x-auto">
-                {[
-                  { label: 'Today', start: getLocalDateStr(), end: getLocalDateStr() },
-                  { label: 'Yesterday', start: getLocalDateStr(new Date(Date.now() - 86400000)), end: getLocalDateStr(new Date(Date.now() - 86400000)) },
-                  { label: 'Last 7 Days', start: getLocalDateStr(new Date(Date.now() - 7 * 86400000)), end: getLocalDateStr() },
-                  { label: 'All Time', start: '', end: '' }
-                ].map(preset => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => {
-                      setReportStartDate(preset.start);
-                      setReportEndDate(preset.end);
-                    }}
-                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg whitespace-nowrap cursor-pointer"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
+              {/* Presets & Export Actions */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 overflow-x-auto">
+                  {[
+                    { label: 'Today', start: getLocalDateStr(), end: getLocalDateStr() },
+                    { label: 'Yesterday', start: getLocalDateStr(new Date(Date.now() - 86400000)), end: getLocalDateStr(new Date(Date.now() - 86400000)) },
+                    { label: 'Last 7 Days', start: getLocalDateStr(new Date(Date.now() - 7 * 86400000)), end: getLocalDateStr() },
+                    { label: 'All Time', start: '', end: '' }
+                  ].map(preset => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => {
+                        setReportStartDate(preset.start);
+                        setReportEndDate(preset.end);
+                      }}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg whitespace-nowrap cursor-pointer transition-colors"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="h-5 w-px bg-slate-200 hidden sm:block" />
+
+                {/* 1. EXCEL EXPORT BUTTON */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    let exportRows = [];
+                    const prefix = `${reportSubTab.toLowerCase().replace(/\s+/g, '_')}`;
+
+                    if (reportSubTab === 'Daily Overview' || reportSubTab === 'All Items Sales') {
+                      exportRows = salesMetrics.topItems.map(item => ({
+                        'Menu Item': item.name,
+                        'Area': item.department,
+                        'Category': item.category,
+                        'Portions Sold': item.sold,
+                        'Unit Price': item.unitPrice,
+                        'Total Revenue': item.revenue
+                      }));
+                    } else if (reportSubTab === 'Sales Detail') {
+                      exportRows = filteredTransactions.map(t => ({
+                        'Invoice #': t.invoiceNo,
+                        'Date': t.date,
+                        'Table': t.table,
+                        'Cashier': t.cashier,
+                        'Method': t.paymentMethod,
+                        'Subtotal': t.subtotal,
+                        'Service Charge': t.serviceCharge,
+                        'Tax': t.tax,
+                        'Discount': t.discount || 0,
+                        'Grand Total': t.total
+                      }));
+                    } else if (reportSubTab === 'Cash Out Report') {
+                      const allRecords = Array.isArray(expenses) ? expenses : [];
+                      exportRows = allRecords
+                        .filter(exp => {
+                          const expDate = exp.date || extractDateStr(exp.createdAt);
+                          if (!expDate) return true;
+                          if (reportStartDate && expDate < reportStartDate) return false;
+                          if (reportEndDate && expDate > reportEndDate) return false;
+                          return true;
+                        })
+                        .map(e => ({
+                          'Voucher Ref': e.id,
+                          'Date': e.date || getLocalDateStr(),
+                          'Shift ID': e.shiftId || 'N/A',
+                          'Category': e.category,
+                          'Recipient': e.recipient || 'N/A',
+                          'Description': e.reason,
+                          'Amount': parseFloat(e.amount) || 0,
+                          'Status': e.status || 'APPROVED',
+                          'Approved By': e.approvedBy || 'N/A'
+                        }));
+                    } else if (reportSubTab === 'KOT Report') {
+                      exportRows = salesMetrics.topItems
+                        .filter(i => i.department === 'Kitchen')
+                        .map(i => ({
+                          'Kitchen Dish': i.name,
+                          'Category': i.category,
+                          'Portions Prepared': i.sold,
+                          'Total Revenue': i.revenue
+                        }));
+                    } else if (reportSubTab === 'BOT Report') {
+                      exportRows = salesMetrics.topItems
+                        .filter(i => i.department === 'Bar')
+                        .map(i => ({
+                          'Beverage': i.name,
+                          'Category': i.category,
+                          'Glasses / Units': i.sold,
+                          'Total Revenue': i.revenue
+                        }));
+                    } else if (reportSubTab === 'Stock Usage') {
+                      exportRows = inventory.map(ing => {
+                        const used = salesMetrics.ingredientUsageMap[ing.id]?.totalConsumed || 0;
+                        return {
+                          'Raw Material': ing.name,
+                          'Category': ing.category,
+                          'Depleted Qty': used,
+                          'Unit': ing.unit,
+                          'Remaining Stock': ing.stock,
+                          'Unit Cost': ing.cost,
+                          'Total Depletion Cost': Number((used * ing.cost).toFixed(2))
+                        };
+                      });
+                    } else if (reportSubTab === 'Stock Movement Ledger') {
+                      exportRows = (stockLogs || [])
+                        .filter(log => {
+                          const lDate = log.date || extractDateStr(log.timestamp);
+                          if (!lDate) return true;
+                          if (reportStartDate && lDate < reportStartDate) return false;
+                          if (reportEndDate && lDate > reportEndDate) return false;
+                          return true;
+                        })
+                        .map(l => ({
+                          'Date & Time': l.timestamp,
+                          'Material': l.ingredientName,
+                          'Action Type': l.type,
+                          'Previous Stock': l.oldStock,
+                          'Change': l.diffQty,
+                          'New Level': l.newStock,
+                          'Unit': l.unit,
+                          'Cost Impact': l.totalCostImpact,
+                          'Reason': l.reason,
+                          'Staff': l.staff
+                        }));
+                    } else if (reportSubTab === 'Audit Trail') {
+                      exportRows = auditLogs.map(l => ({
+                        'Time': l.timestamp,
+                        'Action': l.action,
+                        'Authorized User': l.staff,
+                        'Role': l.role,
+                        'Target Ref': l.targetRef,
+                        'Details': l.details
+                      }));
+                    } else {
+                      // Fallback: Sales Summary export
+                      exportRows = [
+                        { 'Metric': 'Total Settled Invoices', 'Value': salesMetrics.paidBillsCount },
+                        { 'Metric': 'Gross Revenue', 'Value': salesMetrics.grossRevenue },
+                        { 'Metric': 'Net Food & Beverage Subtotal', 'Value': salesMetrics.itemSubtotal },
+                        { 'Metric': 'Service Charge Pool', 'Value': salesMetrics.serviceCharge },
+                        { 'Metric': 'Statutory Taxes / VAT', 'Value': salesMetrics.taxes },
+                        { 'Metric': 'Discounts Given', 'Value': salesMetrics.discounts }
+                      ];
+                    }
+
+                    exportReportToExcel(reportSubTab, exportRows, prefix);
+                  }}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors active:scale-95"
+                  title="Export this report to Excel (.xlsx)"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Excel</span>
+                </button>
+
+                {/* 2. PDF / PRINT EXPORT BUTTON */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.print();
+                  }}
+                  className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors active:scale-95"
+                  title="Print or Save this report as PDF"
+                >
+                  <Printer className="h-3.5 w-3.5 text-orange-400" />
+                  <span>PDF / Print</span>
+                </button>
               </div>
             </div>
 
@@ -5863,6 +6126,189 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             </div>
           </div>
         )}
+        {/* VIEW: EXTERNAL INVOICES & VENDOR BILLS */}
+        {activeTab === 'vendor_bills' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-[#ff5500]" />
+                  Vendor Invoices &amp; Accounts Payable
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Track external supplier invoices paid via bank transfer, cheque, or card outside of cashier cash drawers.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {/* 1. EXCEL EXPORT BUTTON */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const billsList = Array.isArray(vendorBills) ? vendorBills : [];
+                    if (billsList.length === 0) {
+                      alert('No vendor bills available to export.');
+                      return;
+                    }
+
+                    const exportRows = billsList.map(bill => ({
+                      'Invoice #': bill.invoiceNumber || bill.id,
+                      'Bill Date': bill.billDate || 'N/A',
+                      'Due Date': bill.dueDate || 'N/A',
+                      'Vendor / Payee': bill.vendorName,
+                      'Category': bill.category,
+                      'Payment Method': bill.paymentMethod,
+                      'Amount': Number(bill.amount) || 0,
+                      'Payment Status': bill.paymentStatus,
+                      'Recorded By': bill.recordedBy || 'N/A',
+                      'Notes': bill.notes || ''
+                    }));
+
+                    exportReportToExcel('Vendor_Bills_Accounts_Payable', exportRows, 'Vendor_Invoices');
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all active:scale-95"
+                  title="Export Vendor Invoices to Excel (.xlsx)"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Export Excel</span>
+                </button>
+
+                {/* 2. PDF / PRINT BUTTON */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.print();
+                  }}
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all active:scale-95"
+                  title="Print or Save Vendor Bills as PDF"
+                >
+                  <Printer className="h-3.5 w-3.5 text-orange-400" />
+                  <span>PDF / Print</span>
+                </button>
+
+                {/* 3. RECORD VENDOR BILL BUTTON */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVendorBillForm({
+                      invoiceNumber: '',
+                      vendorName: '',
+                      category: 'Food & Beverage Supply',
+                      billDate: getLocalDateStr(),
+                      dueDate: getLocalDateStr(),
+                      amount: '',
+                      paymentMethod: 'BANK_TRANSFER',
+                      paymentStatus: 'PAID',
+                      notes: ''
+                    });
+                    setAddVendorBillModalOpen(true);
+                  }}
+                  className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer transition-all active:scale-95"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Record Vendor Bill</span>
+                </button>
+              </div>
+            </div>
+            
+            {/* KPI Cards */}
+            {(() => {
+              const totalBills = vendorBills.reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
+              const paidBills = vendorBills.filter(b => b.paymentStatus === 'PAID').reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
+              const unpaidBills = vendorBills.filter(b => b.paymentStatus !== 'PAID').reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
+
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                    <span className="text-[10px] font-black uppercase text-slate-400">Total Invoiced</span>
+                    <p className="text-2xl font-black font-mono text-slate-900 mt-1">{settings.currency} {totalBills.toFixed(2)}</p>
+                    <span className="text-[11px] text-slate-500">{vendorBills.length} recorded invoices</span>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                    <span className="text-[10px] font-black uppercase text-slate-400">Paid Invoices (OPEX)</span>
+                    <p className="text-2xl font-black font-mono text-emerald-600 mt-1">{settings.currency} {paidBills.toFixed(2)}</p>
+                    <span className="text-[11px] text-slate-500">Linked to P&amp;L expenses</span>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                    <span className="text-[10px] font-black uppercase text-slate-400">Outstanding Accounts Payable</span>
+                    <p className="text-2xl font-black font-mono text-rose-600 mt-1">{settings.currency} {unpaidBills.toFixed(2)}</p>
+                    <span className="text-[11px] text-slate-500">Unsettled credit terms</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Invoices Table */}
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-3">Invoice #</th>
+                    <th className="py-2.5 px-3">Date</th>
+                    <th className="py-2.5 px-3">Vendor / Payee</th>
+                    <th className="py-2.5 px-3">Category</th>
+                    <th className="py-2.5 px-3">Payment Method</th>
+                    <th className="py-2.5 px-3 text-right">Amount</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {vendorBills.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400 italic">
+                        No external invoices recorded yet. Click &ldquo;Record Vendor Bill&rdquo; to add distributor or utility bills.
+                      </td>
+                    </tr>
+                  ) : (
+                    vendorBills.map(bill => (
+                      <tr key={bill.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-3 font-mono font-bold text-slate-800">{bill.invoiceNumber || bill.id}</td>
+                        <td className="py-3 px-3 text-slate-500">{bill.billDate}</td>
+                        <td className="py-3 px-3 font-bold text-slate-900">{bill.vendorName}</td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-semibold text-slate-700">
+                            {bill.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-slate-600">{bill.paymentMethod}</td>
+                        <td className="py-3 px-3 text-right font-mono font-black text-slate-900">
+                          {settings.currency} {Number(bill.amount).toFixed(2)}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            bill.paymentStatus === 'PAID'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {bill.paymentStatus}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Delete invoice ${bill.invoiceNumber || bill.id} from ${bill.vendorName}?`)) {
+                                setVendorBills(prev => prev.filter(b => b.id !== bill.id));
+                                recordAuditLog('VENDOR_BILL_DELETED', bill.id, `Deleted invoice ${bill.invoiceNumber} for ${settings.currency} ${bill.amount}`);
+                              }
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                            title="Delete Invoice"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* VIEW: COMPREHENSIVE ACCOUNTING & P&L ANALYTICS */}
         {activeTab === 'accounting' && (
@@ -5958,17 +6404,18 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-           {/* Calculations Engine (Mapped directly to transactions & expenses) */}
+           {/* Calculations Engine (Mapped to transactions, expenses, vendorBills & payroll) */}
             {(() => {
               const todayStr = getLocalDateStr();
               const currentMonthStr = todayStr.slice(0, 7); // 'YYYY-MM'
 
-              // Use the actual states from App.jsx: transactions & expenses
+              // 1. Data Sources
               const salesData = Array.isArray(transactions) ? transactions : [];
               const expenseData = Array.isArray(expenses) ? expenses : (currentShift?.payouts || []);
+              const externalBillsData = Array.isArray(vendorBills) ? vendorBills : [];
               const payrollData = Array.isArray(payrollRecords) ? payrollRecords : [];
 
-              // 1. Filter Sales / Revenue (uses startsWith because date has time appended)
+              // 2. Filter Sales / Revenue
               const filteredSales = salesData.filter(inv => {
                 if (!inv) return false;
                 const dStr = extractDateStr(inv.date) || String(inv.date || '');
@@ -5977,7 +6424,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 return true;
               });
 
-              // 2. Filter All Cash-Out Disbursements
+              // 3. Filter All Drawer Cash-Out Disbursements
               const filteredDisbursements = expenseData.filter(v => {
                 if (!v || v.status === 'REJECTED') return false;
                 const dStr = extractDateStr(v.date || v.createdAt) || String(v.date || '');
@@ -5999,13 +6446,22 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 );
               };
 
-              // True operational expenditures (vendor payouts, petty cash, supplies)
+              // True drawer operational expenditures (vendor cash payouts, petty cash, supplies)
               const operationalExpenses = filteredDisbursements.filter(v => !isBankingTransfer(v));
 
-              // Internal drawer-to-safe / banking transfers (Non-OPEX)
+              // Internal drawer-to-safe / banking transfers (Non-OPEX asset movements)
               const bankingTransfers = filteredDisbursements.filter(v => isBankingTransfer(v));
 
-              // 3. Filter Payroll Disbursed
+              // 4. Filter External Vendor Bills (Non-Drawer Invoices: Bank transfer, Cheque, Card)
+              const filteredVendorBills = externalBillsData.filter(b => {
+                if (!b || b.paymentStatus !== 'PAID') return false; // Only booked paid invoices hit P&L
+                const bDate = extractDateStr(b.billDate || b.date) || String(b.billDate || '');
+                if (accountingPeriod === 'TODAY') return bDate.startsWith(todayStr);
+                if (accountingPeriod === 'THIS_MONTH') return bDate.startsWith(currentMonthStr);
+                return true;
+              });
+
+              // 5. Filter Payroll Disbursed
               const filteredPayroll = payrollData.filter(p => {
                 if (!p) return false;
                 if (accountingPeriod === 'THIS_MONTH') return p.period === currentMonthStr;
@@ -6013,7 +6469,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 return true;
               });
 
-              // Revenue Metrics
+              // --- REVENUE METRICS ---
               const grossSalesRevenue = filteredSales.reduce((acc, inv) => acc + (Number(inv.subtotal) || 0), 0);
               const totalTaxCollected = filteredSales.reduce((acc, inv) => acc + (Number(inv.tax) || 0), 0);
               const totalServiceCharge = filteredSales.reduce((acc, inv) => acc + (Number(inv.serviceCharge) || 0), 0);
@@ -6021,31 +6477,42 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               const calculatedNet = grossSalesRevenue - totalDiscountsGiven;
               const netSalesRevenue = calculatedNet > 0 ? calculatedNet : filteredSales.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
 
-              // Expense Categories: Only true operating costs (Safe Drop excluded)
+              // --- EXPENSE CATEGORIZATION (Combines Drawer Outflows + External Vendor Invoices) ---
               const expenseCategories = {};
+
+              // A. Drawer operational expenses
               operationalExpenses.forEach(exp => {
                 const cat = (exp.category || exp.reason || 'General Purchases').trim();
                 const amt = Number(exp.amount) || 0;
                 expenseCategories[cat] = (expenseCategories[cat] || 0) + amt;
               });
 
-              // Totals
+              // B. External vendor invoices & bills
+              filteredVendorBills.forEach(b => {
+                const cat = (b.category || 'Vendor Invoices').trim();
+                const amt = Number(b.amount) || 0;
+                expenseCategories[cat] = (expenseCategories[cat] || 0) + amt;
+              });
+
+              // --- SUBTOTALS ---
               const totalOperationalCashOut = operationalExpenses.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0);
               const totalSafeDropBanking = bankingTransfers.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0);
               const totalDrawerCashOutflow = totalOperationalCashOut + totalSafeDropBanking;
+              const totalVendorBillsPaid = filteredVendorBills.reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
 
-              // Payroll Totals
+              // --- PAYROLL TOTALS ---
               const totalPayrollDisbursed = filteredPayroll.reduce((acc, p) => acc + (Number(p.breakdown?.netSalary) || Number(p.netPay) || 0), 0);
               const totalEmployerEpfEtf = filteredPayroll.reduce((acc, p) => acc + (Number(p.breakdown?.epfEmployer) || 0) + (Number(p.breakdown?.etfEmployer) || 0), 0);
 
-              // True OPEX: Vendor purchases + salaries + EPF/ETF (Safe Drops EXCLUDED)
-              const totalOperatingExpenses = totalOperationalCashOut + totalPayrollDisbursed + totalEmployerEpfEtf;
+              // --- TRUE OPEX & PROFIT (Safe Drops Excluded) ---
+              // Total OPEX = Drawer Purchases + External Bills + Staff Wages + Employer EPF/ETF
+              const totalOperatingExpenses = totalOperationalCashOut + totalVendorBillsPaid + totalPayrollDisbursed + totalEmployerEpfEtf;
 
-              // True Net Operating Profit
+              // Net Operating Profit
               const netProfit = netSalesRevenue - totalOperatingExpenses;
               const profitMargin = netSalesRevenue > 0 ? ((netProfit / netSalesRevenue) * 100).toFixed(1) : 0;
-              
-              // Top 10 Items Sold
+
+              // --- TOP 10 ITEMS SOLD ---
               const itemSalesMap = {};
               filteredSales.forEach(inv => {
                 (inv.items || []).forEach(item => {
@@ -6061,6 +6528,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               });
               const topSoldItems = Object.values(itemSalesMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
               const maxItemQty = topSoldItems.length > 0 ? Math.max(...topSoldItems.map(i => i.qty)) : 1;
+              
               return (
                 <div className="space-y-6">
                   {/* Top Key Performance Cards */}
@@ -6189,6 +6657,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             <div className="flex justify-between py-1.5 font-black text-rose-700 bg-rose-50 px-2 rounded-lg mt-1">
                               <span>Total Operating Expenses</span>
                               <span className="font-mono">-{settings.currency} {totalOperatingExpenses.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between py-1 text-slate-700">
+                              <span>Cash Out Purchases &amp; Petty Cash</span>
+                              <span className="font-mono">{settings.currency} {totalOperationalCashOut.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between py-1 text-slate-700">
+                              <span>External Vendor Bills &amp; Banked Invoices</span>
+                              <span className="font-mono">{settings.currency} {totalVendorBillsPaid.toFixed(2)}</span>
                             </div>
                           </div>
 
@@ -10995,6 +11471,199 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </div>
       )}
+
+      {/* MODAL: ADD VENDOR INVOICE */}
+        {addVendorBillModalOpen && (
+          <div 
+            className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 text-slate-900"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setAddVendorBillModalOpen(false);
+            }}
+          >
+            <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 relative max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-[#ff5500]" />
+                  <h3 className="text-base font-black text-slate-900">Record Vendor Bill / External Invoice</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAddVendorBillModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-900 cursor-pointer p-1"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const amt = parseFloat(vendorBillForm.amount);
+                  if (isNaN(amt) || amt <= 0 || !vendorBillForm.vendorName.trim()) {
+                    alert('Please enter a valid vendor name and bill amount.');
+                    return;
+                  }
+
+                  const newBill = {
+                    id: `BILL-${Date.now().toString().slice(-6)}`,
+                    invoiceNumber: vendorBillForm.invoiceNumber.trim() || `INV-${Date.now().toString().slice(-4)}`,
+                    vendorName: vendorBillForm.vendorName.trim(),
+                    category: vendorBillForm.category,
+                    billDate: vendorBillForm.billDate,
+                    dueDate: vendorBillForm.dueDate,
+                    amount: amt,
+                    paymentMethod: vendorBillForm.paymentMethod,
+                    paymentStatus: vendorBillForm.paymentStatus,
+                    notes: vendorBillForm.notes.trim(),
+                    recordedBy: currentUser.name,
+                    recordedAt: new Date().toISOString()
+                  };
+
+                  setVendorBills(prev => [newBill, ...prev]);
+
+                  if (typeof appendCloudArchive === 'function') {
+                    appendCloudArchive('vendor_bills_archive', newBill);
+                  }
+
+                  recordAuditLog(
+                    'VENDOR_BILL_CREATED',
+                    newBill.id,
+                    `Recorded invoice #${newBill.invoiceNumber} from ${newBill.vendorName} for ${settings.currency} ${amt.toFixed(2)} (${newBill.paymentStatus})`
+                  );
+
+                  setAddVendorBillModalOpen(false);
+                }}
+                className="mt-4 space-y-4"
+              >
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Invoice / Ref #</label>
+                    <input
+                      type="text"
+                      value={vendorBillForm.invoiceNumber}
+                      onChange={e => setVendorBillForm(prev => ({ ...prev, invoiceNumber: e.target.value }))}
+                      placeholder="e.g. INV-90412"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Vendor / Payee *</label>
+                    <input
+                      type="text"
+                      required
+                      value={vendorBillForm.vendorName}
+                      onChange={e => setVendorBillForm(prev => ({ ...prev, vendorName: e.target.value }))}
+                      placeholder="e.g. Ceylon Cold Stores / CEB"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                    <select
+                      value={vendorBillForm.category}
+                      onChange={e => setVendorBillForm(prev => ({ ...prev, category: e.target.value }))}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none"
+                    >
+                      <option value="Food & Beverage Supply">Food &amp; Beverage Supply</option>
+                      <option value="Liquor & Bar Supply">Liquor &amp; Bar Supply</option>
+                      <option value="Electricity / Utilities">Electricity / Utilities</option>
+                      <option value="Water Services">Water Services</option>
+                      <option value="Rent & Property">Rent &amp; Property</option>
+                      <option value="Equipment Maintenance">Equipment Maintenance</option>
+                      <option value="Marketing & Software">Marketing &amp; Software</option>
+                      <option value="Other Operating Expense">Other Operating Expense</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Total Bill Amount ({settings.currency}) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      required
+                      value={vendorBillForm.amount}
+                      onChange={e => setVendorBillForm(prev => ({ ...prev, amount: e.target.value }))}
+                      placeholder="e.g. 45000.00"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Invoice Date</label>
+                    <input
+                      type="date"
+                      required
+                      value={vendorBillForm.billDate}
+                      onChange={e => setVendorBillForm(prev => ({ ...prev, billDate: e.target.value }))}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:bg-white focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Payment Method</label>
+                    <select
+                      value={vendorBillForm.paymentMethod}
+                      onChange={e => setVendorBillForm(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none"
+                    >
+                      <option value="BANK_TRANSFER">Direct Bank Transfer</option>
+                      <option value="CHEQUE">Company Cheque</option>
+                      <option value="CREDIT_CARD">Company Credit Card</option>
+                      <option value="ONLINE_PAYMENT">Online / Portal Payment</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 block">Payment Status</span>
+                    <span className="text-[10px] text-slate-400">Paid bills are immediately booked into P&amp;L OPEX</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {['PAID', 'UNPAID'].map(status => (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={() => setVendorBillForm(prev => ({ ...prev, paymentStatus: status }))}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                          vendorBillForm.paymentStatus === status
+                            ? 'bg-[#ff5500] text-white'
+                            : 'bg-white border border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setAddVendorBillModalOpen(false)}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer"
+                  >
+                    Save &amp; Sync to Cloud
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+        
       {/* MODAL: SRI LANKAN STATUTORY PAYROLL GENERATOR */}
       {processPayModalOpen && (
         <div 
@@ -11346,7 +12015,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </div>
       )}
-
     </div>
   );
 }
+// End of component
