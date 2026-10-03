@@ -1513,17 +1513,28 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
   // Instant print invocation as soon as slip data is staged
   useEffect(() => {
     if (activePrintSlip) {
+      document.body.classList.add('printing-thermal');
       const timer = setTimeout(() => {
         try {
           window.print();
         } catch (e) {
           console.warn('Auto print spooler notice:', e);
+        } finally {
+          // Reset after print dialog closes
+          setTimeout(() => {
+            document.body.classList.remove('printing-thermal');
+            setActivePrintSlip(null);
+          }, 500);
         }
-      }, 50);
-      return () => clearTimeout(timer);
+      }, 80);
+      return () => {
+        clearTimeout(timer);
+        document.body.classList.remove('printing-thermal');
+      };
+    } else {
+      document.body.classList.remove('printing-thermal');
     }
   }, [activePrintSlip]);
-
   const recordAuditLog = (action, targetRef, details) => {
     const newLog = {
       id: `LOG-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
@@ -2470,7 +2481,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     );
   }
 
-  {/* Global CSS fix for select dropdowns & dual thermal / standard PDF print styles */}
+  {/* Global CSS fix for select dropdowns & isolated print modes */}
   return (
     <div className="flex h-screen w-full bg-[#0b0f19] text-zinc-100 font-sans select-none overflow-hidden antialiased">
       {/* Global CSS fix for select dropdowns & dual thermal / standard PDF print styles */}
@@ -2492,7 +2503,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             print-color-adjust: exact !important;
           }
 
-          /* Hide UI Chrome (Navigation, Sidebar Drawer, Edge Tabs, Floating Buttons, Notifications) */
+          /* Hide application UI elements */
           aside,
           header,
           button,
@@ -2510,80 +2521,78 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             padding: 0 !important;
           }
 
-          /* 2. Standard Document & PDF Report Print Mode (A4 / Letter Clean Layout) */
-          body:not(:has(#thermal-print-area:not(:empty))) {
-            @page {
-              size: auto;
-              margin: 10mm;
-            }
+          /* 2. THERMAL PRINT MODE (When activePrintSlip exists / #thermal-print-area has content) */
+          body.printing-thermal * {
+            visibility: hidden !important;
           }
 
-          main {
-            background-color: #ffffff !important;
-            color: #000000 !important;
-            overflow: visible !important;
-            display: block !important;
-            height: auto !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
+          body.printing-thermal main {
+            display: none !important;
           }
 
-          /* Ensure report tables, borders, and rows remain clean and legible in PDF */
-          table {
-            width: 100% !important;
-            border-collapse: collapse !important;
-            color: #000000 !important;
-          }
-
-          th, td {
-            color: #000000 !important;
-            border-bottom: 1px solid #cbd5e1 !important;
-            padding: 6px 8px !important;
-          }
-
-          thead {
-            display: table-header-group !important;
-          }
-
-          tr {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
-          }
-
-          /* 3. Dedicated Thermal Receipt Spooler (Active when thermal-print-area is targeted) */
-          #thermal-print-area:not(:empty) {
+          body.printing-thermal #thermal-print-area,
+          body.printing-thermal #thermal-print-area * {
             visibility: visible !important;
+            display: block !important;
+          }
+
+          body.printing-thermal #thermal-print-area {
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
             width: ${settings.receiptRollWidth === '58mm' ? '58mm' : '80mm'} !important;
-            max-width: 100% !important;
+            max-width: ${settings.receiptRollWidth === '58mm' ? '58mm' : '80mm'} !important;
             margin: 0 !important;
             padding: ${settings.receiptMargin || '2mm'} !important;
-            box-shadow: none !important;
-            border: none !important;
             background: #ffffff !important;
             color: #000000 !important;
             font-size: ${settings.receiptFontSize || '11px'} !important;
             font-family: ${settings.receiptFontFamily || 'monospace'} !important;
             line-height: 1.25 !important;
-            display: block !important;
           }
 
-          #thermal-print-area * {
-            visibility: visible !important;
+          body.printing-thermal #thermal-print-area .flex {
+            display: flex !important;
           }
 
-          #thermal-print-area .border-dashed,
-          #thermal-print-area .border-t,
-          #thermal-print-area .border-b {
+          body.printing-thermal #thermal-print-area .border-dashed,
+          body.printing-thermal #thermal-print-area .border-t,
+          body.printing-thermal #thermal-print-area .border-b {
             border-color: #000000 !important;
           }
 
-          #thermal-print-area div {
+          body.printing-thermal #thermal-print-area div {
             break-inside: avoid;
+          }
+
+          /* 3. REPORT / DOCUMENT MODE (When no thermal slip is active) */
+          body:not(.printing-thermal) main {
+            display: block !important;
+            width: 100% !important;
+            overflow: visible !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+
+          body:not(.printing-thermal) table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            color: #000000 !important;
+          }
+
+          body:not(.printing-thermal) th,
+          body:not(.printing-thermal) td {
+            color: #000000 !important;
+            border-bottom: 1px solid #cbd5e1 !important;
+            padding: 6px 8px !important;
+          }
+
+          body:not(.printing-thermal) thead {
+            display: table-header-group !important;
+          }
+
+          body:not(.printing-thermal) tr {
+            break-inside: avoid !important;
           }
         }
       `}</style>
@@ -4722,7 +4731,45 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0">
-                {/* 1. IMPORT EXCEL / PDF INVENTORY FILE */}
+                {/* 1. EXCEL EXPORT BUTTON */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const list = Array.isArray(inventory) ? inventory : [];
+                    if (list.length === 0) {
+                      alert('No raw inventory records available to export.');
+                      return;
+                    }
+
+                    const exportRows = list.map(item => {
+                      const stockVal = Number(item.stock) || 0;
+                      const costVal = Number(item.cost) || 0;
+                      const threshVal = Number(item.threshold) || 0;
+                      const totalVal = Number((stockVal * costVal).toFixed(2));
+
+                      return {
+                        'Ingredient ID': item.id,
+                        'Raw Ingredient': item.name,
+                        'Category': item.category || 'General',
+                        'Remaining Stock': stockVal,
+                        'Unit': item.unit || 'g',
+                        'Reorder Threshold': threshVal,
+                        'Unit Cost': costVal,
+                        'Total Valuation': totalVal,
+                        'Stock Status': stockVal <= threshVal ? 'LOW STOCK' : 'OPTIMAL'
+                      };
+                    });
+
+                    exportReportToExcel('Stock_Inventory_Valuation', exportRows, 'Stock_Inventory_Valuation');
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all active:scale-95"
+                  title="Export raw inventory list and valuation to Excel (.xlsx)"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Export Excel</span>
+                </button>
+
+                {/* 2. IMPORT EXCEL / PDF INVENTORY FILE */}
                 <label className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer transition-colors active:scale-95">
                   <Upload className="h-3.5 w-3.5 text-[#ff5500]" />
                   <span>Import Excel / PDF</span>
@@ -4742,14 +4789,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           if (typeof extractInventoryFromPDF === 'function') {
                             imported = await extractInventoryFromPDF(file);
                           } else {
-                            alert('PDF inventory extractor helper is missing. Please ensure extractInventoryFromPDF is defined.');
+                            alert('PDF inventory extractor helper is missing.');
                             return;
                           }
                         } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv')) {
                           if (typeof extractInventoryFromExcel === 'function') {
                             imported = await extractInventoryFromExcel(file);
                           } else {
-                            alert('Excel inventory extractor helper is missing. Please ensure extractInventoryFromExcel is defined.');
+                            alert('Excel inventory extractor helper is missing.');
                             return;
                           }
                         }
@@ -4759,7 +4806,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           return;
                         }
 
-                        // Merge or append imported records into live inventory
                         setInventory(prev => {
                           const existingList = Array.isArray(prev) ? [...prev] : [];
                           imported.forEach(newIng => {
@@ -4767,7 +4813,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                               ex => ex.name.toLowerCase().trim() === newIng.name.toLowerCase().trim()
                             );
                             if (matchIdx >= 0) {
-                              // Update stock and cost if already exists
                               existingList[matchIdx] = {
                                 ...existingList[matchIdx],
                                 stock: Number((existingList[matchIdx].stock + newIng.stock).toFixed(2)),
@@ -4798,7 +4843,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   />
                 </label>
 
-                {/* 2. RECEIVE STOCK */}
+                {/* 3. RECEIVE STOCK */}
                 <button
                   type="button"
                   onClick={() => {
@@ -4812,13 +4857,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     });
                     setReceiveStockModalOpen(true);
                   }}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all"
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all"
                 >
-                  <Package className="h-3.5 w-3.5" />
+                  <Package className="h-3.5 w-3.5 text-emerald-400" />
                   <span>Receive Stock</span>
                 </button>
 
-                {/* 3. ADD MATERIAL */}
+                {/* 4. ADD MATERIAL */}
                 <button
                   type="button"
                   onClick={() => {
