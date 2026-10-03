@@ -1,3 +1,5 @@
+
+import * as XLSX from 'xlsx';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Monitor,
@@ -32,6 +34,8 @@ import {
   ShieldCheck,
   Percent,
   TrendingUp,
+  TrendingDown, // <-- ADD THIS
+  PieChart,     // <-- ADD THIS
   RefreshCw,
   Eye,
   Sliders,
@@ -51,7 +55,8 @@ import {
   Download,
   Building,
   HardDrive,
-  Mail
+  Mail,
+  Briefcase
 } from 'lucide-react';
 import { syncToCloud, subscribeToCloud } from './firebase'; // <-- ADD THIS LINE
 import * as pdfjsLib from 'pdfjs-dist';
@@ -60,8 +65,8 @@ import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 const ROLE_PERMISSIONS = {
-  Administrator: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'cancelled', 'staff', 'settings'],
-  Manager: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'cancelled', 'settings'],
+  Administrator: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin', 'accounting','payroll', 'cancelled', 'staff', 'settings'],
+  Manager: ['pos', 'kds', 'bar', 'billing', 'tables', 'stock', 'recipes', 'shifts', 'reports', 'menu_admin','payroll', 'cancelled', 'settings'],
   Cashier: ['pos', 'billing', 'tables', 'shifts', 'reports'],
   'Kitchen Chef': ['kds', 'recipes', 'stock'],
   Bartender: ['bar', 'recipes', 'stock'],
@@ -231,6 +236,167 @@ const getLocalDateStr = (d = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
+// Clean text and extract numeric value and optional unit
+const parseQtyAndUnit = (rawStr, defaultUnit = 'g') => {
+  if (typeof rawStr === 'number') return { qty: rawStr, unit: defaultUnit };
+  if (!rawStr) return { qty: 0, unit: defaultUnit };
+
+  const str = String(rawStr).trim();
+  const match = str.match(/([0-9]+(?:\.[0-9]+)?)\s*([a-zA-Z]+)?/);
+  if (!match) return { qty: parseFloat(str) || 0, unit: defaultUnit };
+
+  const qty = parseFloat(match[1]) || 0;
+  let unit = (match[2] || defaultUnit).toLowerCase();
+  
+  // Normalize units
+  if (['gram', 'grams', 'gm', 'g'].includes(unit)) unit = 'g';
+  else if (['kilogram', 'kilograms', 'kg', 'kgs'].includes(unit)) unit = 'kg';
+  else if (['milliliter', 'milliliters', 'ml'].includes(unit)) unit = 'ml';
+  else if (['liter', 'liters', 'l', 'ltr'].includes(unit)) unit = 'l';
+  else if (['piece', 'pieces', 'pcs', 'pc', 'nos'].includes(unit)) unit = 'pcs';
+
+  return { qty, unit };
+};
+
+const cleanCostValue = (rawCost) => {
+  if (typeof rawCost === 'number') return rawCost;
+  if (!rawCost) return 0;
+  const cleaned = String(rawCost).replace(/[^0-9.]/g, '');
+  return parseFloat(cleaned) || 0;
+};
+
+// 1. EXCEL (.xlsx, .xls, .csv) INVENTORY PARSER
+const extractInventoryFromExcel = async (file) => {
+  const data = await file.arrayBuffer();
+  const workbook = XLSX.read(data, { type: 'array' });
+  const firstSheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+  if (rows.length < 2) return [];
+
+  // Identify column headers
+  let headerIndex = -1;
+  let colMap = { name: 0, category: 1, stock: 2, threshold: 3, cost: 4, unit: -1 };
+
+  for (let i = 0; i < Math.min(10, rows.length); i++) {
+    const row = rows[i].map(c => String(c).toLowerCase().trim());
+    const nIdx = row.findIndex(c => c.includes('ingredient') || c.includes('item') || c.includes('name') || c.includes('material'));
+    if (nIdx !== -1) {
+      headerIndex = i;
+      colMap.name = nIdx;
+      colMap.category = row.findIndex(c => c.includes('cat'));
+      colMap.stock = row.findIndex(c => c.includes('stock') || c.includes('remain') || c.includes('qty'));
+      colMap.threshold = row.findIndex(c => c.includes('thresh') || c.includes('reorder') || c.includes('min') || c.includes('alert'));
+      colMap.cost = row.findIndex(c => c.includes('cost') || c.includes('price') || c.includes('rate'));
+      colMap.unit = row.findIndex(c => c.includes('unit'));
+      break;
+    }
+  }
+
+  const startIndex = headerIndex !== -1 ? headerIndex + 1 : 1;
+  const parsedItems = [];
+
+  for (let i = startIndex; i < rows.length; i++) {
+    const r = rows[i];
+    const name = String(r[colMap.name !== -1 ? colMap.name : 0] || '').trim();
+    if (!name || name.toLowerCase().includes('total') || name.toLowerCase().includes('raw ingredient')) continue;
+
+    const category = colMap.category !== -1 && r[colMap.category] ? String(r[colMap.category]).trim() : 'Dry Goods';
+    const explicitUnit = colMap.unit !== -1 && r[colMap.unit] ? String(r[colMap.unit]).trim() : '';
+
+    const rawStock = r[colMap.stock !== -1 ? colMap.stock : 2];
+    const rawThresh = r[colMap.threshold !== -1 ? colMap.threshold : 3];
+    const rawCost = r[colMap.cost !== -1 ? colMap.cost : 4];
+
+    const stockParsed = parseQtyAndUnit(rawStock, explicitUnit || 'g');
+    const threshParsed = parseQtyAndUnit(rawThresh, stockParsed.unit);
+    const unitCost = cleanCostValue(rawCost);
+
+    const safeId = `ing_${name.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 15)}_${Date.now().toString().slice(-4)}_${i}`;
+
+    parsedItems.push({
+      id: safeId,
+      name,
+      category: category || 'Dry Goods',
+      stock: stockParsed.qty,
+      unit: explicitUnit || stockParsed.unit || 'g',
+      cost: unitCost,
+      threshold: threshParsed.qty || 10
+    });
+  }
+
+  return parsedItems;
+};
+
+// 2. PDF INVENTORY PARSER (Matches the Visual Table Structure)
+const extractInventoryFromPDF = async (file) => {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const tokens = [];
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    for (let i = 0; i < content.items.length; i++) {
+      const str = (content.items[i].str || '').trim();
+      if (!str || str === '|' || str.startsWith('Page ')) continue;
+      tokens.push(str);
+    }
+  }
+
+  const items = [];
+  const knownCategories = ['Dry Goods', 'Dairy & Eggs', 'Meat', 'Poultry', 'Seafood', 'Beverages', 'Bar Supplies', 'Bakery', 'Produce'];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const catMatch = knownCategories.find(c => c.toLowerCase() === token.toLowerCase());
+
+    if (catMatch && i > 0) {
+      const name = tokens[i - 1].replace(/^[|•\-\s]+|[|•\-\s]+$/g, '').trim();
+      
+      // Look forward for Stock, Threshold and Cost
+      let stock = 0;
+      let unit = 'g';
+      let threshold = 10;
+      let cost = 0;
+
+      const fwd1 = tokens[i + 1] || '';
+      const fwd2 = tokens[i + 2] || '';
+      const fwd3 = tokens[i + 3] || '';
+      const fwd4 = tokens[i + 4] || '';
+
+      const sParsed = parseQtyAndUnit(fwd1);
+      if (sParsed.qty > 0) {
+        stock = sParsed.qty;
+        unit = sParsed.unit;
+      }
+
+      const tParsed = parseQtyAndUnit(fwd2, unit);
+      if (tParsed.qty > 0) {
+        threshold = tParsed.qty;
+      }
+
+      cost = cleanCostValue(fwd3) || cleanCostValue(fwd4);
+
+      if (name.length >= 2 && !name.toLowerCase().includes('raw ingredient')) {
+        const safeId = `ing_${name.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 15)}_${Date.now().toString().slice(-4)}_${items.length}`;
+        items.push({
+          id: safeId,
+          name,
+          category: catMatch,
+          stock,
+          unit,
+          cost,
+          threshold
+        });
+      }
+    }
+  }
+
+  return items;
+};
+
 const extractMenuFromPDF = async (file) => {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -339,6 +505,31 @@ export default function App() {
     order: 1,
     invoice: 1,
     cashOut: 1
+  });
+
+  const [accountingPeriod, setAccountingPeriod] = useState('ALL'); // 'ALL' | 'TODAY' | 'THIS_MONTH' | 'LAST_MONTH'
+
+  // Persistent Attendance & Time Clock
+  const [attendanceLogs, setAttendanceLogs] = usePersistentState('linoli_attendance_archive_v1', []);
+  const [payrollRecords, setPayrollRecords] = usePersistentState('linoli_payroll_archive_v1', []);
+  const [payrollSubTab, setPayrollSubTab] = useState('attendance'); // 'attendance' | 'payslips' | 'epf_etf' | 'profiles'
+  const [editingPayrollId, setEditingPayrollId] = useState(null);
+  
+  // Payroll Creation Modal Form
+  const [processPayModalOpen, setProcessPayModalOpen] = useState(false);
+  const [payrollInputForm, setPayrollInputForm] = useState({
+    staffId: '',
+    period: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+    epfEtfEnabled: true, // <-- ADD THIS: Toggle EPF/ETF applicability
+    basicSalary: 35000,
+    budgetaryAllowance: 2500,
+    otherAllowances: 0,
+    serviceChargeBonus: 0,
+    incentiveBonus: 0,
+    overtimeHours: 0,
+    overtimeRate: 250,
+    otherDeductions: 0,
+    notes: ''
   });
   // Sequential Number Helpers
   const getNextOrderNumber = () => {
@@ -461,6 +652,7 @@ export default function App() {
   const [serviceChargeActive, setServiceChargeActive] = useState(true);
   const [taxActive, setTaxActive] = useState(false);
   const [discountPercent, setDiscountPercent] = useState(0);
+  const [mobileCartDrawerOpen, setMobileCartDrawerOpen] = useState(false);
 
   // Date Filter State for Reports
   const [reportStartDate, setReportStartDate] = useState(getLocalDateStr());
@@ -502,6 +694,7 @@ export default function App() {
   const [allocationModalOpen, setAllocationModalOpen] = useState(false);
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidPayload, setVoidPayload] = useState({ item: null, reason: '' });
+  
 
   // Bill Editing Modal (Billing queue)
   const [editBillModalOpen, setEditBillModalOpen] = useState(false);
@@ -737,6 +930,32 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         localStorage.setItem('linoli_denominations', serialized);
       }
     });
+
+    // 10. Receive attendance logs from cloud
+    const unsubAttendance = subscribeToCloud('attendance_logs', (remoteAtt) => {
+      isCloudSynced.current = true;
+      if (Array.isArray(remoteAtt)) {
+        setAttendanceLogs(remoteAtt);
+        localStorage.setItem('linoli_attendance_logs', JSON.stringify(remoteAtt));
+      }
+    });
+
+    // 11. Receive payroll records from cloud
+    const unsubPayroll = subscribeToCloud('payroll_records', (remotePay) => {
+      isCloudSynced.current = true;
+      if (Array.isArray(remotePay)) {
+        setPayrollRecords(remotePay);
+        localStorage.setItem('linoli_payroll_records', JSON.stringify(remotePay));
+      }
+    });
+    
+    // 12. Receive accounting settings from cloud
+    const unsubAccounting = subscribeToCloud('accounting_settings', (remoteSettings) => {
+      isCloudSynced.current = true;
+      if (remoteSettings && remoteSettings.period) {
+        setAccountingPeriod(remoteSettings.period);
+      }
+    });
     
     return () => {
       if (typeof unsubOrders === 'function') unsubOrders();
@@ -749,6 +968,9 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       if (typeof unsubShift === 'function') unsubShift();
       if (typeof unsubStaff === 'function') unsubStaff();
       if (typeof unsubDenominations === 'function') unsubDenominations();
+      if (typeof unsubAttendance === 'function') unsubAttendance();
+      if (typeof unsubPayroll === 'function') unsubPayroll();
+      if (typeof unsubAccounting === 'function') unsubAccounting();
     };
   }, []);
 
@@ -861,7 +1083,31 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         syncToCloud('denominations', denominations);
       }
     }
-  }, [denominations]);
+    }, [denominations]);
+
+    // Sync Attendance Archive Online & Offline
+  useEffect(() => {
+    if (!isCloudSynced.current) return;
+    if (Array.isArray(attendanceLogs) && attendanceLogs.length > 0) {
+      syncToCloud('attendance_logs_archive', attendanceLogs);
+    }
+  }, [attendanceLogs]);
+
+  // Sync Payroll Slips & Actions Online & Offline
+  useEffect(() => {
+    if (!isCloudSynced.current) return;
+    if (Array.isArray(payrollRecords) && payrollRecords.length > 0) {
+      syncToCloud('payroll_records_archive', payrollRecords);
+    }
+  }, [payrollRecords]);
+
+  // Broadcast accounting view filters/snapshots to cloud
+  useEffect(() => {
+    if (!isCloudSynced.current) return;
+    if (accountingPeriod !== undefined) {
+      syncToCloud('accounting_settings', { period: accountingPeriod });
+    }
+  }, [accountingPeriod]);
 
   const handleCreateStaff = (e) => {
     e.preventDefault();
@@ -1946,6 +2192,72 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     }
   };
 
+  // =========================================================================
+  // SRI LANKAN STATUTORY CALCULATION HELPERS (EPF / ETF / SERVICE POOL)
+  // =========================================================================
+  const calculateSriLankanPayroll = ({
+    epfEtfEnabled = true, // <-- Add parameter
+    basicSalary = 0,
+    budgetaryAllowance = 0,
+    otherAllowances = 0,
+    serviceChargeBonus = 0,
+    incentiveBonus = 0,
+    overtimeHours = 0,
+    overtimeRate = 0,
+    otherDeductions = 0
+  }) => {
+    const basic = Number(basicSalary) || 0;
+    const bra = Number(budgetaryAllowance) || 0;
+    const allowances = Number(otherAllowances) || 0;
+    const pool = Number(serviceChargeBonus) || 0;
+    const bonus = Number(incentiveBonus) || 0;
+    const ot = (Number(overtimeHours) || 0) * (Number(overtimeRate) || 0);
+    const deductions = Number(otherDeductions) || 0;
+
+    // EPF Base Earnings
+    const epfLiableEarnings = Number((basic + bra + allowances).toFixed(2));
+
+    // Calculate EPF/ETF ONLY if epfEtfEnabled is true; otherwise 0.00
+    const epfEmployee = epfEtfEnabled ? Number((epfLiableEarnings * 0.08).toFixed(2)) : 0;
+    const epfEmployer = epfEtfEnabled ? Number((epfLiableEarnings * 0.12).toFixed(2)) : 0;
+    const etfEmployer = epfEtfEnabled ? Number((epfLiableEarnings * 0.03).toFixed(2)) : 0;
+    const totalEpfFund = Number((epfEmployee + epfEmployer).toFixed(2));
+
+    // Gross & Net Calculations
+    const grossEarnings = Number((basic + bra + allowances + pool + bonus + ot).toFixed(2));
+    const totalDeductions = Number((epfEmployee + deductions).toFixed(2));
+    const netSalary = Number((grossEarnings - totalDeductions).toFixed(2));
+    const costToCompany = Number((grossEarnings + epfEmployer + etfEmployer).toFixed(2));
+
+    return {
+      epfEtfEnabled,
+      basic,
+      bra,
+      allowances,
+      epfLiableEarnings,
+      epfEmployee,
+      epfEmployer,
+      etfEmployer,
+      totalEpfFund,
+      serviceChargeBonus: pool,
+      incentiveBonus: bonus,
+      overtimePay: ot,
+      grossEarnings,
+      totalDeductions,
+      netSalary,
+      costToCompany
+    };
+  };
+
+  // Quick helper to check if a staff member is currently clocked in
+  const getStaffClockStatus = (staffId) => {
+    const today = getLocalDateStr();
+    const userTodayLogs = (attendanceLogs || []).filter(a => a.staffId === staffId && a.date === today);
+    if (userTodayLogs.length === 0) return { clockedIn: false, log: null };
+    const latest = userTodayLogs[userTodayLogs.length - 1];
+    return { clockedIn: !latest.clockOutTime, log: latest };
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="flex min-h-screen w-full items-center justify-center bg-[#070b14] p-4 font-sans select-none antialiased">
@@ -2204,8 +2516,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
             {[
               { id: 'menu_admin', name: 'Menu Management', icon: ClipboardList, badgeText: '+Add' },
+              { id: 'accounting', name: 'Accounting & P&L', icon: PieChart }, // <-- ADD THIS
               { id: 'cancelled', name: 'Cancelled Tickets', icon: Trash2 },
               { id: 'staff', name: 'Staff Management', icon: Users },
+              { id: 'payroll', name: 'Employment & Payroll', icon: Briefcase },
               { id: 'settings', name: 'System Settings', icon: Settings }
             ].map(item => {
               const allowed = hasAccess(item.id);
@@ -2314,23 +2628,22 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
           </div>
         </header>
 
-{/* VIEW 1: POS TERMINAL */}
+{/* VIEW 1: RESPONSIVE POS TERMINAL (MOBILE, TABLET & DESKTOP) */}
         {activeTab === 'pos' && (
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative min-h-0">
             {/* Catalog Grid Area */}
-            <div className="flex-1 flex flex-col p-5 overflow-hidden min-h-0">
-              
-              {/* TOP BAR: HIGH-CONTRAST DARK DOCK FOR CATEGORIES & CONTROLS */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 mb-4 shrink-0 shadow-md flex items-center gap-3">
-                {/* CATEGORY SELECTOR BAR (EXPANDED HORIZONTAL SCROLL & HIGH VISIBILITY BLOCK LETTERS) */}
+            <div className="flex-1 flex flex-col p-3 sm:p-5 overflow-hidden min-h-0">
+              {/* TOP DOCK: CATEGORIES, DENSITY, SEARCH */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2 sm:p-2.5 mb-3 sm:mb-4 shrink-0 shadow-md flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                {/* Horizontal Scrollable Category Bar */}
                 <div 
-                  className="flex-1 min-w-0 overflow-x-auto pb-1.5 pt-0.5 scrollbar-thin"
+                  className="flex-1 min-w-0 overflow-x-auto pb-1 pt-0.5 scrollbar-thin"
                   style={{
                     scrollbarWidth: 'thin',
                     scrollbarColor: '#475569 #1e293b'
                   }}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
                     {categoriesList.map((cat) => {
                       const count = cat === 'All' 
                         ? menuItems.length 
@@ -2342,7 +2655,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           key={cat}
                           type="button"
                           onClick={() => setSelectedCategory(cat)}
-                          className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-wider shrink-0 transition-all flex items-center gap-2 cursor-pointer shadow-xs ${
+                          className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl font-black text-[11px] sm:text-xs uppercase tracking-wider shrink-0 transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer shadow-xs ${
                             isSelected
                               ? 'bg-[#ff5500] text-white shadow-orange-500/40 ring-2 ring-[#ff5500]/50'
                               : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 hover:border-slate-600'
@@ -2350,7 +2663,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         >
                           <span>{cat}</span>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                            className={`px-1.5 py-0.2 rounded-full text-[9px] sm:text-[10px] font-black ${
                               isSelected
                                 ? 'bg-black/30 text-white'
                                 : 'bg-slate-900/80 text-slate-300 border border-slate-700/60'
@@ -2364,20 +2677,15 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 </div>
 
-                {/* CONTROLS SEPARATOR */}
-                <div className="h-8 w-px bg-slate-800 shrink-0" />
-
-                {/* RIGHT CONTROLS: DENSITY SWITCHER + SEARCH */}
+                {/* Right Controls: View Switcher & Search Bar */}
                 <div className="flex items-center gap-2 shrink-0">
-                  {/* Density switcher */}
-                  <div className="flex items-center bg-slate-800 border border-slate-700 rounded-xl p-0.5 shadow-inner">
+                  {/* Density switcher (hidden on very small phones) */}
+                  <div className="hidden sm:flex items-center bg-slate-800 border border-slate-700 rounded-xl p-0.5 shadow-inner">
                     <button
                       type="button"
                       onClick={() => setPosViewMode('grid')}
                       className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        posViewMode === 'grid' 
-                          ? 'bg-[#ff5500] text-white shadow-xs' 
-                          : 'text-slate-400 hover:text-white'
+                        posViewMode === 'grid' ? 'bg-[#ff5500] text-white shadow-xs' : 'text-slate-400 hover:text-white'
                       }`}
                       title="Visual Grid"
                     >
@@ -2387,9 +2695,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       type="button"
                       onClick={() => setPosViewMode('compact')}
                       className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        posViewMode === 'compact' 
-                          ? 'bg-[#ff5500] text-white shadow-xs' 
-                          : 'text-slate-400 hover:text-white'
+                        posViewMode === 'compact' ? 'bg-[#ff5500] text-white shadow-xs' : 'text-slate-400 hover:text-white'
                       }`}
                       title="Compact Tiles"
                     >
@@ -2399,9 +2705,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       type="button"
                       onClick={() => setPosViewMode('list')}
                       className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        posViewMode === 'list' 
-                          ? 'bg-[#ff5500] text-white shadow-xs' 
-                          : 'text-slate-400 hover:text-white'
+                        posViewMode === 'list' ? 'bg-[#ff5500] text-white shadow-xs' : 'text-slate-400 hover:text-white'
                       }`}
                       title="Compact List"
                     >
@@ -2410,21 +2714,21 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
 
                   {/* Search Input */}
-                  <div className="relative w-48">
+                  <div className="relative flex-1 sm:w-48">
                     <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
                       value={menuSearchQuery}
                       onChange={e => setMenuSearchQuery(e.target.value)}
-                      placeholder="Search 150+ items..."
-                      className="w-full pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#ff5500] focus:ring-1 focus:ring-[#ff5500]"
+                      placeholder="Search items..."
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#ff5500]"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Responsive fluid grid with multi-breakpoint scaling */}
-              <div className="flex-1 overflow-y-auto pr-1 min-h-0">
+              {/* Responsive Catalog Items */}
+              <div className="flex-1 overflow-y-auto pr-1 min-h-0 pb-20 lg:pb-0">
                 {(() => {
                   const filteredDishes = menuItems.filter(item => {
                     const matchCat = selectedCategory === 'All' || item.category === selectedCategory;
@@ -2444,8 +2748,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                   if (posViewMode === 'compact') {
                     return (
-                      <div className="bg-slate-100/70 p-3 rounded-2xl border border-slate-200 shadow-inner">
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2.5">
+                      <div className="bg-slate-100/70 p-2 sm:p-3 rounded-2xl border border-slate-200 shadow-inner">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-2.5">
                           {filteredDishes.map(dish => {
                             const { portions } = calculateDishAvailability(dish.recipe);
                             const isInCart = cart.some(i => i.id === dish.id);
@@ -2455,30 +2759,26 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                 key={dish.id}
                                 type="button"
                                 onClick={() => handleAddToCart(dish)}
-                                className={`p-3 rounded-xl border-2 text-left flex flex-col justify-between transition-all bg-white cursor-pointer active:scale-95 shadow-xs hover:shadow-md ${
+                                className={`p-2.5 sm:p-3 rounded-xl border-2 text-left flex flex-col justify-between transition-all bg-white cursor-pointer active:scale-95 shadow-xs ${
                                   isInCart
                                     ? 'border-[#ff5500] ring-2 ring-[#ff5500]/25 shadow-orange-500/10'
                                     : 'border-slate-300 hover:border-slate-400'
                                 }`}
                               >
                                 <div>
-                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                                    dish.department === 'Bar' 
-                                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
-                                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  <span className={`text-[8px] sm:text-[9px] font-black px-1.5 py-0.2 rounded uppercase ${
+                                    dish.department === 'Bar' ? 'bg-indigo-50 text-indigo-700' : 'bg-rose-50 text-rose-700'
                                   }`}>
                                     {dish.department}
                                   </span>
-                                  <p className="font-black text-xs text-slate-950 mt-1.5 line-clamp-1">
-                                    {dish.name}
-                                  </p>
+                                  <p className="font-black text-xs text-slate-950 mt-1 line-clamp-1">{dish.name}</p>
                                 </div>
-                                <div className="mt-2.5 pt-2 border-t border-slate-100 flex justify-between items-center text-[10px]">
+                                <div className="mt-2 pt-1.5 border-t border-slate-100 flex justify-between items-center text-[10px]">
                                   <span className="font-mono font-black text-[#ff5500]">
                                     {settings.currency} {dish.price.toFixed(0)}
                                   </span>
                                   <span className={`font-bold ${portions <= 0 ? 'text-amber-600' : 'text-emerald-700'}`}>
-                                    {portions <= 0 ? '0 ready' : `${portions} left`}
+                                    {portions <= 0 ? '0 left' : `${portions} left`}
                                   </span>
                                 </div>
                               </button>
@@ -2488,6 +2788,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       </div>
                     );
                   }
+
                   if (posViewMode === 'list') {
                     return (
                       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
@@ -2496,18 +2797,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           return (
                             <div
                               key={dish.id}
-                              onClick={() => {
-                                setCart(prev => {
-                                  const existing = prev.find(i => i.id === dish.id);
-                                  if (existing) {
-                                    return prev.map(i => i.id === dish.id ? { ...i, qty: i.qty + 1 } : i);
-                                  }
-                                  return [...prev, { ...dish, cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
-                                });
-                              }}
+                              onClick={() => handleAddToCart(dish)}
                               className="p-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors"
                             >
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2.5 sm:gap-3">
                                 <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
                                   dish.department === 'Bar' ? 'bg-indigo-100 text-indigo-700' : 'bg-rose-100 text-rose-700'
                                 }`}>
@@ -2518,12 +2811,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                   <span className="text-[10px] text-slate-400">{dish.category} • {dish.prepTime}</span>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-4">
-                                <span className={`text-xs font-mono ${portions <= 0 ? 'text-amber-600 font-bold' : 'text-slate-500'}`}>
+                              <div className="flex items-center gap-3 sm:gap-4">
+                                <span className={`text-xs font-mono hidden sm:inline ${portions <= 0 ? 'text-amber-600 font-bold' : 'text-slate-500'}`}>
                                   {portions <= 0 ? '0 ready' : `${portions} ready`}
                                 </span>
-                                <span className="font-mono font-bold text-sm text-[#ff5500]">{settings.currency} {dish.price.toFixed(2)}</span>
-                                <button className="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">+ Add</button>
+                                <span className="font-mono font-bold text-xs sm:text-sm text-[#ff5500]">
+                                  {settings.currency} {dish.price.toFixed(2)}
+                                </span>
+                                <button type="button" className="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">+ Add</button>
                               </div>
                             </div>
                           );
@@ -2532,10 +2827,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     );
                   }
 
-                  // Default Visual Grid with High-Contrast Canvas & Divided Cards
+                  // Default Grid Layout with multi-screen scaling
                   return (
-                    <div className="bg-slate-100/80 p-3.5 rounded-3xl border border-slate-200/90 shadow-inner">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
+                    <div className="bg-slate-100/80 p-2.5 sm:p-3.5 rounded-3xl border border-slate-200/90 shadow-inner">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-2.5 sm:gap-3.5">
                         {filteredDishes.map(dish => {
                           const { cogs, portions } = calculateDishAvailability(dish.recipe);
                           const isInCart = cart.some(i => i.id === dish.id);
@@ -2543,76 +2838,58 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           return (
                             <div
                               key={dish.id}
-                              onClick={() => {
-                                setCart(prev => {
-                                  const existing = prev.find(i => i.id === dish.id);
-                                  if (existing) {
-                                    return prev.map(i => i.id === dish.id ? { ...i, qty: i.qty + 1 } : i);
-                                  }
-                                  return [...prev, { ...dish, cartItemId: `cart_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, qty: 1, notes: '' }];
-                                });
-                              }}
-                              className={`bg-white rounded-2xl border-2 cursor-pointer active:scale-[0.98] overflow-hidden flex flex-col justify-between transition-all duration-150 shadow-xs hover:shadow-md hover:-translate-y-0.5 ${
+                              onClick={() => handleAddToCart(dish)}
+                              className={`bg-white rounded-2xl border-2 cursor-pointer active:scale-[0.98] overflow-hidden flex flex-col justify-between transition-all duration-150 shadow-xs hover:shadow-md ${
                                 isInCart
                                   ? 'border-[#ff5500] ring-2 ring-[#ff5500]/25 shadow-orange-500/15'
                                   : 'border-slate-300 hover:border-slate-400'
                               }`}
                             >
                               {dish.imageUrl ? (
-                                <div className="relative h-28 w-full bg-slate-100 overflow-hidden shrink-0 border-b border-slate-200">
+                                <div className="relative h-20 sm:h-24 md:h-28 w-full bg-slate-100 overflow-hidden shrink-0 border-b border-slate-200">
                                   <img
                                     src={dish.imageUrl}
                                     alt={dish.name}
                                     className="w-full h-full object-cover"
                                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                   />
-                                  <span className={`absolute top-2 left-2 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded shadow-xs text-white ${
+                                  <span className={`absolute top-1.5 left-1.5 text-[8px] sm:text-[9px] font-black uppercase px-1.5 py-0.2 rounded text-white ${
                                     dish.department === 'Bar' ? 'bg-indigo-600' : 'bg-rose-600'
                                   }`}>
                                     {dish.department}
                                   </span>
-                                  <span className="absolute bottom-2 right-2 px-2.5 py-0.5 rounded-lg bg-black/80 backdrop-blur-xs text-white font-mono font-black text-xs shadow-xs">
-                                    {settings.currency} {dish.price.toFixed(2)}
+                                  <span className="absolute bottom-1.5 right-1.5 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-xs text-white font-mono font-black text-[10px] sm:text-xs">
+                                    {settings.currency} {dish.price.toFixed(0)}
                                   </span>
                                 </div>
                               ) : (
-                                <div className="p-3 pb-0 flex justify-between items-start">
-                                  <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${
-                                    dish.department === 'Bar'
-                                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                <div className="p-2.5 pb-0 flex justify-between items-start">
+                                  <span className={`text-[8px] sm:text-[9px] font-black uppercase px-1.5 py-0.2 rounded ${
+                                    dish.department === 'Bar' ? 'bg-indigo-50 text-indigo-700' : 'bg-rose-50 text-rose-700'
                                   }`}>
                                     {dish.department}
                                   </span>
                                   <span className="text-xs font-mono font-black text-[#ff5500]">
-                                    {settings.currency} {dish.price.toFixed(2)}
+                                    {settings.currency} {dish.price.toFixed(0)}
                                   </span>
                                 </div>
                               )}
 
-                              {/* Dish Title & Description / Category */}
-                              <div className="p-3.5 pb-2.5 flex-1 flex flex-col justify-center">
-                                <h4 className="font-black text-sm text-slate-950 leading-snug line-clamp-2 tracking-tight">
+                              <div className="p-2.5 sm:p-3 flex-1 flex flex-col justify-center">
+                                <h4 className="font-black text-xs sm:text-sm text-slate-950 leading-snug line-clamp-2">
                                   {dish.name}
                                 </h4>
-                                <p className="text-[11px] text-slate-600 font-bold mt-1 line-clamp-1 uppercase tracking-wide">
-                                  {dish.category || dish.description || 'General Menu'}
+                                <p className="text-[10px] text-slate-500 font-bold mt-0.5 line-clamp-1 uppercase">
+                                  {dish.category || 'General Menu'}
                                 </p>
                               </div>
 
-                              {/* Card Bottom: Readiness & BOM Status */}
-                              <div className="p-3 pt-2 border-t border-slate-200/90 flex items-center justify-between text-[11px] bg-slate-50/70">
-                                {portions <= 0 ? (
-                                  <span className="text-amber-600 font-bold flex items-center gap-1 text-[10px]">
-                                    <AlertTriangle className="h-3 w-3" /> 0 ready
-                                  </span>
-                                ) : (
-                                  <span className="text-emerald-700 font-bold flex items-center gap-1 text-[10px]">
-                                    <CheckCircle2 className="h-3 w-3" /> {portions} ready
-                                  </span>
-                                )}
-                                <span className="text-slate-500 font-mono font-bold text-[10px]">
-                                  BOM: {settings.currency} {cogs.toFixed(0)}
+                              <div className="p-2 sm:p-2.5 border-t border-slate-200/90 flex items-center justify-between text-[10px] bg-slate-50/70">
+                                <span className={`font-bold ${portions <= 0 ? 'text-amber-600' : 'text-emerald-700'}`}>
+                                  {portions <= 0 ? '0 ready' : `${portions} left`}
+                                </span>
+                                <span className="text-slate-400 font-mono hidden sm:inline">
+                                  BOM: {cogs.toFixed(0)}
                                 </span>
                               </div>
                             </div>
@@ -2625,11 +2902,83 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-            {/* Right Ticket Bar */}
-            <div className="w-96 bg-white border-l border-slate-200 flex flex-col justify-between shrink-0 shadow-lg min-h-0">
+            {/* FLOATING ACTION BAR FOR MOBILE/TABLET (Bottom Dock) */}
+            <div className="lg:hidden fixed bottom-0 inset-x-0 bg-slate-900 border-t border-slate-800 p-3 z-30 flex items-center justify-between shadow-2xl backdrop-blur-md">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setMobileCartDrawerOpen(true)}
+                    className="h-11 w-11 rounded-xl bg-orange-600 text-white flex items-center justify-center shadow-lg shadow-orange-600/40 cursor-pointer active:scale-95"
+                  >
+                    <ShoppingBag className="h-5 w-5" />
+                  </button>
+                  {cart.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center border-2 border-slate-900">
+                      {cart.reduce((sum, item) => sum + item.qty, 0)}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    {orderMode === 'DINING' ? selectedTable.name : 'Takeaway'}
+                  </span>
+                  <span className="text-sm font-black font-mono text-white">
+                    {settings.currency} {cartGrandTotal.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={cart.length === 0}
+                  onClick={() => setMobileCartDrawerOpen(true)}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer disabled:opacity-30"
+                >
+                  View Bill
+                </button>
+                <button
+                  type="button"
+                  disabled={cart.length === 0}
+                  onClick={handleSendOrder}
+                  className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-lg shadow-orange-600/30 transition-all cursor-pointer disabled:opacity-30 flex items-center gap-1.5"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Send</span>
+                </button>
+              </div>
+            </div>
+
+            {/* MOBILE CART BACKDROP OVERLAY */}
+            {mobileCartDrawerOpen && (
+              <div
+                onClick={() => setMobileCartDrawerOpen(false)}
+                className="lg:hidden fixed inset-0 bg-black/70 backdrop-blur-xs z-40 transition-opacity"
+              />
+            )}
+
+            {/* RIGHT TICKET BAR (Side pane on Desktop / Slide-up Bottom Sheet on Mobile & Tablet) */}
+            <div
+              className={`fixed lg:static inset-x-0 bottom-0 lg:inset-auto z-50 lg:z-auto w-full lg:w-96 max-h-[85vh] lg:max-h-full bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col justify-between shrink-0 shadow-2xl lg:shadow-none rounded-t-3xl lg:rounded-none transition-transform duration-300 ease-in-out ${
+                mobileCartDrawerOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'
+              }`}
+            >
+              {/* Mobile Drawer Handle Header */}
+              <div className="p-3 border-b border-slate-100 flex lg:hidden items-center justify-between">
+                <div className="h-1.5 w-12 bg-slate-300 rounded-full mx-auto" />
+                <button
+                  type="button"
+                  onClick={() => setMobileCartDrawerOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-900 absolute right-3"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Order Assignment Controls */}
               <div className="p-3.5 border-b border-slate-200 space-y-2.5 shrink-0 bg-white">
-                
-                {/* ACTIVE BILL EDITING NOTIFICATION BANNER */}
+                {/* Modifying Existing Bill Alert */}
                 {settlingOrder && (
                   <div className="p-2.5 bg-amber-500/10 border-2 border-amber-500/40 rounded-xl flex items-center justify-between text-xs">
                     <div>
@@ -2653,13 +3002,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 )}
 
-                {/* Order Assignment with Tick Selectors */}
+                {/* Dine-In vs Takeaway Selector */}
                 <div>
                   <span className="text-[10px] font-black tracking-wider uppercase text-slate-400 block mb-1.5">
                     Order Assignment
                   </span>
                   <div className="grid grid-cols-2 gap-2">
-                    {/* Dining Tick Card */}
                     <button
                       type="button"
                       onClick={() => setOrderMode('DINING')}
@@ -2671,18 +3019,15 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     >
                       <div className="flex items-center gap-1.5">
                         <Grid className="h-3.5 w-3.5 text-[#ff5500]" />
-                        <span>Dine-In Table</span>
+                        <span>Dine-In</span>
                       </div>
-                      <div className={`h-4 w-4 rounded-full flex items-center justify-center border transition-all ${
-                        orderMode === 'DINING'
-                          ? 'bg-[#ff5500] border-[#ff5500] text-white'
-                          : 'border-slate-300 bg-white'
+                      <div className={`h-4 w-4 rounded-full flex items-center justify-center border ${
+                        orderMode === 'DINING' ? 'bg-[#ff5500] border-[#ff5500] text-white' : 'border-slate-300 bg-white'
                       }`}>
                         {orderMode === 'DINING' && <Check className="h-2.5 w-2.5 stroke-[3]" />}
                       </div>
                     </button>
 
-                    {/* Takeaway Tick Card */}
                     <button
                       type="button"
                       onClick={() => setOrderMode('TAKEAWAY')}
@@ -2696,10 +3041,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         <ShoppingBag className="h-3.5 w-3.5 text-[#ff5500]" />
                         <span>Takeaway</span>
                       </div>
-                      <div className={`h-4 w-4 rounded-full flex items-center justify-center border transition-all ${
-                        orderMode === 'TAKEAWAY'
-                          ? 'bg-[#ff5500] border-[#ff5500] text-white'
-                          : 'border-slate-300 bg-white'
+                      <div className={`h-4 w-4 rounded-full flex items-center justify-center border ${
+                        orderMode === 'TAKEAWAY' ? 'bg-[#ff5500] border-[#ff5500] text-white' : 'border-slate-300 bg-white'
                       }`}>
                         {orderMode === 'TAKEAWAY' && <Check className="h-2.5 w-2.5 stroke-[3]" />}
                       </div>
@@ -2707,13 +3050,11 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 </div>
 
-                {/* Inline Table / Guest Picker based on ticked mode */}
+                {/* Table Picker or Takeaway Information */}
                 {orderMode === 'DINING' ? (
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <label className="font-bold text-slate-700 flex items-center gap-1">
-                        <span>Assigned Table:</span>
-                      </label>
+                      <span className="font-bold text-slate-700">Assigned Table:</span>
                       <button
                         type="button"
                         onClick={() => setAllocationModalOpen(true)}
@@ -2734,7 +3075,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       >
                         {floorTables.map(t => (
                           <option key={t.id} value={t.id}>
-                            {t.name} ({t.zone}) - {t.capacity} Seats [{t.status}]
+                            {t.name} ({t.zone}) - {t.capacity}p [{t.status}]
                           </option>
                         ))}
                       </select>
@@ -2785,7 +3126,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 )}
 
-                {/* Surcharges and Discounts */}
+                {/* Surcharges & Rates Toggle */}
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
                     type="button"
@@ -2812,7 +3153,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </button>
                 </div>
 
-                {/* Discount Presets */}
+                {/* Quick Discounts */}
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase">Discount:</span>
                   <div className="flex gap-1 mt-1">
@@ -2834,8 +3175,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </div>
               </div>
 
-              {/* Cart item list with scroll containment */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-2.5 min-h-0">
+              {/* Cart Items List */}
+              <div className="flex-1 overflow-y-auto p-3.5 space-y-2 min-h-0">
                 {cart.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-6">
                     <Monitor className="h-10 w-10 mb-2 stroke-[1]" />
@@ -2844,7 +3185,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 ) : (
                   cart.map(item => (
-                    <div key={item.cartItemId} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <div key={item.cartItemId} className="p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <div className="flex items-start justify-between">
                         <div>
                           <p className="text-xs font-bold text-slate-900">{item.name}</p>
@@ -2899,8 +3240,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 )}
               </div>
 
-              {/* Order totals and actions */}
-              <div className="p-4 border-t border-slate-200 bg-slate-50 space-y-3 shrink-0">
+              {/* Ticket Financial Totals & Actions */}
+              <div className="p-3.5 sm:p-4 border-t border-slate-200 bg-slate-50 space-y-2.5 shrink-0">
                 <div className="space-y-1 text-xs text-slate-600">
                   <div className="flex justify-between">
                     <span>Subtotal</span>
@@ -2924,7 +3265,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       <span className="font-mono">+{settings.currency} {cartTax.toFixed(2)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-200">
+                  <div className="flex justify-between text-sm font-black text-slate-900 pt-1.5 border-t border-slate-200">
                     <span>Grand Total</span>
                     <span className="font-mono text-base text-[#ff5500]">{settings.currency} {cartGrandTotal.toFixed(2)}</span>
                   </div>
@@ -2933,8 +3274,11 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 <button
                   type="button"
                   disabled={cart.length === 0}
-                  onClick={handleSendOrder}
-                  className="w-full py-3 bg-[#ff5500] hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm shadow-orange-600/30 disabled:opacity-40 cursor-pointer"
+                  onClick={() => {
+                    handleSendOrder();
+                    setMobileCartDrawerOpen(false);
+                  }}
+                  className="w-full py-2.5 sm:py-3 bg-[#ff5500] hover:bg-orange-600 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm shadow-orange-600/30 disabled:opacity-40 cursor-pointer"
                 >
                   <Send className="h-4 w-4" />
                   <span>{settlingOrder ? 'Save & Send Add-On (KOT / BOT)' : 'Send Order (Prints KOT / BOT)'}</span>
@@ -2946,6 +3290,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   onClick={() => {
                     setPaymentMethod('CASH');
                     setCheckoutModalOpen(true);
+                    setMobileCartDrawerOpen(false);
                   }}
                   className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer"
                 >
@@ -2956,23 +3301,23 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             </div>
           </div>
         )}
-         
+        
         {/* VIEW 2: BILLING & SETTLEMENT QUEUE */}
         {activeTab === 'billing' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="flex items-center justify-between">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h2 className="text-xl font-black text-slate-900">Billing &amp; Settlement Queue</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Manage active tables, edit line items, print temporary bills, and settle final accounts.
                 </p>
               </div>
-              <span className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-700">
+              <span className="self-start sm:self-auto px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-700">
                 {activeOrders.length} Open Bills
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5 sm:gap-4">
               {activeOrders.length === 0 ? (
                 <div className="col-span-full h-64 bg-white rounded-2xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
                   <Receipt className="h-10 w-10 mb-2 stroke-[1]" />
@@ -2983,7 +3328,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 activeOrders.map(order => {
                   const fin = calculateOrderFinancials(order);
                   return (
-                    <div key={order.orderId} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+                    <div key={order.orderId} className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col justify-between">
                       <div>
                         <div className="flex items-start justify-between mb-2">
                           <div>
@@ -3009,15 +3354,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       </div>
 
                       <div className="pt-2 border-t border-slate-100 space-y-2">
-                        <div className="grid grid-cols-3 gap-1.5 text-xs">
-                          {/* Edit Items by loading directly into POS Terminal */}
+                        <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
+                          {/* Edit Items in POS */}
                           <button
                             type="button"
                             onClick={() => {
-                              // 1. Stage items into POS cart
                               setCart(order.items ? JSON.parse(JSON.stringify(order.items)) : []);
-                              
-                              // 2. Set mode and table
                               setOrderMode(order.mode || 'DINING');
                               if (order.tableId) {
                                 const tbl = floorTables.find(t => t.id === order.tableId);
@@ -3029,24 +3371,19 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                   token: order.tableName || 'TK-101'
                                 }));
                               }
-                              
-                              // 3. Keep tax, service, discount states
                               setServiceChargeActive(order.serviceChargeActive !== false);
                               setTaxActive(Boolean(order.taxActive));
                               setDiscountPercent(order.discountPercent || 0);
-
-                              // 4. Mark active bill reference so Send Order knows to print add-on slips
                               setSettlingOrder(order);
-
-                              // 5. Switch to POS terminal view
                               setActiveTab('pos');
                             }}
-                            className="py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                            className="py-2.5 sm:py-2 px-1 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
                           >
-                            <Edit3 className="h-3 w-3 text-[#ff5500]" /> Edit in POS
+                            <Edit3 className="h-3 w-3 text-[#ff5500] shrink-0" />
+                            <span className="truncate">Edit in POS</span>
                           </button>
-                          
-                          {/* Print Proforma Temp Bill */}
+
+                          {/* Temp Bill */}
                           <button
                             type="button"
                             onClick={() => {
@@ -3064,12 +3401,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                 }
                               }, `Proforma Bill for ${order.tableName}`);
                             }}
-                            className="py-1.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-700 font-bold flex items-center justify-center gap-1 cursor-pointer"
+                            className="py-2.5 sm:py-2 px-1 bg-indigo-50 hover:bg-indigo-100 rounded-xl text-indigo-700 font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
                           >
-                            <Printer className="h-3 w-3" /> Temp Bill
+                            <Printer className="h-3 w-3 shrink-0" />
+                            <span className="truncate">Temp Bill</span>
                           </button>
 
-                          {/* Settle Bill */}
+                          {/* Settle */}
                           <button
                             type="button"
                             onClick={() => {
@@ -3077,13 +3415,14 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                               setPaymentMethod('CASH');
                               setCheckoutModalOpen(true);
                             }}
-                            className="py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                            className="py-2.5 sm:py-2 px-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-colors"
                           >
-                            <DollarSign className="h-3 w-3" /> Settle
+                            <DollarSign className="h-3 w-3 shrink-0" />
+                            <span className="truncate">Settle</span>
                           </button>
                         </div>
 
-                        {/* Admin-Only Active Bill Deletion */}
+                        {/* Admin Delete */}
                         {currentUser.role === 'Administrator' && (
                           <button
                             type="button"
@@ -3094,8 +3433,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                               }
                               recordAuditLog('ADMIN_DELETE_ACTIVE_BILL', order.orderId, `Admin deleted open bill ${order.orderId} (${order.tableName})`);
                             }}
-                            className="w-full py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1 transition-colors border border-rose-200 cursor-pointer"
-                            title="Admin Only: Delete this active open bill"
+                            className="w-full py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1 transition-colors border border-rose-200 cursor-pointer"
                           >
                             <Trash2 className="h-3 w-3" /> Delete Active Bill (Admin)
                           </button>
@@ -3112,7 +3450,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         {/* VIEW 3: SALES & REVENUE REPORTS WITH DATE FILTERS */}
         {activeTab === 'reports' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="flex items-center gap-6 border-b border-slate-200 pb-3 text-xs font-bold overflow-x-auto">
+            <div className="flex items-center gap-2 sm:gap-6 border-b border-slate-200 pb-2.5 text-xs font-bold overflow-x-auto scrollbar-thin">
               {['Daily Overview', 'All Items Sales', 'Sales Detail', 'Cash Out Report', 'KOT Report', 'BOT Report', 'Sales Summary', 'Food vs Beverage', 'Stock Usage', 'Stock Movement Ledger', 'Audit Trail'].map(sub => (
                 <button
                   key={sub}
@@ -3130,7 +3468,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             </div>
 
             {/* Date Filters Header */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 shadow-xs">
+            <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shadow-xs">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
                   <Calendar className="h-3.5 w-3.5 text-[#ff5500]" /> Date Filter:
@@ -4022,7 +4360,84 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {/* 1. IMPORT EXCEL / PDF INVENTORY FILE */}
+                <label className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer transition-colors active:scale-95">
+                  <Upload className="h-3.5 w-3.5 text-[#ff5500]" />
+                  <span>Import Excel / PDF</span>
+                  <input
+                    type="file"
+                    accept=".xlsx, .xls, .csv, application/pdf"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      try {
+                        let imported = [];
+                        const fileName = file.name.toLowerCase();
+
+                        if (fileName.endsWith('.pdf')) {
+                          if (typeof extractInventoryFromPDF === 'function') {
+                            imported = await extractInventoryFromPDF(file);
+                          } else {
+                            alert('PDF inventory extractor helper is missing. Please ensure extractInventoryFromPDF is defined.');
+                            return;
+                          }
+                        } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv')) {
+                          if (typeof extractInventoryFromExcel === 'function') {
+                            imported = await extractInventoryFromExcel(file);
+                          } else {
+                            alert('Excel inventory extractor helper is missing. Please ensure extractInventoryFromExcel is defined.');
+                            return;
+                          }
+                        }
+
+                        if (!imported || imported.length === 0) {
+                          alert(`Could not extract raw material records from "${file.name}". Please ensure the file has columns: Raw Ingredient, Category, Remaining Stock, Reorder Threshold, and Unit Cost.`);
+                          return;
+                        }
+
+                        // Merge or append imported records into live inventory
+                        setInventory(prev => {
+                          const existingList = Array.isArray(prev) ? [...prev] : [];
+                          imported.forEach(newIng => {
+                            const matchIdx = existingList.findIndex(
+                              ex => ex.name.toLowerCase().trim() === newIng.name.toLowerCase().trim()
+                            );
+                            if (matchIdx >= 0) {
+                              // Update stock and cost if already exists
+                              existingList[matchIdx] = {
+                                ...existingList[matchIdx],
+                                stock: Number((existingList[matchIdx].stock + newIng.stock).toFixed(2)),
+                                cost: newIng.cost > 0 ? newIng.cost : existingList[matchIdx].cost,
+                                threshold: newIng.threshold || existingList[matchIdx].threshold
+                              };
+                            } else {
+                              existingList.push(newIng);
+                            }
+                          });
+                          return existingList;
+                        });
+
+                        recordAuditLog(
+                          'INVENTORY_IMPORTED',
+                          file.name,
+                          `Imported/updated ${imported.length} raw material records from ${file.name}`
+                        );
+
+                        alert(`Successfully imported ${imported.length} raw inventory materials from ${file.name}! Inventory valuation has updated.`);
+                      } catch (err) {
+                        console.error('Inventory import failed:', err);
+                        alert(`Failed to import file: ${err.message}`);
+                      } finally {
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                </label>
+
+                {/* 2. RECEIVE STOCK */}
                 <button
                   type="button"
                   onClick={() => {
@@ -4042,6 +4457,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   <span>Receive Stock</span>
                 </button>
 
+                {/* 3. ADD MATERIAL */}
                 <button
                   type="button"
                   onClick={() => {
@@ -4704,6 +5120,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                               <option value="Safe Drop">Safe Drop (Bank Deposit)</option>
                               <option value="Petty Cash / Store Supplies">Petty Cash / Supplies</option>
                               <option value="Staff Tip Out">Staff Tip Out</option>
+                              <option value="Utilities">Utilities</option>
                               <option value="Other Emergency">Other Emergency</option>
                             </select>
                           </div>
@@ -4918,7 +5335,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
                       {[5000, 1000, 500, 100, 50, 20].map(denom => (
                         <div key={denom} className="flex flex-col justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                           <div className="flex justify-between items-center text-xs">
@@ -4952,7 +5369,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         {activeTab === 'kds' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <h2 className="text-xl font-black text-slate-900">Live Kitchen Display (KOT)</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
               {activeOrders.filter(o => o.items.some(i => i.department === 'Kitchen')).map(order => (
                 <div key={order.orderId} className="bg-white rounded-2xl border-2 border-rose-200 p-4 shadow-xs">
                   <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-3">
@@ -4982,7 +5399,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         {activeTab === 'bar' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <h2 className="text-xl font-black text-slate-900">Live Bar Display (BOT)</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
               {activeOrders.filter(o => o.items.some(i => i.department === 'Bar')).map(order => (
                 <div key={order.orderId} className="bg-white rounded-2xl border-2 border-indigo-200 p-4 shadow-xs">
                   <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-3">
@@ -5321,6 +5738,1108 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* VIEW: COMPREHENSIVE ACCOUNTING & P&L ANALYTICS */}
+        {activeTab === 'accounting' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+            {/* Header & Date Range Filter */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <PieChart className="h-5 w-5 text-[#ff5500]" />
+                  Financial Accounting, P&amp;L &amp; Expense Analytics
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Track revenue vs operational expenditures, cash-out outflow categories, cost of inventory, and net profits.
+                </p>
+              </div>
+
+              {/* Filter Buttons & Cloud Archive Action */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 p-1 rounded-xl shadow-xs text-xs font-bold">
+                  {[
+                    { id: 'ALL', label: 'All Time' },
+                    { id: 'TODAY', label: 'Today' },
+                    { id: 'THIS_MONTH', label: 'This Month' }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setAccountingPeriod(f.id)}
+                      className={`px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                        accountingPeriod === f.id
+                          ? 'bg-[#ff5500] text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Lock & Push Financial Snapshot to Firebase */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const todayStr = getLocalDateStr();
+                    const currentMonthStr = todayStr.slice(0, 7);
+
+                    const snapshotRecord = {
+                      id: `ACC-SNAP-${Date.now().toString().slice(-6)}`,
+                      period: accountingPeriod,
+                      timestamp: new Date().toLocaleString(),
+                      savedBy: currentUser.name,
+                      financials: {
+                        netSalesRevenue,
+                        grossSalesRevenue,
+                        totalDiscountsGiven,
+                        totalOperationalCashOut,
+                        totalSafeDropBanking,
+                        totalPayrollDisbursed,
+                        totalEmployerEpfEtf,
+                        totalOperatingExpenses,
+                        netProfit,
+                        profitMargin: `${profitMargin}%`,
+                        expenseCategories
+                      }
+                    };
+
+                    // 1. Sync live state to Firebase
+                    await syncToCloud('latest_accounting_summary', snapshotRecord);
+
+                    // 2. Write permanent historical copy to Firebase pos_archives
+                    if (typeof appendCloudArchive === 'function') {
+                      await appendCloudArchive('accounting_periods', snapshotRecord);
+                    }
+
+                    recordAuditLog(
+                      'ACCOUNTING_SNAPSHOT_SAVED',
+                      snapshotRecord.id,
+                      `Saved financial snapshot for ${accountingPeriod}. Net Revenue: ${settings.currency} ${netSalesRevenue.toFixed(2)}, Net Profit: ${settings.currency} ${netProfit.toFixed(2)}`
+                    );
+
+                    setSettingsNotice({
+                      title: 'Accounting Snapshot Synced',
+                      detail: `P&L statement for ${accountingPeriod} uploaded and permanently archived to Firebase.`
+                    });
+                    setTimeout(() => setSettingsNotice(null), 3500);
+                  }}
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-black text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all active:scale-95"
+                  title="Upload financial snapshot to Firebase"
+                >
+                  <Upload className="h-3.5 w-3.5 text-[#ff5500]" />
+                  <span>Sync to Cloud</span>
+                </button>
+              </div>
+            </div>
+
+           {/* Calculations Engine (Mapped directly to transactions & expenses) */}
+            {(() => {
+              const todayStr = getLocalDateStr();
+              const currentMonthStr = todayStr.slice(0, 7); // 'YYYY-MM'
+
+              // Use the actual states from App.jsx: transactions & expenses
+              const salesData = Array.isArray(transactions) ? transactions : [];
+              const expenseData = Array.isArray(expenses) ? expenses : (currentShift?.payouts || []);
+              const payrollData = Array.isArray(payrollRecords) ? payrollRecords : [];
+
+              // 1. Filter Sales / Revenue (uses startsWith because date has time appended)
+              const filteredSales = salesData.filter(inv => {
+                if (!inv) return false;
+                const dStr = extractDateStr(inv.date) || String(inv.date || '');
+                if (accountingPeriod === 'TODAY') return dStr.startsWith(todayStr);
+                if (accountingPeriod === 'THIS_MONTH') return dStr.startsWith(currentMonthStr);
+                return true;
+              });
+
+              // 2. Filter All Cash-Out Disbursements
+              const filteredDisbursements = expenseData.filter(v => {
+                if (!v || v.status === 'REJECTED') return false;
+                const dStr = extractDateStr(v.date || v.createdAt) || String(v.date || '');
+                if (accountingPeriod === 'TODAY') return dStr.startsWith(todayStr);
+                if (accountingPeriod === 'THIS_MONTH') return dStr.startsWith(currentMonthStr);
+                return true;
+              });
+
+              // Helper: Distinguish internal banking transfers from actual operating expenses
+              const isBankingTransfer = (item) => {
+                const category = String(item.category || '').toLowerCase();
+                const reason = String(item.reason || '').toLowerCase();
+                return (
+                  category.includes('safe drop') ||
+                  category.includes('bank deposit') ||
+                  category.includes('banking') ||
+                  reason.includes('safe drop') ||
+                  reason.includes('bank deposit')
+                );
+              };
+
+              // True operational expenditures (vendor payouts, petty cash, supplies)
+              const operationalExpenses = filteredDisbursements.filter(v => !isBankingTransfer(v));
+
+              // Internal drawer-to-safe / banking transfers (Non-OPEX)
+              const bankingTransfers = filteredDisbursements.filter(v => isBankingTransfer(v));
+
+              // 3. Filter Payroll Disbursed
+              const filteredPayroll = payrollData.filter(p => {
+                if (!p) return false;
+                if (accountingPeriod === 'THIS_MONTH') return p.period === currentMonthStr;
+                if (accountingPeriod === 'TODAY') return p.processedAt && String(p.processedAt).startsWith(todayStr);
+                return true;
+              });
+
+              // Revenue Metrics
+              const grossSalesRevenue = filteredSales.reduce((acc, inv) => acc + (Number(inv.subtotal) || 0), 0);
+              const totalTaxCollected = filteredSales.reduce((acc, inv) => acc + (Number(inv.tax) || 0), 0);
+              const totalServiceCharge = filteredSales.reduce((acc, inv) => acc + (Number(inv.serviceCharge) || 0), 0);
+              const totalDiscountsGiven = filteredSales.reduce((acc, inv) => acc + (Number(inv.discount) || 0), 0);
+              const calculatedNet = grossSalesRevenue - totalDiscountsGiven;
+              const netSalesRevenue = calculatedNet > 0 ? calculatedNet : filteredSales.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
+
+              // Expense Categories: Only true operating costs (Safe Drop excluded)
+              const expenseCategories = {};
+              operationalExpenses.forEach(exp => {
+                const cat = (exp.category || exp.reason || 'General Purchases').trim();
+                const amt = Number(exp.amount) || 0;
+                expenseCategories[cat] = (expenseCategories[cat] || 0) + amt;
+              });
+
+              // Totals
+              const totalOperationalCashOut = operationalExpenses.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0);
+              const totalSafeDropBanking = bankingTransfers.reduce((acc, exp) => acc + (Number(exp.amount) || 0), 0);
+              const totalDrawerCashOutflow = totalOperationalCashOut + totalSafeDropBanking;
+
+              // Payroll Totals
+              const totalPayrollDisbursed = filteredPayroll.reduce((acc, p) => acc + (Number(p.breakdown?.netSalary) || Number(p.netPay) || 0), 0);
+              const totalEmployerEpfEtf = filteredPayroll.reduce((acc, p) => acc + (Number(p.breakdown?.epfEmployer) || 0) + (Number(p.breakdown?.etfEmployer) || 0), 0);
+
+              // True OPEX: Vendor purchases + salaries + EPF/ETF (Safe Drops EXCLUDED)
+              const totalOperatingExpenses = totalOperationalCashOut + totalPayrollDisbursed + totalEmployerEpfEtf;
+
+              // True Net Operating Profit
+              const netProfit = netSalesRevenue - totalOperatingExpenses;
+              const profitMargin = netSalesRevenue > 0 ? ((netProfit / netSalesRevenue) * 100).toFixed(1) : 0;
+              
+              // Top 10 Items Sold
+              const itemSalesMap = {};
+              filteredSales.forEach(inv => {
+                (inv.items || []).forEach(item => {
+                  if (!item || !item.name) return;
+                  if (!itemSalesMap[item.name]) {
+                    itemSalesMap[item.name] = { name: item.name, qty: 0, revenue: 0 };
+                  }
+                  const qty = Number(item.qty) || 1;
+                  const price = Number(item.price) || 0;
+                  itemSalesMap[item.name].qty += qty;
+                  itemSalesMap[item.name].revenue += (price * qty);
+                });
+              });
+              const topSoldItems = Object.values(itemSalesMap).sort((a, b) => b.qty - a.qty).slice(0, 10);
+              const maxItemQty = topSoldItems.length > 0 ? Math.max(...topSoldItems.map(i => i.qty)) : 1;
+              return (
+                <div className="space-y-6">
+                  {/* Top Key Performance Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Gross Revenue */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase text-slate-400">Total Net Revenue</span>
+                        <span className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
+                          <TrendingUp className="h-4 w-4" />
+                        </span>
+                      </div>
+                      <p className="text-2xl font-black font-mono text-slate-900 mt-2">
+                        {settings.currency} {netSalesRevenue.toFixed(2)}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Gross {settings.currency} {grossSalesRevenue.toFixed(2)} - Disc {settings.currency} {totalDiscountsGiven.toFixed(2)}
+                      </p>
+                    </div>
+
+                    {/* Operational Cash Out (Excludes Safe Drops) */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase text-slate-400">Operating Expenses</span>
+                        <span className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
+                          <TrendingDown className="h-4 w-4" />
+                        </span>
+                      </div>
+                      <p className="text-2xl font-black font-mono text-rose-600 mt-2">
+                        {settings.currency} {totalOperationalCashOut.toFixed(2)}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Excludes {settings.currency} {totalSafeDropBanking.toFixed(2)} in safe drops
+                      </p>
+                    </div>
+
+                    {/* Total Wages & Statutory */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase text-slate-400">Salaries &amp; EPF/ETF</span>
+                        <span className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                          <Briefcase className="h-4 w-4" />
+                        </span>
+                      </div>
+                      <p className="text-2xl font-black font-mono text-indigo-600 mt-2">
+                        {settings.currency} {(totalPayrollDisbursed + totalEmployerEpfEtf).toFixed(2)}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Take-home + {settings.currency} {totalEmployerEpfEtf.toFixed(2)} EPF/ETF
+                      </p>
+                    </div>
+
+                    {/* Net Profit */}
+                    <div className={`rounded-2xl border p-4 shadow-xs ${
+                      netProfit >= 0 ? 'bg-emerald-950 text-white border-emerald-900' : 'bg-rose-950 text-white border-rose-900'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-300">
+                          Net Operating Profit
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black font-mono bg-white/10">
+                          {profitMargin}% Margin
+                        </span>
+                      </div>
+                      <p className="text-2xl font-black font-mono mt-2">
+                        {settings.currency} {netProfit.toFixed(2)}
+                      </p>
+                      <p className="text-[11px] opacity-80 mt-1">
+                        {netProfit >= 0 ? 'Profitable operation' : 'Operating at a loss'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Main Grid: Comprehensive P&L Statement and Expense Category Breakdown */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* PROFIT & LOSS STATEMENT */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                          <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                            <Receipt className="h-4 w-4 text-[#ff5500]" />
+                            Official Profit &amp; Loss Statement
+                          </h3>
+                          <span className="text-[11px] font-mono font-bold text-slate-400">
+                            {accountingPeriod}
+                          </span>
+                        </div>
+
+                        <div className="divide-y divide-slate-100 text-xs py-2 space-y-2">
+                          {/* REVENUE SECTION */}
+                          <div className="pt-2">
+                            <span className="text-[10px] font-black uppercase text-emerald-600 block mb-1">
+                              1. Operating Revenue
+                            </span>
+                            <div className="flex justify-between py-1 text-slate-700">
+                              <span>Gross Menu &amp; Bar Invoiced Sales</span>
+                              <span className="font-mono font-bold">{settings.currency} {grossSalesRevenue.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between py-1 text-rose-600">
+                              <span>Less: Promotional Discounts &amp; Vouchers</span>
+                              <span className="font-mono font-bold">-{settings.currency} {totalDiscountsGiven.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between py-1.5 font-black text-slate-900 bg-slate-50 px-2 rounded-lg mt-1">
+                              <span>Net Sales Revenue</span>
+                              <span className="font-mono text-emerald-700">{settings.currency} {netSalesRevenue.toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          {/* OPERATING EXPENDITURES (Excludes Safe Drop) */}
+                          <div className="pt-3">
+                            <span className="text-[10px] font-black uppercase text-rose-600 block mb-1">
+                              2. Operating Expenditures (OPEX)
+                            </span>
+                            <div className="flex justify-between py-1 text-slate-700">
+                              <span>Cash Out Vendor Purchases &amp; Supplies</span>
+                              <span className="font-mono">{settings.currency} {totalOperationalCashOut.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between py-1 text-slate-700">
+                              <span>Staff Net Salaries &amp; Wage Disbursed</span>
+                              <span className="font-mono">{settings.currency} {totalPayrollDisbursed.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between py-1 text-slate-700">
+                              <span>Employer EPF (12%) &amp; ETF (3%) Remittance</span>
+                              <span className="font-mono">{settings.currency} {totalEmployerEpfEtf.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between py-1.5 font-black text-rose-700 bg-rose-50 px-2 rounded-lg mt-1">
+                              <span>Total Operating Expenses</span>
+                              <span className="font-mono">-{settings.currency} {totalOperatingExpenses.toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          {/* INTERNAL ASSET TRANSFERS (Safe Drop / Bank Deposit) */}
+                          <div className="pt-3">
+                            <span className="text-[10px] font-black uppercase text-indigo-600 block mb-1">
+                              3. Internal Asset Transfers &amp; Banking (Non-Expense)
+                            </span>
+                            <div className="flex justify-between py-1 text-slate-600">
+                              <span>Safe Drops &amp; Bank Deposits</span>
+                              <span className="font-mono font-bold text-indigo-700">+{settings.currency} {totalSafeDropBanking.toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          {/* TAX & GRATUITY ESCROW */}
+                          <div className="pt-3">
+                            <span className="text-[10px] font-black uppercase text-slate-500 block mb-1">
+                              4. Escrow Fiduciary Liabilities (Collected &amp; Held)
+                            </span>
+                            <div className="flex justify-between py-1 text-slate-500">
+                              <span>Government Tax / VAT Invoiced</span>
+                              <span className="font-mono">{settings.currency} {totalTaxCollected.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between py-1 text-slate-500">
+                              <span>Service Charge Pool Collected</span>
+                              <span className="font-mono">{settings.currency} {totalServiceCharge.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* BOTTOM NET PROFIT TOTAL */}
+                      <div className="pt-3 border-t border-slate-200 mt-2">
+                        <div className="flex justify-between items-center text-sm font-black p-3 bg-slate-900 text-white rounded-xl">
+                          <span>NET OPERATING SURPLUS / (DEFICIT)</span>
+                          <span className={`font-mono text-base ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {settings.currency} {netProfit.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* EXPENSE CATEGORY BREAKDOWN CHART */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                          <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                            <Coins className="h-4 w-4 text-[#ff5500]" />
+                            Operational Spending Categories
+                          </h3>
+                          <span className="text-[11px] font-mono text-slate-500 font-bold">
+                            {Object.keys(expenseCategories).length} Categories
+                          </span>
+                        </div>
+
+                        {/* Visual Bar Breakdown (Operational Expenses Only) */}
+                        <div className="py-3 space-y-3.5">
+                          {Object.keys(expenseCategories).length === 0 ? (
+                            <p className="text-xs text-slate-400 italic py-8 text-center">
+                              No operational expenditures recorded for this period.
+                            </p>
+                          ) : (
+                            Object.entries(expenseCategories)
+                              .sort((a, b) => b[1] - a[1])
+                              .map(([category, amount]) => {
+                                const percentage = totalOperationalCashOut > 0 
+                                  ? ((amount / totalOperationalCashOut) * 100).toFixed(1) 
+                                  : 0;
+
+                                return (
+                                  <div key={category} className="space-y-1">
+                                    <div className="flex justify-between text-xs font-bold">
+                                      <span className="text-slate-800">{category}</span>
+                                      <span className="font-mono text-slate-900">
+                                        {settings.currency} {amount.toFixed(2)} <span className="text-slate-400 text-[10px]">({percentage}%)</span>
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                                      <div
+                                        className="bg-orange-500 h-full rounded-full transition-all duration-500"
+                                        style={{ width: `${percentage}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Outflow Breakdown Footer */}
+                      <div className="pt-3 border-t border-slate-100 space-y-1.5 text-xs">
+                        <div className="flex justify-between items-center text-slate-600">
+                          <span>Operational Expenses (OPEX):</span>
+                          <span className="font-mono font-bold text-rose-600">
+                            {settings.currency} {totalOperationalCashOut.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-slate-600">
+                          <span>Bank &amp; Safe Transfers:</span>
+                          <span className="font-mono font-bold text-indigo-600">
+                            {settings.currency} {totalSafeDropBanking.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center pt-1.5 border-t border-slate-100 font-bold text-slate-800">
+                          <span>Total Drawer Outflow:</span>
+                          <span className="font-mono font-black text-slate-900 text-sm">
+                            {settings.currency} {totalDrawerCashOutflow.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TOP 10 ITEMS SOLD ANALYTICS CHART */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                      <div>
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                          <BarChart3 className="h-4 w-4 text-[#ff5500]" />
+                          Top 10 High Volume Menu Items Sold
+                        </h3>
+                        <p className="text-[10px] text-slate-400">Item units dispensed vs total revenue generated</p>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-slate-600">
+                        {topSoldItems.length} Products
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {topSoldItems.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic py-8 text-center">
+                          No settled menu items found in the selected period.
+                        </p>
+                      ) : (
+                        topSoldItems.map((item, index) => {
+                          const barWidth = Math.max(5, (item.qty / maxItemQty) * 100);
+
+                          return (
+                            <div key={item.name} className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
+                              {/* Item rank and title */}
+                              <div className="w-48 shrink-0 flex items-center gap-2">
+                                <span className="h-5 w-5 rounded bg-slate-900 text-white text-[10px] font-black flex items-center justify-center">
+                                  {index + 1}
+                                </span>
+                                <span className="font-bold text-slate-800 truncate" title={item.name}>
+                                  {item.name}
+                                </span>
+                              </div>
+
+                              {/* Graphical Bar */}
+                              <div className="flex-1 bg-slate-100 h-6 rounded-lg overflow-hidden relative flex items-center px-2">
+                                <div
+                                  className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-orange-400 to-[#ff5500] rounded-lg opacity-85 transition-all duration-500"
+                                  style={{ width: `${barWidth}%` }}
+                                />
+                                <span className="relative z-10 text-[10px] font-mono font-black text-white drop-shadow-xs">
+                                  {item.qty} units
+                                </span>
+                              </div>
+
+                              {/* Invoiced Revenue */}
+                              <div className="w-28 text-right font-mono font-bold text-slate-900">
+                                {settings.currency} {item.revenue.toFixed(2)}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* VIEW: COMPREHENSIVE EMPLOYMENT, TIME CLOCK & SRI LANKAN PAYROLL */}
+        {activeTab === 'payroll' && (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+            {/* Header and Action Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Briefcase className="h-5 w-5 text-[#ff5500]" />
+                  Employment, Attendance &amp; Sri Lanka Statutory Payroll
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Daily Clock-In/Out biometric time sheet, EPF (8%/12%), ETF (3%), Service Pool bonus, and official pay slips.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Export All Payroll & Time Clock History */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const exportPayload = {
+                      exportedAt: new Date().toISOString(),
+                      restaurant: settings.restaurantName || 'Restaurant POS',
+                      attendanceLogs,
+                      payrollRecords
+                    };
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportPayload, null, 2));
+                    const downloadAnchor = document.createElement('a');
+                    downloadAnchor.setAttribute("href", dataStr);
+                    downloadAnchor.setAttribute("download", `payroll_archive_${getLocalDateStr()}.json`);
+                    document.body.appendChild(downloadAnchor);
+                    downloadAnchor.click();
+                    downloadAnchor.remove();
+                  }}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+                  title="Download complete historical records forever"
+                >
+                  <Download className="h-4 w-4 text-slate-600" />
+                  <span>Export Archive</span>
+                </button>
+
+                {/* Process Pay Slip Modal Trigger */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstStaff = staffList[0];
+                    setPayrollInputForm({
+                      staffId: firstStaff ? firstStaff.id : '',
+                      period: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+                      epfEtfEnabled: true,
+                      basicSalary: 35000,
+                      budgetaryAllowance: 2500,
+                      otherAllowances: 0,
+                      serviceChargeBonus: Math.round((salesMetrics.serviceCharge || 0) / Math.max(1, staffList.length)),
+                      incentiveBonus: 0,
+                      overtimeHours: 0,
+                      overtimeRate: 250,
+                      otherDeductions: 0,
+                      notes: ''
+                    });
+                    setProcessPayModalOpen(true);
+                  }}
+                  className="px-4 py-2 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer transition-all"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Process Pay Slip</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Navigation Sub-Tabs */}
+            <div className="flex items-center gap-4 border-b border-slate-200 pb-2 text-xs font-bold overflow-x-auto">
+              {[
+                { id: 'attendance', label: 'Time Sheet & Clock In/Out' },
+                { id: 'payslips', label: 'Payroll & Pay Slips' },
+                { id: 'epf_etf', label: 'Sri Lanka EPF / ETF Return (Form C)' },
+                { id: 'profiles', label: 'Employee Registry & Wages' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setPayrollSubTab(tab.id)}
+                  className={`pb-2 transition-all relative whitespace-nowrap cursor-pointer ${
+                    payrollSubTab === tab.id
+                      ? 'text-[#ff5500] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-[#ff5500]'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* SUB-TAB 1: TIME SHEET & CLOCK IN / CLOCK OUT */}
+            {payrollSubTab === 'attendance' && (
+              <div className="space-y-6">
+                {/* Employee Cards Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {staffList.map(member => {
+                    const { clockedIn, log } = getStaffClockStatus(member.id);
+
+                    return (
+                      <div key={member.id} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col justify-between">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-10 w-10 rounded-xl bg-slate-900 text-white font-black text-xs flex items-center justify-center">
+                              {member.avatar}
+                            </div>
+                            <div>
+                              <h4 className="font-extrabold text-xs text-slate-900 leading-tight">{member.name}</h4>
+                              <span className="text-[10px] text-slate-500 block">{member.role}</span>
+                            </div>
+                          </div>
+
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                            clockedIn ? 'bg-emerald-100 text-emerald-800 animate-pulse' : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            {clockedIn ? '● On Duty' : 'Off Duty'}
+                          </span>
+                        </div>
+
+                        <div className="my-3 py-2 border-y border-slate-100 text-[11px] text-slate-600 space-y-1">
+                          <div className="flex justify-between">
+                            <span>Today Clock In:</span>
+                            <span className="font-mono font-bold">{log ? log.clockInTime : '--:--'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Today Clock Out:</span>
+                            <span className="font-mono font-bold">{log && log.clockOutTime ? log.clockOutTime : '--:--'}</span>
+                          </div>
+                        </div>
+
+                        {/* Clock In / Out Button with Permanent Local & Cloud Archiving */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const now = new Date();
+                            const nowTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                            const todayStr = getLocalDateStr();
+                            const nowIso = now.toISOString();
+
+                            if (clockedIn && log) {
+                              // Clock Out - Update active session and archive
+                              const start = new Date(`${todayStr} ${log.clockInTime}`);
+                              const diffHours = Math.max(0.1, Number(((now - start) / (1000 * 60 * 60)).toFixed(2)));
+
+                              const updatedLog = {
+                                ...log,
+                                clockOutTime: nowTime,
+                                clockOutISO: nowIso,
+                                totalHours: diffHours,
+                                isOvertime: diffHours > 8,
+                                status: 'COMPLETED'
+                              };
+
+                              setAttendanceLogs(prev => prev.map(a => a.id === log.id ? updatedLog : a));
+
+                              // Append permanent completed session to cloud archive
+                              if (typeof appendCloudArchive === 'function') {
+                                appendCloudArchive('attendance_logs', updatedLog);
+                              }
+
+                              recordAuditLog(
+                                'STAFF_CLOCK_OUT_PERMANENT',
+                                member.id,
+                                `${member.name} clocked out at ${nowTime} (${diffHours} hrs). Log ID: ${log.id}`
+                              );
+                            } else {
+                              // Clock In - Generate unique permanent entry
+                              const newLog = {
+                                id: `ATT-${todayStr.replace(/-/g, '')}-${member.id}-${Date.now().toString().slice(-4)}`,
+                                date: todayStr,
+                                staffId: member.id,
+                                staffName: member.name,
+                                role: member.role,
+                                clockInTime: nowTime,
+                                clockInISO: nowIso,
+                                clockOutTime: null,
+                                clockOutISO: null,
+                                totalHours: 0,
+                                isOvertime: false,
+                                status: 'ON_DUTY',
+                                createdByDevice: typeof navigator !== 'undefined' ? navigator.userAgent : 'POS Terminal'
+                              };
+
+                              setAttendanceLogs(prev => [newLog, ...prev]);
+
+                              // Append permanent clock-in event to cloud archive
+                              if (typeof appendCloudArchive === 'function') {
+                                appendCloudArchive('attendance_logs', newLog);
+                              }
+
+                              recordAuditLog(
+                                'STAFF_CLOCK_IN_PERMANENT',
+                                member.id,
+                                `${member.name} clocked in at ${nowTime}. Log ID: ${newLog.id}`
+                              );
+                            }
+                          }}
+                          className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-xs ${
+                            clockedIn
+                              ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          }`}
+                        >
+                          <Clock className="h-3.5 w-3.5" />
+                          <span>{clockedIn ? 'Clock Out' : 'Clock In Now'}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Attendance History Table */}
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                  <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                        Attendance History &amp; Work Hours Sheet
+                      </h3>
+                      <p className="text-[10px] text-slate-400">Permanently saved time clock punches</p>
+                    </div>
+                    <span className="text-xs font-mono text-slate-600 font-bold">{attendanceLogs.length} Records</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-4">Date</th>
+                          <th className="py-2.5 px-4">Employee</th>
+                          <th className="py-2.5 px-4">Role</th>
+                          <th className="py-2.5 px-4">Clock In</th>
+                          <th className="py-2.5 px-4">Clock Out</th>
+                          <th className="py-2.5 px-4 text-center">Total Hours</th>
+                          <th className="py-2.5 px-4 text-center">Overtime (&gt;8h)</th>
+                          <th className="py-2.5 px-4 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {attendanceLogs.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-8 text-center text-slate-400 italic">
+                              No attendance punches recorded yet.
+                            </td>
+                          </tr>
+                        ) : (
+                          attendanceLogs.map(att => (
+                            <tr key={att.id} className="hover:bg-slate-50">
+                              <td className="py-3 px-4 font-mono font-bold text-slate-700">{att.date}</td>
+                              <td className="py-3 px-4 font-bold text-slate-900">{att.staffName}</td>
+                              <td className="py-3 px-4 text-slate-500">{att.role}</td>
+                              <td className="py-3 px-4 font-mono text-emerald-700 font-bold">{att.clockInTime}</td>
+                              <td className="py-3 px-4 font-mono text-slate-700 font-bold">{att.clockOutTime || '--:--'}</td>
+                              <td className="py-3 px-4 text-center font-mono font-bold">{att.totalHours ? `${att.totalHours} hrs` : '--'}</td>
+                              <td className="py-3 px-4 text-center">
+                                {att.isOvertime ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800">
+                                    Overtime
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 font-mono text-[11px]">Normal</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                {currentUser.role === 'Administrator' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm('Delete attendance punch record? Note: This will only remove it locally; permanent archives remain on cloud.')) {
+                                        setAttendanceLogs(prev => prev.filter(a => a.id !== att.id));
+                                        recordAuditLog(
+                                          'ADMIN_DELETE_ATTENDANCE_LOG',
+                                          att.id,
+                                          `Admin ${currentUser.name} removed attendance record ${att.id} for ${att.staffName}`
+                                        );
+                                      }
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                                    title="Delete Record"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 2: PAYROLL RECORDS & PAY SLIPS */}
+            {payrollSubTab === 'payslips' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                  <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                        Processed Salary &amp; Wage Slips
+                      </h3>
+                      <p className="text-[10px] text-slate-400">Includes Basic, Allowances, EPF 8% &amp; Service Gratuity pool</p>
+                    </div>
+                    <span className="text-xs font-mono text-slate-600 font-bold">{payrollRecords.length} Slips</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-3">Slip ID</th>
+                          <th className="py-2.5 px-3">Employee</th>
+                          <th className="py-2.5 px-3">Period</th>
+                          <th className="py-2.5 px-3 text-right">Basic + Allowances</th>
+                          <th className="py-2.5 px-3 text-right">EPF Base</th>
+                          <th className="py-2.5 px-3 text-right text-rose-600">EPF 8%</th>
+                          <th className="py-2.5 px-3 text-right text-emerald-600">Service Pool</th>
+                          <th className="py-2.5 px-3 text-right font-black">Net Take-Home</th>
+                          <th className="py-2.5 px-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {payrollRecords.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="py-8 text-center text-slate-400 italic">
+                              No payroll records processed yet. Click &ldquo;Process Pay Slip&rdquo; above.
+                            </td>
+                          </tr>
+                        ) : (
+                          payrollRecords.map(rec => {
+                            const canManage = currentUser.role === 'Administrator' || currentUser.role === 'Manager';
+
+                            return (
+                              <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="py-3 px-3 font-mono font-bold text-slate-800">{rec.id}</td>
+                                <td className="py-3 px-3">
+                                  <span className="font-bold text-slate-900 block">{rec.staffName}</span>
+                                  <span className="text-[10px] text-slate-400">{rec.role}</span>
+                                </td>
+                                <td className="py-3 px-3 font-mono font-bold text-slate-700">{rec.period}</td>
+                                <td className="py-3 px-3 text-right font-mono">
+                                  {settings.currency} {((rec.breakdown?.basic || 0) + (rec.breakdown?.bra || 0) + (rec.breakdown?.allowances || 0)).toFixed(2)}
+                                </td>
+                                <td className="py-3 px-3 text-right font-mono font-semibold text-slate-800">
+                                  {rec.breakdown?.epfEtfEnabled !== false 
+                                    ? `${settings.currency} ${(rec.breakdown?.epfLiableEarnings || 0).toFixed(2)}`
+                                    : <span className="text-slate-400 italic text-[10px]">Exempt</span>}
+                                </td>
+                                <td className="py-3 px-3 text-right font-mono text-rose-600 font-bold">
+                                  {rec.breakdown?.epfEtfEnabled !== false 
+                                    ? `-${settings.currency} ${(rec.breakdown?.epfEmployee || 0).toFixed(2)}`
+                                    : '0.00'}
+                                </td>
+                                <td className="py-3 px-3 text-right font-mono text-emerald-600 font-bold">
+                                  +{(rec.breakdown?.serviceChargeBonus || 0) > 0 ? `${settings.currency} ${(rec.breakdown?.serviceChargeBonus || 0).toFixed(2)}` : '0.00'}
+                                </td>
+                                <td className="py-3 px-3 text-right font-mono font-black text-slate-950 text-sm">
+                                  {settings.currency} {(rec.breakdown?.netSalary || rec.netPay || 0).toFixed(2)}
+                                </td>
+                                <td className="py-3 px-3 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    {/* Print */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        triggerAutoPrint({
+                                          type: 'PAYSLIP_PRINT',
+                                          data: rec
+                                        }, `Payslip ${rec.id} - ${rec.staffName}`);
+                                      }}
+                                      className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
+                                      title="Print Payslip"
+                                    >
+                                      <Printer className="h-4 w-4" />
+                                    </button>
+
+                                    {/* Edit */}
+                                    {canManage && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setPayrollInputForm({
+                                            staffId: rec.staffId,
+                                            period: rec.period,
+                                            epfEtfEnabled: rec.breakdown?.epfEtfEnabled !== false,
+                                            basicSalary: rec.breakdown?.basic || 35000,
+                                            budgetaryAllowance: rec.breakdown?.bra || 2500,
+                                            otherAllowances: rec.breakdown?.allowances || 0,
+                                            serviceChargeBonus: rec.breakdown?.serviceChargeBonus || 0,
+                                            incentiveBonus: rec.breakdown?.incentiveBonus || 0,
+                                            overtimeHours: (rec.breakdown?.overtimePay && rec.breakdown?.overtimeRate) 
+                                              ? (rec.breakdown.overtimePay / rec.breakdown.overtimeRate) 
+                                              : 0,
+                                            overtimeRate: 250,
+                                            otherDeductions: rec.breakdown?.otherDeductions || 0,
+                                            notes: rec.notes || ''
+                                          });
+                                          setEditingPayrollId(rec.id);
+                                          setProcessPayModalOpen(true);
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors"
+                                        title="Edit Payslip"
+                                      >
+                                        <Edit3 className="h-4 w-4" />
+                                      </button>
+                                    )}
+
+                                    {/* Delete */}
+                                    {currentUser.role === 'Administrator' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (window.confirm(`Delete pay slip ${rec.id} for ${rec.staffName}? This action will be recorded in the audit log.`)) {
+                                            setPayrollRecords(prev => prev.filter(r => r.id !== rec.id));
+                                            recordAuditLog(
+                                              'ADMIN_DELETE_PAYSLIP',
+                                              rec.id,
+                                              `Admin ${currentUser.name} deleted pay slip ${rec.id} for ${rec.staffName} (${rec.period})`
+                                            );
+                                          }
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                                        title="Delete Payslip"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 3: SRI LANKA EPF / ETF RETURN (FORM C EQUIVALENT) */}
+            {payrollSubTab === 'epf_etf' && (
+              <div className="space-y-6">
+                {(() => {
+                  let totalEpfBase = 0;
+                  let totalEpfEmp8 = 0;
+                  let totalEpfEmpr12 = 0;
+                  let totalEtfEmpr3 = 0;
+
+                  payrollRecords.forEach(r => {
+                    if (r.breakdown) {
+                      totalEpfBase += (r.breakdown.epfLiableEarnings || 0);
+                      totalEpfEmp8 += (r.breakdown.epfEmployee || 0);
+                      totalEpfEmpr12 += (r.breakdown.epfEmployer || 0);
+                      totalEtfEmpr3 += (r.breakdown.etfEmployer || 0);
+                    }
+                  });
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <p className="text-[10px] font-black uppercase text-slate-400">Total Liable Earnings (EPF Base)</p>
+                        <p className="text-xl font-black font-mono text-slate-900 mt-1">
+                          {settings.currency} {totalEpfBase.toFixed(2)}
+                        </p>
+                        <span className="text-[10px] text-slate-400">Basic + Budgetary Allowances</span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <p className="text-[10px] font-black uppercase text-slate-400">EPF Employee Share (8%)</p>
+                        <p className="text-xl font-black font-mono text-rose-600 mt-1">
+                          {settings.currency} {totalEpfEmp8.toFixed(2)}
+                        </p>
+                        <span className="text-[10px] text-slate-400">Deducted from workers</span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <p className="text-[10px] font-black uppercase text-slate-400">EPF Employer Share (12%)</p>
+                        <p className="text-xl font-black font-mono text-indigo-600 mt-1">
+                          {settings.currency} {totalEpfEmpr12.toFixed(2)}
+                        </p>
+                        <span className="text-[10px] text-slate-400">Paid by business</span>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <p className="text-[10px] font-black uppercase text-slate-400">ETF Employer Share (3%)</p>
+                        <p className="text-xl font-black font-mono text-emerald-600 mt-1">
+                          {settings.currency} {totalEtfEmpr3.toFixed(2)}
+                        </p>
+                        <span className="text-[10px] text-slate-400">Remitted to ETF Board</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                  <div className="border-b border-slate-100 pb-3 mb-4">
+                    <h3 className="text-sm font-black text-slate-900 uppercase">
+                      Department of Labour &amp; Central Bank of Sri Lanka Form C Schedule
+                    </h3>
+                    <p className="text-xs text-slate-500">Official monthly remittance computation schedule</p>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-3">Employee Name</th>
+                          <th className="py-2.5 px-3">EPF Member #</th>
+                          <th className="py-2.5 px-3 text-right">Liable Wages</th>
+                          <th className="py-2.5 px-3 text-right">Employee 8%</th>
+                          <th className="py-2.5 px-3 text-right">Employer 12%</th>
+                          <th className="py-2.5 px-3 text-right font-bold">Total EPF (20%)</th>
+                          <th className="py-2.5 px-3 text-right">Employer ETF (3%)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {payrollRecords.map(rec => (
+                          <tr key={rec.id} className="hover:bg-slate-50">
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{rec.staffName}</td>
+                            <td className="py-2.5 px-3 font-mono text-slate-500">EPF-{rec.staffId.slice(-4)}</td>
+                            <td className="py-2.5 px-3 text-right font-mono">{settings.currency} {(rec.breakdown?.epfLiableEarnings || 0).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-rose-600">{settings.currency} {(rec.breakdown?.epfEmployee || 0).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-indigo-600">{settings.currency} {(rec.breakdown?.epfEmployer || 0).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900">
+                              {settings.currency} {(rec.breakdown?.totalEpfFund || 0).toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono text-emerald-700 font-bold">
+                              {settings.currency} {(rec.breakdown?.etfEmployer || 0).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 4: EMPLOYEE REGISTRY & BASE SALARIES */}
+            {payrollSubTab === 'profiles' && (
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                    Employee Registry &amp; Wage Structures
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setAddStaffModalOpen(true)}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Staff Profile
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                      <tr>
+                        <th className="py-3 px-4">Employee</th>
+                        <th className="py-3 px-4">Role</th>
+                        <th className="py-3 px-4">Contact</th>
+                        <th className="py-3 px-4">NIC / National ID</th>
+                        <th className="py-3 px-4">Security PIN</th>
+                        <th className="py-3 px-4 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {staffList.map(member => (
+                        <tr key={member.id} className="hover:bg-slate-50">
+                          <td className="py-3 px-4">
+                            <span className="font-extrabold text-slate-900 block">{member.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">{member.id}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 bg-orange-100 text-[#ff5500] rounded font-bold text-[10px]">
+                              {member.role}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-600">{member.email}</td>
+                          <td className="py-3 px-4 font-mono text-slate-700">1992{member.pin}402V</td>
+                          <td className="py-3 px-4 font-mono text-slate-500">•••• ({member.pin})</td>
+                          <td className="py-3 px-4 text-right">
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800">
+                              Active
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -7619,6 +9138,150 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             )}
 
+            {/* Sri Lankan Statutory Payslip Print Slip */}
+            {activePrintSlip.type === 'PAYSLIP_PRINT' && (
+              <div className="space-y-3 font-mono text-xs">
+                {/* Header */}
+                <div className="text-center border-b-2 border-dashed border-black pb-2">
+                  <h2 className="font-black text-sm uppercase">{settings.restaurantName}</h2>
+                  <p className="text-[10px]">{settings.address}</p>
+                  <p className="font-bold text-xs uppercase mt-1">*** SALARY PAY SLIP ***</p>
+                  <p className="text-[10px]">Period: {activePrintSlip.data.period} • Slip #{activePrintSlip.data.id}</p>
+                </div>
+
+                {/* Employee Info */}
+                <div className="space-y-1 border-b border-black pb-2 text-[11px]">
+                  <div className="flex justify-between">
+                    <span>Employee:</span>
+                    <span className="font-bold">{activePrintSlip.data.staffName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Designation:</span>
+                    <span>{activePrintSlip.data.role}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px]">
+                    <span>Statutory Status:</span>
+                    <span className="font-bold uppercase">
+                      {activePrintSlip.data.breakdown?.epfEtfEnabled !== false ? 'EPF / ETF Enrolled' : 'Statutory Exempt (No EPF)'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Earnings Section */}
+                <div className="space-y-1 border-b border-dashed border-black pb-2 text-[11px]">
+                  <p className="font-bold text-[10px] uppercase">=== EARNINGS ===</p>
+                  <div className="flex justify-between">
+                    <span>Basic Salary:</span>
+                    <span>{settings.currency} {activePrintSlip.data.breakdown?.basic.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Budgetary Allowance (BRA):</span>
+                    <span>+{settings.currency} {activePrintSlip.data.breakdown?.bra.toFixed(2)}</span>
+                  </div>
+                  {activePrintSlip.data.breakdown?.allowances > 0 && (
+                    <div className="flex justify-between">
+                      <span>Other Allowances:</span>
+                      <span>+{settings.currency} {activePrintSlip.data.breakdown.allowances.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {activePrintSlip.data.breakdown?.serviceChargeBonus > 0 && (
+                    <div className="flex justify-between font-bold">
+                      <span>Service Pool Share:</span>
+                      <span>+{settings.currency} {activePrintSlip.data.breakdown.serviceChargeBonus.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {activePrintSlip.data.breakdown?.incentiveBonus > 0 && (
+                    <div className="flex justify-between font-bold">
+                      <span>Performance Bonus:</span>
+                      <span>+{settings.currency} {activePrintSlip.data.breakdown.incentiveBonus.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {activePrintSlip.data.breakdown?.overtimePay > 0 && (
+                    <div className="flex justify-between">
+                      <span>Overtime Pay:</span>
+                      <span>+{settings.currency} {activePrintSlip.data.breakdown.overtimePay.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-black border-t border-black pt-1">
+                    <span>GROSS EARNINGS:</span>
+                    <span>{settings.currency} {activePrintSlip.data.breakdown?.grossEarnings.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Deductions Section */}
+                <div className="space-y-1 border-b border-dashed border-black pb-2 text-[11px]">
+                  <p className="font-bold text-[10px] uppercase">=== DEDUCTIONS ===</p>
+                  {activePrintSlip.data.breakdown?.epfEtfEnabled !== false ? (
+                    <>
+                      <div className="flex justify-between text-[10px] text-slate-600">
+                        <span>EPF Base Earnings:</span>
+                        <span>{settings.currency} {activePrintSlip.data.breakdown?.epfLiableEarnings.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-rose-700">
+                        <span>EPF (Employee 8%):</span>
+                        <span>-{settings.currency} {activePrintSlip.data.breakdown?.epfEmployee.toFixed(2)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between italic text-[10px] text-slate-600">
+                      <span>EPF (Employee 8%):</span>
+                      <span>Exempt (0.00)</span>
+                    </div>
+                  )}
+                  {activePrintSlip.data.breakdown?.otherDeductions > 0 && (
+                    <div className="flex justify-between text-rose-700">
+                      <span>Other Deductions:</span>
+                      <span>-{settings.currency} {activePrintSlip.data.breakdown.otherDeductions.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Take-Home Pay */}
+                <div className="space-y-1 border-b-2 border-black pb-2 text-xs">
+                  <div className="flex justify-between font-black text-sm">
+                    <span>NET TAKE-HOME PAY:</span>
+                    <span>{settings.currency} {activePrintSlip.data.breakdown?.netSalary.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Employer Statutory Remittances (Only printed if EPF is active) */}
+                {activePrintSlip.data.breakdown?.epfEtfEnabled !== false && (
+                  <div className="space-y-1 border-b border-dotted border-black pb-2 text-[10px] text-slate-700">
+                    <p className="font-bold uppercase">=== EMPLOYER STATUTORY CONTRIBUTIONS ===</p>
+                    <div className="flex justify-between">
+                      <span>EPF (Employer 12%):</span>
+                      <span>{settings.currency} {activePrintSlip.data.breakdown?.epfEmployer.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>ETF (Employer 3%):</span>
+                      <span>{settings.currency} {activePrintSlip.data.breakdown?.etfEmployer.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold border-t border-dotted border-black pt-0.5">
+                      <span>Total Statutory Fund (23%):</span>
+                      <span>
+                        {settings.currency} {(
+                          (activePrintSlip.data.breakdown?.totalEpfFund || 0) + 
+                          (activePrintSlip.data.breakdown?.etfEmployer || 0)
+                        ).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Signatures */}
+                <div className="pt-3 text-[9px] flex justify-between">
+                  <div className="text-center">
+                    <p>___________________</p>
+                    <p>Employee Signature</p>
+                  </div>
+                  <div className="text-center">
+                    <p>___________________</p>
+                    <p>Authorized Officer</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 2. Proforma Temporary Bill Slip */}
             {activePrintSlip.type === 'TEMP_BILL' && (
               <div className="space-y-2">
@@ -7904,6 +9567,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <p className="italic text-[9px] text-slate-500">No denomination breakdown entered.</p>
                   )}
                 </div>
+                
 
                 <div className="text-xs space-y-1 border-b-2 border-dashed border-slate-800 pb-2.5">
                   <p className="font-black text-[11px] uppercase">=== DRAWER BALANCING ===</p>
@@ -9124,6 +10788,341 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 Save Recipe BOM
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL: SRI LANKAN STATUTORY PAYROLL GENERATOR */}
+      {processPayModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 text-slate-900"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setProcessPayModalOpen(false);
+              setEditingPayrollId(null);
+            }
+          }}
+        >
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl border border-slate-200 relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Briefcase className="h-5 w-5 text-[#ff5500]" />
+                <h3 className="text-base font-black text-slate-900">
+                  {editingPayrollId ? 'Edit Processed Pay Slip' : 'Sri Lanka Compliant Pay Slip Generator'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setProcessPayModalOpen(false);
+                  setEditingPayrollId(null);
+                }}
+                className="text-slate-400 hover:text-slate-900 cursor-pointer p-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {(() => {
+              const breakdown = calculateSriLankanPayroll(payrollInputForm);
+              const selectedStaff = staffList.find(s => s.id === payrollInputForm.staffId) || staffList[0];
+              const isEpfActive = payrollInputForm.epfEtfEnabled !== false;
+
+              return (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!selectedStaff) return;
+
+                    const now = new Date();
+                    const nowIso = now.toISOString();
+                    const fullDateStr = getLocalDateStr();
+                    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    if (editingPayrollId) {
+                      // 1. UPDATE EXISTING RECORD (PRESERVE ORIGINAL ID)
+                      const targetExisting = payrollRecords.find(r => r.id === editingPayrollId);
+                      const updatedSlipRecord = {
+                        ...(targetExisting || {}),
+                        id: editingPayrollId,
+                        staffId: selectedStaff.id,
+                        staffName: selectedStaff.name,
+                        role: selectedStaff.role,
+                        period: payrollInputForm.period,
+                        epfEtfEnabled: isEpfActive,
+                        breakdown,
+                        notes: payrollInputForm.notes || 'Salary Record Updated',
+                        lastEditedBy: currentUser.name,
+                        lastEditedByRole: currentUser.role,
+                        lastEditedAt: `${fullDateStr} ${timeStr}`,
+                        lastEditedAtISO: nowIso,
+                        revisions: [
+                          ...((targetExisting && targetExisting.revisions) || []),
+                          {
+                            editedAt: nowIso,
+                            editor: currentUser.name,
+                            previousNet: targetExisting ? (targetExisting.breakdown?.netSalary || targetExisting.netPay) : 0,
+                            newNet: breakdown.netSalary
+                          }
+                        ]
+                      };
+
+                      setPayrollRecords(prev => prev.map(r => r.id === editingPayrollId ? updatedSlipRecord : r));
+
+                      // Auto-print updated version
+                      triggerAutoPrint({
+                        type: 'PAYSLIP_PRINT',
+                        data: updatedSlipRecord
+                      }, `Updated Payslip ${updatedSlipRecord.id} - ${selectedStaff.name}`);
+
+                      recordAuditLog(
+                        'PAYROLL_RECORD_EDITED',
+                        updatedSlipRecord.id,
+                        `Updated ${isEpfActive ? 'EPF-Liable' : 'EPF-Exempt'} payslip for ${selectedStaff.name} (${payrollInputForm.period}). New Net: ${settings.currency} ${breakdown.netSalary.toFixed(2)}. Cloud Sync Queued.`
+                      );
+                    } else {
+                      // 2. CREATE NEW PERMANENT RECORD
+                      const permanentSlipId = `PAY-${payrollInputForm.period.replace(/-/g, '')}-${selectedStaff.id.slice(-4)}-${Date.now().toString().slice(-4)}`;
+
+                      const permanentSlipRecord = {
+                        id: permanentSlipId,
+                        staffId: selectedStaff.id,
+                        staffName: selectedStaff.name,
+                        role: selectedStaff.role,
+                        period: payrollInputForm.period,
+                        epfEtfEnabled: isEpfActive,
+                        breakdown,
+                        notes: payrollInputForm.notes || 'Monthly Salary Disbursed',
+                        processedBy: currentUser.name,
+                        processedByRole: currentUser.role,
+                        processedAt: `${fullDateStr} ${timeStr}`,
+                        processedAtISO: nowIso,
+                        revisions: []
+                      };
+
+                      setPayrollRecords(prev => [permanentSlipRecord, ...prev]);
+
+                      // Direct cloud append if using atomic append
+                      if (typeof appendCloudArchive === 'function') {
+                        appendCloudArchive('payroll_records', permanentSlipRecord);
+                      }
+
+                      // Auto-print newly issued slip
+                      triggerAutoPrint({
+                        type: 'PAYSLIP_PRINT',
+                        data: permanentSlipRecord
+                      }, `Payslip ${permanentSlipRecord.id} - ${selectedStaff.name}`);
+
+                      recordAuditLog(
+                        'PAYROLL_PERMANENT_RECORD_SAVED',
+                        permanentSlipRecord.id,
+                        `Issued ${isEpfActive ? 'EPF-Liable' : 'EPF-Exempt'} payslip for ${selectedStaff.name} (${payrollInputForm.period}). Net: ${settings.currency} ${breakdown.netSalary.toFixed(2)}. Cloud Sync Queued.`
+                      );
+                    }
+
+                    setEditingPayrollId(null);
+                    setProcessPayModalOpen(false);
+                  }}
+                  className="mt-4 space-y-4"
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Employee</label>
+                      <select
+                        value={payrollInputForm.staffId}
+                        onChange={e => setPayrollInputForm(prev => ({ ...prev, staffId: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                      >
+                        {staffList.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Salary Month</label>
+                      <input
+                        type="month"
+                        required
+                        value={payrollInputForm.period}
+                        onChange={e => setPayrollInputForm(prev => ({ ...prev, period: e.target.value }))}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* EPF / ETF APPLICABILITY TOGGLE */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-3">
+                    <div>
+                      <span className="text-xs font-black text-slate-900 block">
+                        Sri Lanka EPF / ETF Deductions
+                      </span>
+                      <p className="text-[10px] text-slate-500">
+                        {isEpfActive 
+                          ? 'Employee 8% deduction + Employer 12% EPF & 3% ETF active' 
+                          : 'Exempt / Non-EPF (Casual, Probationary, or Contractor)'}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setPayrollInputForm(prev => ({ ...prev, epfEtfEnabled: !isEpfActive }))}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                        isEpfActive
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                          : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                      }`}
+                    >
+                      {isEpfActive ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 stroke-[3]" />
+                          <span>EPF Active</span>
+                        </>
+                      ) : (
+                        <span>Exempt (No EPF)</span>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* EARNINGS & ALLOWANCES */}
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                      1. Earnings &amp; Allowances ({settings.currency})
+                    </span>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Basic Salary</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          value={payrollInputForm.basicSalary}
+                          onChange={e => setPayrollInputForm(prev => ({ ...prev, basicSalary: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Budgetary Relief (BRA)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={payrollInputForm.budgetaryAllowance}
+                          onChange={e => setPayrollInputForm(prev => ({ ...prev, budgetaryAllowance: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                          Fixed Allowances {isEpfActive && '(Liable to EPF)'}
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={payrollInputForm.otherAllowances}
+                          onChange={e => setPayrollInputForm(prev => ({ ...prev, otherAllowances: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Service Gratuity Share</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={payrollInputForm.serviceChargeBonus}
+                          onChange={e => setPayrollInputForm(prev => ({ ...prev, serviceChargeBonus: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-emerald-700"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* OVERTIME & BONUSES */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Overtime Hours (hrs)</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={payrollInputForm.overtimeHours}
+                        onChange={e => setPayrollInputForm(prev => ({ ...prev, overtimeHours: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Performance Bonus</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={payrollInputForm.incentiveBonus}
+                        onChange={e => setPayrollInputForm(prev => ({ ...prev, incentiveBonus: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* LIVE BREAKDOWN PREVIEW */}
+                  <div className="p-3.5 bg-slate-900 text-white rounded-2xl space-y-1.5 text-xs font-mono">
+                    <div className="flex justify-between text-slate-400">
+                      <span>Gross Earnings:</span>
+                      <span>{settings.currency} {breakdown.grossEarnings.toFixed(2)}</span>
+                    </div>
+
+                    {isEpfActive ? (
+                      <>
+                        <div className="flex justify-between text-slate-400 text-[11px]">
+                          <span>EPF Liable Base:</span>
+                          <span>{settings.currency} {breakdown.epfLiableEarnings.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-rose-400">
+                          <span>EPF Employee (8%):</span>
+                          <span>-{settings.currency} {breakdown.epfEmployee.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-indigo-300">
+                          <span>EPF Employer (12%):</span>
+                          <span>+{settings.currency} {breakdown.epfEmployer.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-emerald-300">
+                          <span>ETF Employer (3%):</span>
+                          <span>+{settings.currency} {breakdown.etfEmployer.toFixed(2)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="py-1 text-[11px] text-amber-400/90 italic flex items-center justify-between">
+                        <span>Statutory EPF / ETF:</span>
+                        <span>Exempt (0.00)</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between pt-2 border-t border-slate-700 text-base font-black text-emerald-400">
+                      <span>Net Employee Take-Home:</span>
+                      <span>{settings.currency} {breakdown.netSalary.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProcessPayModalOpen(false);
+                        setEditingPayrollId(null);
+                      }}
+                      className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer transition-colors"
+                    >
+                      {editingPayrollId ? 'Save Changes & Reprint' : 'Issue & Print Payslip'}
+                    </button>
+                  </div>
+                </form>
+              );
+            })()}
           </div>
         </div>
       )}
