@@ -557,7 +557,7 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
     period: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
     epfEtfEnabled: true,
     basicSalary: 35000,
-    budgetaryAllowance: 2500,
+    salaryadvance: 2500,
     otherAllowances: 0,
     serviceChargeBonus: 0,
     incentiveBonus: 0,
@@ -578,7 +578,7 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
       setPayrollInputForm(prev => ({
         ...prev,
         basicSalary: staff.basicSalary ?? 35000,
-        budgetaryAllowance: staff.budgetaryAllowance ?? 2500,
+        salaryadvance: staff.salaryadvance ?? 2500,
         otherAllowances: staff.otherAllowances ?? 0,
         incentiveBonus: staff.fixedBonus ?? 0,
         overtimeRate: staff.overtimeRate ?? 250,
