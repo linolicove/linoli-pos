@@ -750,7 +750,7 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
     pin: '',
     email: '',
     basicSalary: 35000,
-    budgetaryAllowance: 2500,
+    salaryadvance: 2500,
     otherAllowances: 0,
     fixedBonus: 0,
     overtimeRate: 250,
@@ -1229,7 +1229,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       avatar: initials || 'ST',
       email: newStaffForm.email.trim() || `${newStaffForm.name.trim().toLowerCase().replace(/\s+/g, '')}@linolicove.me`,
       basicSalary: Number(newStaffForm.basicSalary) || 0,
-      budgetaryAllowance: Number(newStaffForm.budgetaryAllowance) || 0,
+      salaryadvance: Number(newStaffForm.salaryadvance) || 0,
       otherAllowances: Number(newStaffForm.otherAllowances) || 0,
       fixedBonus: Number(newStaffForm.fixedBonus) || 0,
       overtimeRate: Number(newStaffForm.overtimeRate) || 0,
@@ -1256,7 +1256,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       pin: '',
       email: '',
       basicSalary: 35000,
-      budgetaryAllowance: 2500,
+      salaryadvance: 2500,
       otherAllowances: 0,
       fixedBonus: 0,
       overtimeRate: 250,
@@ -2328,7 +2328,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
   const calculateSriLankanPayroll = ({
     epfEtfEnabled = true, // <-- Add parameter
     basicSalary = 0,
-    budgetaryAllowance = 0,
+    salaryadvance = 0,
     otherAllowances = 0,
     serviceChargeBonus = 0,
     incentiveBonus = 0,
@@ -2337,7 +2337,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     otherDeductions = 0
   }) => {
     const basic = Number(basicSalary) || 0;
-    const bra = Number(budgetaryAllowance) || 0;
+    const bra = Number(salaryadvance) || 0;
     const allowances = Number(otherAllowances) || 0;
     const pool = Number(serviceChargeBonus) || 0;
     const bonus = Number(incentiveBonus) || 0;
@@ -6023,7 +6023,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     pin: '',
                     email: '',
                     basicSalary: 35000,
-                    budgetaryAllowance: 2500,
+                    salaryadvance: 2500,
                     otherAllowances: 0,
                     fixedBonus: 0,
                     overtimeRate: 250,
@@ -6076,7 +6076,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       </td>
 
                       <td className="py-3 px-4 text-right font-mono text-slate-600">
-                        +{settings.currency} {((member.budgetaryAllowance ?? 2500) + (member.otherAllowances ?? 0)).toFixed(2)}
+                        +{settings.currency} {((member.salaryadvance ?? 2500) + (member.otherAllowances ?? 0)).toFixed(2)}
                       </td>
 
                       <td className="py-3 px-4 text-center">
@@ -6101,7 +6101,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                 period: curPeriod,
                                 epfEtfEnabled: member.epfEtfEnabled !== false,
                                 basicSalary: member.basicSalary ?? 35000,
-                                budgetaryAllowance: member.budgetaryAllowance ?? 2500,
+                                salaryadvance: member.salaryadvance ?? 2500,
                                 otherAllowances: member.otherAllowances ?? 0,
                                 serviceChargeBonus: Math.round((salesMetrics.serviceCharge || 0) / Math.max(1, staffList.length)),
                                 incentiveBonus: member.fixedBonus ?? 0,
@@ -6133,7 +6133,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                 pin: member.pin,
                                 email: member.email || '',
                                 basicSalary: member.basicSalary ?? 35000,
-                                budgetaryAllowance: member.budgetaryAllowance ?? 2500,
+                                salaryadvance: member.salaryadvance ?? 2500,
                                 otherAllowances: member.otherAllowances ?? 0,
                                 fixedBonus: member.fixedBonus ?? 0,
                                 overtimeRate: member.overtimeRate ?? 250,
@@ -6989,7 +6989,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       period: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
                       epfEtfEnabled: firstStaff ? firstStaff.epfEtfEnabled !== false : true,
                       basicSalary: firstStaff?.basicSalary ?? 35000,
-                      budgetaryAllowance: firstStaff?.budgetaryAllowance ?? 2500,
+                      salaryadvance: firstStaff?.salaryadvance ?? 2500,
                       otherAllowances: firstStaff?.otherAllowances ?? 0,
                       serviceChargeBonus: Math.round((salesMetrics?.serviceCharge || 0) / Math.max(1, staffList.length)),
                       incentiveBonus: firstStaff?.fixedBonus ?? 0,
@@ -7327,7 +7327,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                             period: rec.period,
                                             epfEtfEnabled: rec.breakdown?.epfEtfEnabled !== false,
                                             basicSalary: rec.breakdown?.basic || 35000,
-                                            budgetaryAllowance: rec.breakdown?.bra || 2500,
+                                            salaryadvance: rec.breakdown?.salaryadvance || 2500,
                                             otherAllowances: rec.breakdown?.allowances || 0,
                                             serviceChargeBonus: rec.breakdown?.serviceChargeBonus || 0,
                                             incentiveBonus: rec.breakdown?.incentiveBonus || 0,
@@ -10743,8 +10743,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <input
                       type="number"
                       step="0.01"
-                      value={newStaffForm.budgetaryAllowance}
-                      onChange={e => setNewStaffForm(prev => ({ ...prev, budgetaryAllowance: e.target.value }))}
+                      value={newStaffForm.salaryadvance}
+                      onChange={e => setNewStaffForm(prev => ({ ...prev, salaryadvance: e.target.value }))}
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold"
                     />
                   </div>
@@ -11905,7 +11905,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             ...prev,
                             staffId: targetId,
                             basicSalary: staff?.basicSalary ?? 35000,
-                            budgetaryAllowance: staff?.budgetaryAllowance ?? 2500,
+                            salaryadvance: staff?.salaryadvance ?? 2500,
                             otherAllowances: staff?.otherAllowances ?? 0,
                             incentiveBonus: staff?.fixedBonus ?? 0,
                             overtimeRate: staff?.overtimeRate ?? 250,
@@ -11986,12 +11986,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Budgetary Relief (BRA)</label>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Salary Advance</label>
                         <input
                           type="number"
                           step="0.01"
-                          value={payrollInputForm.budgetaryAllowance}
-                          onChange={e => setPayrollInputForm(prev => ({ ...prev, budgetaryAllowance: e.target.value }))}
+                          value={payrollInputForm.salaryadvance}
+                          onChange={e => setPayrollInputForm(prev => ({ ...prev, salaryadvance: e.target.value }))}
                           className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold"
                         />
                       </div>
