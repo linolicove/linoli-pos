@@ -543,15 +543,14 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
   const [accountingPeriod, setAccountingPeriod] = useState('ALL'); // 'ALL' | 'TODAY' | 'THIS_MONTH' | 'LAST_MONTH'
 
   // Persistent Attendance & Time Clock
-  const [attendanceLogs, setAttendanceLogs] = usePersistentState('linoli_attendance_archive_v1', []);
-  const [payrollRecords, setPayrollRecords] = usePersistentState('linoli_payroll_archive_v1', []);
+  const [attendanceLogs, setAttendanceLogs] = usePersistentState('linoli_attendance_logs', []);
+  const [payrollRecords, setPayrollRecords] = usePersistentState('linoli_payroll_records', []);
   const [payrollSubTab, setPayrollSubTab] = useState('attendance'); // 'attendance' | 'payslips' | 'epf_etf' | 'profiles'
   const [editingPayrollId, setEditingPayrollId] = useState(null);
   
   // 1. Declare modal open state
   const [processPayModalOpen, setProcessPayModalOpen] = useState(false);
 
-  // 2. Declare form state FIRST (Before any effect tries to read it)
   const [payrollInputForm, setPayrollInputForm] = useState({
     staffId: '',
     period: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
@@ -563,6 +562,7 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
     incentiveBonus: 0,
     overtimeHours: 0,
     overtimeRate: 250,
+    salaryAdvance: 0, // <-- Added here
     otherDeductions: 0,
     notes: ''
   });
@@ -869,6 +869,8 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
   const prevExpensesRef = useRef('');  // <-- ADD THIS
   const prevStaffRef = useRef('');
   const prevShiftRef = useRef('');
+  const prevAttendanceRef = useRef('');
+  const prevPayrollRef = useRef('');
   const prevDenomRef = useRef('');
   const [expenses, setExpenses] = useState(() => {
   try {
@@ -999,21 +1001,27 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       }
     });
 
-    // 10. Receive attendance logs from cloud
+    // 10. Receive attendance logs from cloud in real time
     const unsubAttendance = subscribeToCloud('attendance_logs', (remoteAtt) => {
       isCloudSynced.current = true;
       if (Array.isArray(remoteAtt)) {
+        const serialized = JSON.stringify(remoteAtt);
+        if (prevAttendanceRef.current === serialized) return;
+        prevAttendanceRef.current = serialized;
         setAttendanceLogs(remoteAtt);
-        localStorage.setItem('linoli_attendance_logs', JSON.stringify(remoteAtt));
+        localStorage.setItem('linoli_attendance_logs', serialized);
       }
     });
 
-    // 11. Receive payroll records from cloud
+    // 11. Receive processed payroll records from cloud in real time
     const unsubPayroll = subscribeToCloud('payroll_records', (remotePay) => {
       isCloudSynced.current = true;
       if (Array.isArray(remotePay)) {
+        const serialized = JSON.stringify(remotePay);
+        if (prevPayrollRef.current === serialized) return;
+        prevPayrollRef.current = serialized;
         setPayrollRecords(remotePay);
-        localStorage.setItem('linoli_payroll_records', JSON.stringify(remotePay));
+        localStorage.setItem('linoli_payroll_records', serialized);
       }
     });
     
@@ -1165,19 +1173,27 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     }
     }, [denominations]);
 
-    // Sync Attendance Archive Online & Offline
+   // Live Bidirectional Sync: Attendance Logs (pos_state/attendance_logs)
   useEffect(() => {
     if (!isCloudSynced.current) return;
-    if (Array.isArray(attendanceLogs) && attendanceLogs.length > 0) {
-      syncToCloud('attendance_logs_archive', attendanceLogs);
+    if (attendanceLogs !== undefined) {
+      const current = JSON.stringify(attendanceLogs);
+      if (current !== prevAttendanceRef.current) {
+        prevAttendanceRef.current = current;
+        syncToCloud('attendance_logs', attendanceLogs);
+      }
     }
   }, [attendanceLogs]);
 
-  // Sync Payroll Slips & Actions Online & Offline
+  // Live Bidirectional Sync: Processed Payroll Records (pos_state/payroll_records)
   useEffect(() => {
     if (!isCloudSynced.current) return;
-    if (Array.isArray(payrollRecords) && payrollRecords.length > 0) {
-      syncToCloud('payroll_records_archive', payrollRecords);
+    if (payrollRecords !== undefined) {
+      const current = JSON.stringify(payrollRecords);
+      if (current !== prevPayrollRef.current) {
+        prevPayrollRef.current = current;
+        syncToCloud('payroll_records', payrollRecords);
+      }
     }
   }, [payrollRecords]);
 
@@ -2322,11 +2338,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     }
   };
 
-  // =========================================================================
-  // SRI LANKAN STATUTORY CALCULATION HELPERS (EPF / ETF / SERVICE POOL)
-  // =========================================================================
   const calculateSriLankanPayroll = ({
-    epfEtfEnabled = true, // <-- Add parameter
+    epfEtfEnabled = true,
     basicSalary = 0,
     budgetaryAllowance = 0,
     otherAllowances = 0,
@@ -2334,6 +2347,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     incentiveBonus = 0,
     overtimeHours = 0,
     overtimeRate = 0,
+    salaryAdvance = 0, // <-- Added Salary Advance
     otherDeductions = 0
   }) => {
     const basic = Number(basicSalary) || 0;
@@ -2342,20 +2356,21 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     const pool = Number(serviceChargeBonus) || 0;
     const bonus = Number(incentiveBonus) || 0;
     const ot = (Number(overtimeHours) || 0) * (Number(overtimeRate) || 0);
+    const advance = Number(salaryAdvance) || 0;
     const deductions = Number(otherDeductions) || 0;
 
-    // EPF Base Earnings
+    // EPF Base Earnings (Basic + BRA + Allowances)
     const epfLiableEarnings = Number((basic + bra + allowances).toFixed(2));
 
-    // Calculate EPF/ETF ONLY if epfEtfEnabled is true; otherwise 0.00
+    // EPF/ETF calculations
     const epfEmployee = epfEtfEnabled ? Number((epfLiableEarnings * 0.08).toFixed(2)) : 0;
     const epfEmployer = epfEtfEnabled ? Number((epfLiableEarnings * 0.12).toFixed(2)) : 0;
     const etfEmployer = epfEtfEnabled ? Number((epfLiableEarnings * 0.03).toFixed(2)) : 0;
     const totalEpfFund = Number((epfEmployee + epfEmployer).toFixed(2));
 
-    // Gross & Net Calculations
+    // Gross, Deductions, and Net
     const grossEarnings = Number((basic + bra + allowances + pool + bonus + ot).toFixed(2));
-    const totalDeductions = Number((epfEmployee + deductions).toFixed(2));
+    const totalDeductions = Number((epfEmployee + advance + deductions).toFixed(2));
     const netSalary = Number((grossEarnings - totalDeductions).toFixed(2));
     const costToCompany = Number((grossEarnings + epfEmployer + etfEmployer).toFixed(2));
 
@@ -2372,6 +2387,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       serviceChargeBonus: pool,
       incentiveBonus: bonus,
       overtimePay: ot,
+      salaryAdvance: advance, // <-- Exported in breakdown
       grossEarnings,
       totalDeductions,
       netSalary,
@@ -7257,6 +7273,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           <th className="py-2.5 px-3 text-right">Basic + Allowances</th>
                           <th className="py-2.5 px-3 text-right">EPF Base</th>
                           <th className="py-2.5 px-3 text-right text-rose-600">EPF 8%</th>
+                          <th className="py-2.5 px-3 text-right text-amber-700">Advance</th>
                           <th className="py-2.5 px-3 text-right text-emerald-600">Service Pool</th>
                           <th className="py-2.5 px-3 text-right font-black">Net Take-Home</th>
                           <th className="py-2.5 px-3 text-right">Actions</th>
@@ -7294,6 +7311,11 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                     ? `-${settings.currency} ${(rec.breakdown?.epfEmployee || 0).toFixed(2)}`
                                     : '0.00'}
                                 </td>
+                                <td className="py-3 px-3 text-right font-mono text-amber-700 font-bold">
+                                  {(rec.breakdown?.salaryAdvance || 0) > 0 
+                                    ? `-${settings.currency} ${(rec.breakdown?.salaryAdvance || 0).toFixed(2)}` 
+                                    : '0.00'}
+                                </td>
                                 <td className="py-3 px-3 text-right font-mono text-emerald-600 font-bold">
                                   +{(rec.breakdown?.serviceChargeBonus || 0) > 0 ? `${settings.currency} ${(rec.breakdown?.serviceChargeBonus || 0).toFixed(2)}` : '0.00'}
                                 </td>
@@ -7302,7 +7324,31 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                 </td>
                                 <td className="py-3 px-3 text-right">
                                   <div className="flex items-center justify-end gap-1.5">
-                                    {/* Print */}
+                                    {/* Print Advance Slip if advance was given */}
+                                    {Number(rec.breakdown?.salaryAdvance) > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          triggerAutoPrint({
+                                            type: 'SALARY_ADVANCE_VOUCHER',
+                                            data: {
+                                              id: `ADV-${rec.id.slice(-6)}`,
+                                              staffName: rec.staffName,
+                                              role: rec.role,
+                                              period: rec.period,
+                                              amount: rec.breakdown.salaryAdvance,
+                                              notes: rec.notes
+                                            }
+                                          }, `Reprint Advance: ${rec.staffName}`);
+                                        }}
+                                        className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg cursor-pointer transition-colors"
+                                        title="Reprint Advance Voucher"
+                                      >
+                                        <Banknote className="h-4 w-4" />
+                                      </button>
+                                    )}
+
+                                    {/* Print Full Payslip */}
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -9829,7 +9875,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             )}
 
-            {/* Sri Lankan Statutory Payslip Print Slip */}
+            {/* 1. Sri Lankan Statutory Payslip Print Slip */}
             {activePrintSlip.type === 'PAYSLIP_PRINT' && (
               <div className="space-y-3 font-mono text-xs">
                 {/* Header */}
@@ -9919,6 +9965,15 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       <span>Exempt (0.00)</span>
                     </div>
                   )}
+
+                  {/* ITEMIZE SALARY ADVANCE DEDUCTION */}
+                  {Number(activePrintSlip.data.breakdown?.salaryAdvance) > 0 && (
+                    <div className="flex justify-between font-bold text-amber-800">
+                      <span>Salary Advance Deducted:</span>
+                      <span>-{settings.currency} {Number(activePrintSlip.data.breakdown.salaryAdvance).toFixed(2)}</span>
+                    </div>
+                  )}
+
                   {activePrintSlip.data.breakdown?.otherDeductions > 0 && (
                     <div className="flex justify-between text-rose-700">
                       <span>Other Deductions:</span>
@@ -9935,7 +9990,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   </div>
                 </div>
 
-                {/* Employer Statutory Remittances (Only printed if EPF is active) */}
+                {/* Employer Statutory Remittances */}
                 {activePrintSlip.data.breakdown?.epfEtfEnabled !== false && (
                   <div className="space-y-1 border-b border-dotted border-black pb-2 text-[10px] text-slate-700">
                     <p className="font-bold uppercase">=== EMPLOYER STATUTORY CONTRIBUTIONS ===</p>
@@ -9946,15 +10001,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <div className="flex justify-between">
                       <span>ETF (Employer 3%):</span>
                       <span>{settings.currency} {activePrintSlip.data.breakdown?.etfEmployer.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between font-bold border-t border-dotted border-black pt-0.5">
-                      <span>Total Statutory Fund (23%):</span>
-                      <span>
-                        {settings.currency} {(
-                          (activePrintSlip.data.breakdown?.totalEpfFund || 0) + 
-                          (activePrintSlip.data.breakdown?.etfEmployer || 0)
-                        ).toFixed(2)}
-                      </span>
                     </div>
                   </div>
                 )}
@@ -9968,6 +10014,61 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   <div className="text-center">
                     <p>___________________</p>
                     <p>Authorized Officer</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 2. STANDALONE SALARY ADVANCE VOUCHER SLIP */}
+            {activePrintSlip.type === 'SALARY_ADVANCE_VOUCHER' && (
+              <div className="space-y-3 font-mono text-xs">
+                <div className="text-center border-b-2 border-dashed border-black pb-2">
+                  <h2 className="font-black text-sm uppercase">{settings.restaurantName}</h2>
+                  <p className="text-[10px]">{settings.address}</p>
+                  <p className="font-black text-xs uppercase mt-1 tracking-wider">*** SALARY ADVANCE DISBURSEMENT VOUCHER ***</p>
+                  <p className="text-[10px]">Voucher Ref: {activePrintSlip.data.id || 'ADV-NEW'} • Month: {activePrintSlip.data.period}</p>
+                  <p className="text-[9px]">Date: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+
+                <div className="space-y-1.5 border-b border-black pb-2 text-[11px]">
+                  <div className="flex justify-between">
+                    <span>Employee Name:</span>
+                    <span className="font-bold">{activePrintSlip.data.staffName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Designation / Role:</span>
+                    <span>{activePrintSlip.data.role}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Salary Month:</span>
+                    <span className="font-bold">{activePrintSlip.data.period}</span>
+                  </div>
+                </div>
+
+                <div className="p-2 border border-black rounded space-y-1 text-center bg-slate-50">
+                  <span className="text-[10px] uppercase font-bold block">Cash Advance Amount</span>
+                  <p className="text-base font-black font-mono">
+                    {settings.currency} {(Number(activePrintSlip.data.amount) || 0).toFixed(2)}
+                  </p>
+                </div>
+
+                <div className="text-[10px] text-slate-700 leading-snug space-y-1 border-b border-dashed border-black pb-2">
+                  <p>
+                    I, <strong>{activePrintSlip.data.staffName}</strong>, hereby acknowledge the receipt of {settings.currency} {(Number(activePrintSlip.data.amount) || 0).toFixed(2)} in cash as an advance towards my wages for {activePrintSlip.data.period}, and consent to this amount being deducted on the final monthly payroll.
+                  </p>
+                  {activePrintSlip.data.notes && (
+                    <p className="italic text-[9px] pt-1">Note: {activePrintSlip.data.notes}</p>
+                  )}
+                </div>
+
+                <div className="pt-4 text-[9px] flex justify-between">
+                  <div className="text-center">
+                    <p>___________________</p>
+                    <p className="mt-0.5">Employee Signature</p>
+                  </div>
+                  <div className="text-center">
+                    <p>___________________</p>
+                    <p className="mt-0.5">Authorized By (Manager)</p>
                   </div>
                 </div>
               </div>
@@ -12023,27 +12124,89 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     </div>
                   </div>
 
-                  {/* OVERTIME & BONUSES */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Overtime Hours (hrs)</label>
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={payrollInputForm.overtimeHours}
-                        onChange={e => setPayrollInputForm(prev => ({ ...prev, overtimeHours: e.target.value }))}
-                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold"
-                      />
+                  {/* OVERTIME, ADVANCE & DEDUCTIONS */}
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                      2. Additions, Overtime &amp; Advances ({settings.currency})
+                    </span>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Overtime Hours (hrs)</label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={payrollInputForm.overtimeHours}
+                          onChange={e => setPayrollInputForm(prev => ({ ...prev, overtimeHours: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Performance Bonus</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={payrollInputForm.incentiveBonus}
+                          onChange={e => setPayrollInputForm(prev => ({ ...prev, incentiveBonus: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Performance Bonus</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={payrollInputForm.incentiveBonus}
-                        onChange={e => setPayrollInputForm(prev => ({ ...prev, incentiveBonus: e.target.value }))}
-                        className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold"
-                      />
+
+                    <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200">
+                      {/* SALARY ADVANCE INPUT */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-black text-amber-800">
+                            Salary Advance ({settings.currency})
+                          </label>
+                          {Number(payrollInputForm.salaryAdvance) > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerAutoPrint({
+                                  type: 'SALARY_ADVANCE_VOUCHER',
+                                  data: {
+                                    id: editingPayrollId || `ADV-${payrollInputForm.period.replace(/-/g, '')}-${selectedStaff?.id.slice(-4)}`,
+                                    staffName: selectedStaff?.name || 'Staff',
+                                    role: selectedStaff?.role || 'Staff',
+                                    period: payrollInputForm.period,
+                                    amount: Number(payrollInputForm.salaryAdvance) || 0,
+                                    notes: payrollInputForm.notes || 'Salary Advance Payment'
+                                  }
+                                }, `Advance Voucher: ${selectedStaff?.name} (${settings.currency} ${payrollInputForm.salaryAdvance})`);
+                              }}
+                              className="text-[9px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                              title="Print advance receipt voucher now"
+                            >
+                              🖨️ Print Slip
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={payrollInputForm.salaryAdvance}
+                          onChange={e => setPayrollInputForm(prev => ({ ...prev, salaryAdvance: e.target.value }))}
+                          placeholder="e.g. 10000.00"
+                          className="w-full px-2.5 py-1.5 bg-amber-50/70 border border-amber-300 rounded-lg text-xs font-mono font-bold text-amber-950 focus:bg-white focus:outline-none focus:border-amber-600"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Other Deductions</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={payrollInputForm.otherDeductions}
+                          onChange={e => setPayrollInputForm(prev => ({ ...prev, otherDeductions: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-rose-700"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -12064,19 +12227,25 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           <span>EPF Employee (8%):</span>
                           <span>-{settings.currency} {breakdown.epfEmployee.toFixed(2)}</span>
                         </div>
-                        <div className="flex justify-between text-indigo-300">
-                          <span>EPF Employer (12%):</span>
-                          <span>+{settings.currency} {breakdown.epfEmployer.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-emerald-300">
-                          <span>ETF Employer (3%):</span>
-                          <span>+{settings.currency} {breakdown.etfEmployer.toFixed(2)}</span>
-                        </div>
                       </>
                     ) : (
                       <div className="py-1 text-[11px] text-amber-400/90 italic flex items-center justify-between">
                         <span>Statutory EPF / ETF:</span>
                         <span>Exempt (0.00)</span>
+                      </div>
+                    )}
+
+                    {Number(breakdown.salaryAdvance) > 0 && (
+                      <div className="flex justify-between text-amber-300 font-bold">
+                        <span>Salary Advance Deducted:</span>
+                        <span>-{settings.currency} {breakdown.salaryAdvance.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {Number(payrollInputForm.otherDeductions) > 0 && (
+                      <div className="flex justify-between text-rose-400">
+                        <span>Other Deductions:</span>
+                        <span>-{settings.currency} {Number(payrollInputForm.otherDeductions).toFixed(2)}</span>
                       </div>
                     )}
 
@@ -12086,22 +12255,49 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     </div>
                   </div>
 
-                  <div className="flex gap-2 pt-1">
+                  {/* MODAL ACTION BUTTONS (INCLUDES DIRECT PRINT ADVANCE VOUCHER) */}
+                  <div className="flex flex-col sm:flex-row gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => {
                         setProcessPayModalOpen(false);
                         setEditingPayrollId(null);
                       }}
-                      className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer transition-colors"
+                      className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer transition-colors"
                     >
                       Cancel
                     </button>
+
+                    {/* PRINT SALARY ADVANCE VOUCHER BUTTON */}
+                    {Number(payrollInputForm.salaryAdvance) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerAutoPrint({
+                            type: 'SALARY_ADVANCE_VOUCHER',
+                            data: {
+                              id: editingPayrollId || `ADV-${payrollInputForm.period.replace(/-/g, '')}-${selectedStaff?.id.slice(-4)}`,
+                              staffName: selectedStaff?.name || 'Staff',
+                              role: selectedStaff?.role || 'Staff',
+                              period: payrollInputForm.period,
+                              amount: Number(payrollInputForm.salaryAdvance) || 0,
+                              notes: payrollInputForm.notes || 'Salary Advance Payment'
+                            }
+                          }, `Advance Voucher: ${selectedStaff?.name}`);
+                        }}
+                        className="py-2.5 px-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                      >
+                        <Printer className="h-3.5 w-3.5" />
+                        <span>Print Advance Slip</span>
+                      </button>
+                    )}
+
                     <button
                       type="submit"
-                      className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer transition-colors"
+                      className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer transition-colors flex items-center justify-center gap-1.5"
                     >
-                      {editingPayrollId ? 'Save Changes & Reprint' : 'Issue & Print Payslip'}
+                      <Printer className="h-3.5 w-3.5" />
+                      <span>{editingPayrollId ? 'Save Changes & Print Payslip' : 'Issue & Print Payslip'}</span>
                     </button>
                   </div>
                 </form>
