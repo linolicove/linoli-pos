@@ -513,6 +513,11 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
   const [staffList, setStaffList] = usePersistentState('linoli_staff_list', INITIAL_STAFF);
   const [currentUser, setCurrentUser] = useState(INITIAL_STAFF[0]);
   const [inventory, setInventory] = usePersistentState('linoli_inventory', INITIAL_RAW_INVENTORY);
+  // Stock & Inventory View Filter States
+  const [stockCategoryFilter, setStockCategoryFilter] = useState('All');
+  const [stockSearchQuery, setStockSearchQuery] = useState('');
+  const [stockStatusFilter, setStockStatusFilter] = useState('ALL'); // 'ALL' | 'LOW' | 'OPTIMAL'
+  const [stockDateFilter, setStockDateFilter] = useState(getLocalDateStr());
   const [menuItems, setMenuItems] = usePersistentState('linoli_menu_items', INITIAL_MENU_ITEMS);
   const [floorTables, setFloorTables] = usePersistentState('linoli_floor_tables', INITIAL_FLOOR_TABLES);
   const [activeOrders, setActiveOrders] = usePersistentState('linoli_active_orders', []);
@@ -539,14 +544,36 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
     notes: ''
   });
   const prevVendorBillsRef = useRef('');
+  // Vendor Bills Filter States
+  const [vendorBillStartDate, setVendorBillStartDate] = useState('');
+  const [vendorBillEndDate, setVendorBillEndDate] = useState('');
+  const [vendorBillCategoryFilter, setVendorBillCategoryFilter] = useState('All');
+  const [vendorBillStatusFilter, setVendorBillStatusFilter] = useState('ALL'); // 'ALL' | 'PAID' | 'UNPAID'
 
   const [accountingPeriod, setAccountingPeriod] = useState('ALL'); // 'ALL' | 'TODAY' | 'THIS_MONTH' | 'LAST_MONTH'
+  const [accountingStartDate, setAccountingStartDate] = useState('');
+  const [accountingEndDate, setAccountingEndDate] = useState('');
 
   // Persistent Attendance & Time Clock
   const [attendanceLogs, setAttendanceLogs] = usePersistentState('linoli_attendance_logs', []);
+  // Manual Attendance Entry State
+  const [manualAttendanceModalOpen, setManualAttendanceModalOpen] = useState(false);
+  const [manualAttendanceForm, setManualAttendanceForm] = useState({
+    staffId: '',
+    date: getLocalDateStr(),
+    clockInTime: '09:00',
+    clockOutTime: '17:30',
+    notes: 'Missed punch added by supervisor'
+  });
   const [payrollRecords, setPayrollRecords] = usePersistentState('linoli_payroll_records', []);
+  // Payroll & Advances Filter States
+  const [payrollStartDate, setPayrollStartDate] = useState('');
+  const [payrollEndDate, setPayrollEndDate] = useState('');
+  const [payrollStaffFilter, setPayrollStaffFilter] = useState('ALL');
+  const [payrollSearchName, setPayrollSearchName] = useState('');
   const [payrollSubTab, setPayrollSubTab] = useState('attendance'); // 'attendance' | 'payslips' | 'epf_etf' | 'profiles'
   const [editingPayrollId, setEditingPayrollId] = useState(null);
+
 
   // Persistent collection for standalone advance disbursements
   const [salaryAdvances, setSalaryAdvances] = usePersistentState('linoli_salary_advances', []);
@@ -786,6 +813,8 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
     role: 'Cashier',
     pin: '',
     email: '',
+    nicNumber: '', // <-- Added NIC Number
+    nicDate: '',   // <-- Added NIC Issue / Input Date
     basicSalary: 35000,
     budgetaryAllowance: 2500,
     otherAllowances: 0,
@@ -1305,6 +1334,8 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       pin: cleanPin,
       avatar: initials || 'ST',
       email: newStaffForm.email.trim() || `${newStaffForm.name.trim().toLowerCase().replace(/\s+/g, '')}@linolicove.me`,
+      nicNumber: (newStaffForm.nicNumber || '').trim().toUpperCase(),
+      nicDate: newStaffForm.nicDate || '',
       basicSalary: Number(newStaffForm.basicSalary) || 0,
       budgetaryAllowance: Number(newStaffForm.budgetaryAllowance) || 0,
       otherAllowances: Number(newStaffForm.otherAllowances) || 0,
@@ -2126,78 +2157,104 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
   };
 
   const handleSendOrder = () => {
-    if (cart.length === 0) return;
+  if (cart.length === 0) return;
 
-    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // =========================================================================
+  // OCCUPIED TABLE GUARD: Prevent creating a duplicate order for an active table
+  // =========================================================================
+  const isEditingCurrentTable = settlingOrder && (
+    settlingOrder.table === selectedTable?.name ||
+    settlingOrder.tableName === selectedTable?.name ||
+    settlingOrder.tableId === selectedTable?.id
+  );
 
-    // =========================================================================
-    // CASE A: Updating an existing active bill redirected from Billing Queue
-    // =========================================================================
-    if (settlingOrder && activeOrders.some(o => o.orderId === settlingOrder.orderId)) {
-      const originalOrder = activeOrders.find(o => o.orderId === settlingOrder.orderId);
-      const originalItems = originalOrder?.items || [];
-      const updatedItems = cart;
-      const changes = [];
-      const newlyAddedOrIncremented = [];
+  if (!isEditingCurrentTable) {
+    const existingActiveOrder = (activeOrders || []).find(o =>
+      o.table === selectedTable?.name ||
+      o.tableName === selectedTable?.name ||
+      o.tableId === selectedTable?.id
+    );
 
-      // 1. Detect item additions and increased quantities
-      updatedItems.forEach(item => {
-        const prev = originalItems.find(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
-        if (!prev) {
-          changes.push(`ADDED "${item.name}" (Qty: ${item.qty})`);
-          newlyAddedOrIncremented.push({ ...item, qty: item.qty });
-        } else if (item.qty > prev.qty) {
-          const diff = item.qty - prev.qty;
-          changes.push(`INCREASED "${item.name}" (+${diff}, now ${item.qty})`);
-          newlyAddedOrIncremented.push({ ...item, qty: diff });
-        } else if (item.qty < prev.qty) {
-          const diff = prev.qty - item.qty;
-          changes.push(`DECREASED "${item.name}" (-${diff}, now ${item.qty})`);
-        }
-      });
+    if (existingActiveOrder) {
+      alert(
+        `🚫 ${selectedTable?.name || 'This table'} is already OCCUPIED with an active bill!\n\n` +
+        `Direct new order dispatch is locked to prevent duplicate bills.\n\n` +
+        `To add items or modify this table, go to "Billing & Settlement Queue" and click "Edit in POS".`
+      );
+      return;
+    }
+  }
 
-      // 2. Detect removed items
-      originalItems.forEach(item => {
-        const stillExists = updatedItems.some(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
-        if (!stillExists) {
-          changes.push(`REMOVED "${item.name}" (was Qty: ${item.qty})`);
-        }
-      });
+  const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-      const changeSummary = changes.length > 0 ? changes.join(' | ') : 'No line changes';
+  // =========================================================================
+  // CASE A: Updating an existing active bill redirected from Billing Queue
+  // =========================================================================
+  if (settlingOrder && activeOrders.some(o => o.orderId === settlingOrder.orderId)) {
+    const originalOrder = activeOrders.find(o => o.orderId === settlingOrder.orderId);
+    const originalItems = originalOrder?.items || [];
+    const updatedItems = cart;
+    const changes = [];
+    const newlyAddedOrIncremented = [];
 
-      // 3. Update the existing active order with the updated cart items & financial settings
-      const updatedOrder = {
-        ...originalOrder,
-        items: [...cart],
-        serviceChargeActive,
-        taxActive,
-        discountPercent,
-        lastUpdatedAt: nowTime
-      };
-
-      setActiveOrders(prev => prev.map(o => o.orderId === originalOrder.orderId ? updatedOrder : o));
-
-      // 4. Auto-print ONLY the newly added items / increments to Kitchen & Bar
-      if (newlyAddedOrIncremented.length > 0 && settings.autoPrintOrder !== false) {
-        const kitchenItems = newlyAddedOrIncremented.filter(i => i.department === 'Kitchen');
-        const barItems = newlyAddedOrIncremented.filter(i => i.department === 'Bar');
-
-        if (kitchenItems.length > 0 || barItems.length > 0) {
-          triggerAutoPrint({
-            type: 'KOT_BOT_DISPATCH',
-            data: {
-              order: {
-                ...updatedOrder,
-                sentAt: nowTime,
-                isAddon: true
-              },
-              kitchenItems,
-              barItems
-            }
-          }, `${updatedOrder.tableName} • Add-on KOT/BOT Auto-Printed`);
-        }
+    // 1. Detect item additions and increased quantities
+    updatedItems.forEach(item => {
+      const prev = originalItems.find(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
+      if (!prev) {
+        changes.push(`ADDED "${item.name}" (Qty: ${item.qty})`);
+        newlyAddedOrIncremented.push({ ...item, qty: item.qty });
+      } else if (item.qty > prev.qty) {
+        const diff = item.qty - prev.qty;
+        changes.push(`INCREASED "${item.name}" (+${diff}, now ${item.qty})`);
+        newlyAddedOrIncremented.push({ ...item, qty: diff });
+      } else if (item.qty < prev.qty) {
+        const diff = prev.qty - item.qty;
+        changes.push(`DECREASED "${item.name}" (-${diff}, now ${item.qty})`);
       }
+    });
+
+    // 2. Detect removed items
+    originalItems.forEach(item => {
+      const stillExists = updatedItems.some(i => (i.cartItemId || i.id) === (item.cartItemId || item.id));
+      if (!stillExists) {
+        changes.push(`REMOVED "${item.name}" (was Qty: ${item.qty})`);
+      }
+    });
+
+    const changeSummary = changes.length > 0 ? changes.join(' | ') : 'No line changes';
+
+    // 3. Update the existing active order with the updated cart items & financial settings
+    const updatedOrder = {
+      ...originalOrder,
+      items: [...cart],
+      serviceChargeActive,
+      taxActive,
+      discountPercent,
+      lastUpdatedAt: nowTime
+    };
+
+    setActiveOrders(prev => prev.map(o => o.orderId === originalOrder.orderId ? updatedOrder : o));
+
+    // 4. Auto-print ONLY the newly added items / increments to Kitchen & Bar
+    if (newlyAddedOrIncremented.length > 0 && settings.autoPrintOrder !== false) {
+      const kitchenItems = newlyAddedOrIncremented.filter(i => i.department === 'Kitchen');
+      const barItems = newlyAddedOrIncremented.filter(i => i.department === 'Bar');
+
+      if (kitchenItems.length > 0 || barItems.length > 0) {
+        triggerAutoPrint({
+          type: 'KOT_BOT_DISPATCH',
+          data: {
+            order: {
+              ...updatedOrder,
+              sentAt: nowTime,
+              isAddon: true
+            },
+            kitchenItems,
+            barItems
+          }
+        }, `${updatedOrder.tableName || updatedOrder.table} Add-on KOT/BOT Auto-Printed`);
+      }
+    }
 
       // 5. Audit Log
       recordAuditLog(
@@ -3637,35 +3694,52 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         </div>
                       </div>
 
-                      <div className="pt-2 border-t border-slate-100 space-y-2">
-                        <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
-                          {/* Edit Items in POS */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCart(order.items ? JSON.parse(JSON.stringify(order.items)) : []);
-                              setOrderMode(order.mode || 'DINING');
-                              if (order.tableId) {
-                                const tbl = floorTables.find(t => t.id === order.tableId);
-                                if (tbl) setSelectedTable(tbl);
-                              } else {
-                                setTakeawayInfo(prev => ({
-                                  ...prev,
-                                  name: order.customerName || 'Walk-in Guest',
-                                  token: order.tableName || 'TK-101'
-                                }));
-                              }
-                              setServiceChargeActive(order.serviceChargeActive !== false);
-                              setTaxActive(Boolean(order.taxActive));
-                              setDiscountPercent(order.discountPercent || 0);
-                              setSettlingOrder(order);
-                              setActiveTab('pos');
-                            }}
-                            className="py-2.5 sm:py-2 px-1 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                          >
-                            <Edit3 className="h-3 w-3 text-[#ff5500] shrink-0" />
-                            <span className="truncate">Edit in POS</span>
-                          </button>
+                     <div className="pt-2 border-t border-slate-100 space-y-2">
+  <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
+    {/* Edit Items in POS */}
+    <button
+      type="button"
+      onClick={() => {
+        setCart(order.items ? JSON.parse(JSON.stringify(order.items)) : []);
+        setOrderMode(order.mode || 'DINING');
+
+        // Locate table object by ID or by name (e.g. "Table 1")
+        const tbl = floorTables.find(t => 
+          (order.tableId && t.id === order.tableId) ||
+          t.name === order.tableName ||
+          t.name === order.table
+        );
+
+        if (tbl) {
+          setSelectedTable(tbl);
+        } else if (order.mode === 'DINING' && (order.tableName || order.table)) {
+          // Fallback object if not in floorTables array
+          setSelectedTable({
+            id: order.tableId || `tbl_${(order.tableName || order.table).replace(/\s+/g, '_').toLowerCase()}`,
+            name: order.tableName || order.table,
+            zone: order.zone || 'Main Dining',
+            capacity: order.capacity || 4,
+            status: 'OCCUPIED'
+          });
+        } else {
+          setTakeawayInfo(prev => ({
+            ...prev,
+            name: order.customerName || 'Walk-in Guest',
+            token: order.tableName || 'TK-101'
+          }));
+        }
+
+        setServiceChargeActive(order.serviceChargeActive !== false);
+        setTaxActive(Boolean(order.taxActive));
+        setDiscountPercent(order.discountPercent || 0);
+        setSettlingOrder(order);
+        setActiveTab('pos');
+      }}
+      className="py-2.5 sm:py-2 px-1 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+    >
+      <Edit3 className="h-3 w-3 text-[#ff5500] shrink-0" />
+      <span className="truncate">Edit in POS</span>
+    </button>
 
                           {/* Temp Bill */}
                           <button
@@ -4613,52 +4687,52 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   <table className="w-full text-left text-xs">
                     <thead className="text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
                       <tr>
-                        <th className="py-2.5">Invoice #</th>
-                        <th className="py-2.5">Date &amp; Time</th>
-                        <th className="py-2.5">Table</th>
-                        <th className="py-2.5">Cashier</th>
-                        <th className="py-2.5">Method</th>
-                        <th className="py-2.5 text-right">Subtotal</th>
-                        <th className="py-2.5 text-right">Grand Total</th>
-                        {currentUser.role === 'Administrator' && (
-                          <th className="py-2.5 text-right">Admin Action</th>
-                        )}
+                        <th className="py-2.5 px-3">Invoice #</th>
+                        <th className="py-2.5 px-3">Date &amp; Time</th>
+                        <th className="py-2.5 px-3">Table</th>
+                        <th className="py-2.5 px-3">Cashier</th>
+                        <th className="py-2.5 px-3">Method</th>
+                        <th className="py-2.5 px-3 text-right">Subtotal</th>
+                        <th className="py-2.5 px-3 text-right">Grand Total</th>
+                        <th className="py-2.5 px-3 text-right">Print Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredTransactions.length === 0 ? (
                         <tr>
-                          <td colSpan={currentUser.role === 'Administrator' ? 8 : 7} className="py-4 text-center text-slate-400 italic">No transactions recorded.</td>
+                          <td colSpan={8} className="py-6 text-center text-slate-400 italic">No transactions recorded in this period.</td>
                         </tr>
                       ) : (
                         filteredTransactions.map(t => (
-                          <tr key={t.invoiceNo} className="hover:bg-slate-50">
-                            <td className="py-3 font-mono font-bold text-slate-800">{t.invoiceNo}</td>
-                            <td className="py-3 text-slate-500">{t.date}</td>
-                            <td className="py-3 font-semibold text-slate-900">{t.table}</td>
-                            <td className="py-3 text-slate-600">{t.cashier}</td>
-                            <td className="py-3">
+                          <tr key={t.invoiceNo} className="hover:bg-slate-50 transition-colors">
+                            <td className="py-3 px-3 font-mono font-bold text-slate-800">{t.invoiceNo}</td>
+                            <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{t.date}</td>
+                            <td className="py-3 px-3 font-semibold text-slate-900">{t.table}</td>
+                            <td className="py-3 px-3 text-slate-600">{t.cashier}</td>
+                            <td className="py-3 px-3">
                               <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-slate-700">
                                 {t.paymentMethod}
                               </span>
                             </td>
-                            <td className="py-3 text-right font-mono">{settings.currency} {t.subtotal.toFixed(2)}</td>
-                            <td className="py-3 text-right font-mono font-black text-slate-900">{settings.currency} {t.total.toFixed(2)}</td>
-                            {currentUser.role === 'Administrator' && (
-                              <td className="py-3 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setTransactions(prev => prev.filter(inv => inv.invoiceNo !== t.invoiceNo));
-                                    recordAuditLog('ADMIN_DELETE_TRANSACTION', t.invoiceNo, `Admin deleted invoice ${t.invoiceNo} for ${settings.currency} ${t.total.toFixed(2)}`);
-                                  }}
-                                  className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
-                                  title="Admin Delete Transaction"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </td>
-                            )}
+                            <td className="py-3 px-3 text-right font-mono text-slate-600">{settings.currency} {t.subtotal.toFixed(2)}</td>
+                            <td className="py-3 px-3 text-right font-mono font-black text-slate-900">{settings.currency} {t.total.toFixed(2)}</td>
+                            <td className="py-3 px-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  triggerAutoPrint({
+                                    type: 'FINAL_BILL',
+                                    data: t
+                                  }, `Reprint Invoice #${t.invoiceNo}`);
+                                  recordAuditLog('INVOICE_REPRINTED', t.invoiceNo, `Invoice #${t.invoiceNo} reprinted by ${currentUser.name}`);
+                                }}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg text-[11px] inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs active:scale-95"
+                                title="Reprint Official Tax Invoice Slip"
+                              >
+                                <Printer className="h-3.5 w-3.5 text-[#ff5500]" />
+                                <span>Reprint</span>
+                              </button>
+                            </td>
                           </tr>
                         ))
                       )}
@@ -4820,7 +4894,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
         {/* VIEW 5: STOCK & RAW INVENTORY */}
         {activeTab === 'stock' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-black text-slate-900">Stock &amp; Raw Inventory Valuation</h2>
@@ -4830,13 +4904,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0">
-                {/* 1. EXCEL EXPORT BUTTON */}
+                {/* 1. EXCEL EXPORT BUTTON (EXPORTS FILTERED VIEW) */}
                 <button
                   type="button"
                   onClick={() => {
-                    const list = Array.isArray(inventory) ? inventory : [];
+                    const list = Array.isArray(filteredInventory) ? filteredInventory : [];
                     if (list.length === 0) {
-                      alert('No raw inventory records available to export.');
+                      alert('No raw inventory records match the selected filters to export.');
                       return;
                     }
 
@@ -4859,10 +4933,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       };
                     });
 
-                    exportReportToExcel('Stock_Inventory_Valuation', exportRows, 'Stock_Inventory_Valuation');
+                    exportReportToExcel(`Stock_Inventory_${stockCategoryFilter}`, exportRows, 'Stock_Inventory');
                   }}
                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all active:scale-95"
-                  title="Export raw inventory list and valuation to Excel (.xlsx)"
+                  title="Export filtered raw inventory to Excel (.xlsx)"
                 >
                   <Download className="h-3.5 w-3.5" />
                   <span>Export Excel</span>
@@ -4901,7 +4975,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         }
 
                         if (!imported || imported.length === 0) {
-                          alert(`Could not extract raw material records from "${file.name}". Please ensure the file has columns: Raw Ingredient, Category, Remaining Stock, Reorder Threshold, and Unit Cost.`);
+                          alert(`Could not extract raw material records from "${file.name}".`);
                           return;
                         }
 
@@ -4931,7 +5005,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                           `Imported/updated ${imported.length} raw material records from ${file.name}`
                         );
 
-                        alert(`Successfully imported ${imported.length} raw inventory materials from ${file.name}! Inventory valuation has updated.`);
+                        alert(`Successfully imported ${imported.length} raw inventory materials from ${file.name}!`);
                       } catch (err) {
                         console.error('Inventory import failed:', err);
                         alert(`Failed to import file: ${err.message}`);
@@ -4984,185 +5058,322 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-            {/* INVENTORY VALUATION KPI CARDS */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Stock Value</p>
-                  <span className="p-1.5 rounded-lg bg-orange-50 text-[#ff5500]">
-                    <DollarSign className="h-4 w-4" />
-                  </span>
+            {/* FILTER TOOLBAR: CATEGORY, DATE, STOCK STATUS, SEARCH */}
+            {(() => {
+              // Extract unique categories from current inventory
+              const availableCategories = Array.from(
+                new Set(['All', ...(Array.isArray(inventory) ? inventory.map(i => i.category || 'Dry Goods') : [])])
+              );
+
+              return (
+                <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {/* Category Selector */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase">Category:</span>
+                      <select
+                        value={stockCategoryFilter}
+                        onChange={e => setStockCategoryFilter(e.target.value)}
+                        className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer py-0.5"
+                      >
+                        {availableCategories.map(cat => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Stock Alert Level Filter (All / Low Stock / Optimal) */}
+                    <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-0.5 rounded-xl">
+                      {[
+                        { id: 'ALL', label: 'All Items' },
+                        { id: 'LOW', label: 'Low Stock Only' },
+                        { id: 'OPTIMAL', label: 'Optimal Level' }
+                      ].map(btn => (
+                        <button
+                          key={btn.id}
+                          type="button"
+                          onClick={() => setStockStatusFilter(btn.id)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            stockStatusFilter === btn.id
+                              ? btn.id === 'LOW'
+                                ? 'bg-rose-600 text-white shadow-xs'
+                                : 'bg-slate-900 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                          }`}
+                        >
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* As-Of Date Filter */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
+                      <Calendar className="h-3.5 w-3.5 text-[#ff5500]" />
+                      <span className="text-[11px] font-bold text-slate-500 uppercase">As of Date:</span>
+                      <input
+                        type="date"
+                        value={stockDateFilter}
+                        onChange={e => setStockDateFilter(e.target.value)}
+                        className="bg-transparent text-xs font-mono font-bold text-slate-800 focus:outline-none cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative w-full lg:w-64">
+                    <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={stockSearchQuery}
+                      onChange={e => setStockSearchQuery(e.target.value)}
+                      placeholder="Search ingredient by name or ID..."
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                    />
+                    {stockSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setStockSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
-                  {settings.currency} {inventoryValuation.totalStockValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1 font-medium">Total capital tied in current inventory</p>
-              </div>
+              );
+            })()}
 
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Tracked Ingredients</p>
-                  <span className="p-1.5 rounded-lg bg-slate-100 text-slate-700">
-                    <Package className="h-4 w-4" />
-                  </span>
-                </div>
-                <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
-                  {inventoryValuation.totalItems} Items
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1 font-medium">Active Bill of Materials stock records</p>
-              </div>
+            {/* DYNAMIC FILTERING & DYNAMIC KPI METRICS */}
+            {(() => {
+              const list = Array.isArray(inventory) ? inventory : [];
 
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Reorder Alerts</p>
-                  <span className={`p-1.5 rounded-lg ${inventoryValuation.lowStockCount > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                    <AlertTriangle className="h-4 w-4" />
-                  </span>
-                </div>
-                <p className={`text-2xl font-black mt-2 font-mono ${inventoryValuation.lowStockCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                  {inventoryValuation.lowStockCount} Items Low
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1 font-medium">Below configured threshold limit</p>
-              </div>
+              const filteredInventory = list.filter(item => {
+                if (!item) return false;
+                // Category match
+                const matchCategory = stockCategoryFilter === 'All' || item.category === stockCategoryFilter;
+                // Search query match
+                const query = stockSearchQuery.toLowerCase().trim();
+                const matchQuery = !query || item.name.toLowerCase().includes(query) || (item.id || '').toLowerCase().includes(query);
+                // Status match (Low vs Optimal)
+                const isLow = Number(item.stock) <= Number(item.threshold);
+                const matchStatus = 
+                  stockStatusFilter === 'ALL' ? true :
+                  stockStatusFilter === 'LOW' ? isLow : !isLow;
 
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Top Category Asset</p>
-                  <span className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
-                    <BarChart3 className="h-4 w-4" />
-                  </span>
-                </div>
-                <p className="text-lg font-black text-slate-900 mt-2 truncate">
-                  {inventoryValuation.topCat}
-                </p>
-                <p className="text-[11px] font-mono font-bold text-indigo-600 mt-1">
-                  {settings.currency} {inventoryValuation.maxCatVal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-            </div>
+                return matchCategory && matchQuery && matchStatus;
+              });
 
-            {/* INVENTORY TABLE WITH UNIT COST & TOTAL ASSET VALUE */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                  <tr>
-                    <th className="py-3 px-4">Raw Ingredient</th>
-                    <th className="py-3 px-4">Category</th>
-                    <th className="py-3 px-4">Remaining Stock</th>
-                    <th className="py-3 px-4">Reorder Threshold</th>
-                    <th className="py-3 px-4 text-right">Unit Cost</th>
-                    <th className="py-3 px-4 text-right">Total Valuation</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(!Array.isArray(inventory) || inventory.length === 0) ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-400 italic">
-                        No raw inventory items registered yet. Click &ldquo;Add Material&rdquo; above to record ingredients.
-                      </td>
-                    </tr>
-                  ) : (
-                    inventory.map(ing => {
-                      if (!ing) return null;
-                      const stockNum = Number(ing.stock) || 0;
-                      const threshNum = Number(ing.threshold) || 0;
-                      const costNum = Number(ing.cost) || 0;
-                      const totalAssetVal = stockNum * costNum;
-                      const isLow = stockNum <= threshNum;
+              // Dynamic KPI metrics recalculated specifically for the active filter view
+              let dynamicTotalVal = 0;
+              let dynamicLowCount = 0;
+              const catTotals = {};
 
-                      return (
-                        <tr key={ing.id} className="hover:bg-slate-50/70">
-                          <td className="py-3 px-4">
-                            <p className="font-extrabold text-slate-900">{ing.name}</p>
-                            <span className="text-[10px] text-slate-400 font-mono">{ing.id}</span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-bold">
-                              {ing.category || 'General'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                            {stockNum} {ing.unit}
-                            {isLow && (
-                              <span className="ml-2 px-1.5 py-0.5 bg-rose-100 text-rose-700 text-[10px] rounded font-bold">
-                                Low
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 font-mono text-slate-400">{threshNum} {ing.unit}</td>
-                          <td className="py-3 px-4 text-right font-mono text-slate-600">
-                            {settings.currency} {costNum.toFixed(2)} / {ing.unit}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
-                            {settings.currency} {totalAssetVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* Quick Restock / Intake */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReceiveStockForm({
-                                    ingredientId: ing.id,
-                                    quantity: ing.unit === 'g' || ing.unit === 'ml' ? '1000' : '10',
-                                    supplier: 'Local Market',
-                                    invoiceRef: `REC-${Math.floor(100 + Math.random() * 900)}`,
-                                    newCost: costNum.toString()
-                                  });
-                                  setReceiveStockModalOpen(true);
-                                }}
-                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                                title="Intake / Receive Stock"
-                              >
-                                + Intake
-                              </button>
+              filteredInventory.forEach(item => {
+                const s = Number(item.stock) || 0;
+                const c = Number(item.cost) || 0;
+                const t = Number(item.threshold) || 0;
+                const val = s * c;
+                dynamicTotalVal += val;
+                if (s <= t) dynamicLowCount += 1;
+                const cat = item.category || 'General';
+                catTotals[cat] = (catTotals[cat] || 0) + val;
+              });
 
-                              {/* Edit Material */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingInventoryItem({ ...ing });
-                                  setEditInventoryModalOpen(true);
-                                }}
-                                className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                                title="Edit Material"
-                              >
-                                <Edit3 className="h-4 w-4" />
-                              </button>
+              let topCat = 'None';
+              let maxCatVal = 0;
+              Object.entries(catTotals).forEach(([cat, val]) => {
+                if (val > maxCatVal) {
+                  maxCatVal = val;
+                  topCat = cat;
+                }
+              });
 
-                              {/* Remove Material */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (window.confirm(`Are you sure you want to remove "${ing.name}" from inventory?`)) {
-                                    setInventory(prev => (prev || []).filter(item => item.id !== ing.id));
-                                    if (typeof recordAuditLog === 'function') {
-                                      recordAuditLog(
-                                        'INVENTORY_ITEM_DELETED',
-                                        ing.id,
-                                        `Deleted raw material "${ing.name}" (${stockNum} ${ing.unit} @ ${settings.currency} ${costNum.toFixed(2)}/${ing.unit})`
-                                      );
-                                    }
-                                  }
-                                }}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                title="Remove Material"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </td>
+              return (
+                <>
+                  {/* INVENTORY VALUATION KPI CARDS (DYNAMICALLY FILTERED) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Stock Value</p>
+                        <span className="p-1.5 rounded-lg bg-orange-50 text-[#ff5500]">
+                          <DollarSign className="h-4 w-4" />
+                        </span>
+                      </div>
+                      <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                        {settings.currency} {dynamicTotalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                        {stockCategoryFilter === 'All' ? 'Total capital tied in inventory' : `Value for category: ${stockCategoryFilter}`}
+                      </p>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Tracked Ingredients</p>
+                        <span className="p-1.5 rounded-lg bg-slate-100 text-slate-700">
+                          <Package className="h-4 w-4" />
+                        </span>
+                      </div>
+                      <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                        {filteredInventory.length} Items
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                        {filteredInventory.length === list.length ? 'Showing all inventory records' : `Filtered from ${list.length} total records`}
+                      </p>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Reorder Alerts</p>
+                        <span className={`p-1.5 rounded-lg ${dynamicLowCount > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                          <AlertTriangle className="h-4 w-4" />
+                        </span>
+                      </div>
+                      <p className={`text-2xl font-black mt-2 font-mono ${dynamicLowCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        {dynamicLowCount} Items Low
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-1 font-medium">Below configured threshold limit</p>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Top Category Asset</p>
+                        <span className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
+                          <BarChart3 className="h-4 w-4" />
+                        </span>
+                      </div>
+                      <p className="text-lg font-black text-slate-900 mt-2 truncate">
+                        {topCat}
+                      </p>
+                      <p className="text-[11px] font-mono font-bold text-indigo-600 mt-1">
+                        {settings.currency} {maxCatVal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* INVENTORY TABLE WITH FILTERED DATA */}
+                  <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-4">Raw Ingredient</th>
+                          <th className="py-3 px-4">Category</th>
+                          <th className="py-3 px-4">Remaining Stock</th>
+                          <th className="py-3 px-4">Reorder Threshold</th>
+                          <th className="py-3 px-4 text-right">Unit Cost</th>
+                          <th className="py-3 px-4 text-right">Total Valuation</th>
+                          <th className="py-3 px-4 text-right">Actions</th>
                         </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredInventory.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="py-12 text-center text-slate-400 italic">
+                              No raw materials match the selected category &ldquo;{stockCategoryFilter}&rdquo; or filter criteria.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredInventory.map(ing => {
+                            const stockNum = Number(ing.stock) || 0;
+                            const threshNum = Number(ing.threshold) || 0;
+                            const costNum = Number(ing.cost) || 0;
+                            const totalAssetVal = stockNum * costNum;
+                            const isLow = stockNum <= threshNum;
+
+                            return (
+                              <tr key={ing.id} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="py-3 px-4">
+                                  <p className="font-extrabold text-slate-900">{ing.name}</p>
+                                  <span className="text-[10px] text-slate-400 font-mono">{ing.id}</span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-bold">
+                                    {ing.category || 'General'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                                  {stockNum} {ing.unit}
+                                  {isLow && (
+                                    <span className="ml-2 px-1.5 py-0.5 bg-rose-100 text-rose-700 text-[10px] rounded font-bold">
+                                      Low
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 font-mono text-slate-400">{threshNum} {ing.unit}</td>
+                                <td className="py-3 px-4 text-right font-mono text-slate-600">
+                                  {settings.currency} {costNum.toFixed(2)} / {ing.unit}
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
+                                  {settings.currency} {totalAssetVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    {/* Quick Restock / Intake */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReceiveStockForm({
+                                          ingredientId: ing.id,
+                                          quantity: ing.unit === 'g' || ing.unit === 'ml' ? '1000' : '10',
+                                          supplier: 'Local Market',
+                                          invoiceRef: `REC-${Math.floor(100 + Math.random() * 900)}`,
+                                          newCost: costNum.toString()
+                                        });
+                                        setReceiveStockModalOpen(true);
+                                      }}
+                                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                                      title="Intake / Receive Stock"
+                                    >
+                                      + Intake
+                                    </button>
+
+                                    {/* Edit Material */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingInventoryItem({ ...ing });
+                                        setEditInventoryModalOpen(true);
+                                      }}
+                                      className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                                      title="Edit Material"
+                                    >
+                                      <Edit3 className="h-4 w-4" />
+                                    </button>
+
+                                    {/* Remove Material */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (window.confirm(`Are you sure you want to remove "${ing.name}" from inventory?`)) {
+                                          setInventory(prev => (prev || []).filter(item => item.id !== ing.id));
+                                          recordAuditLog(
+                                            'INVENTORY_ITEM_DELETED',
+                                            ing.id,
+                                            `Deleted raw material "${ing.name}" (${stockNum} ${ing.unit} @ ${settings.currency} ${costNum.toFixed(2)}/${ing.unit})`
+                                          );
+                                        }
+                                      }}
+                                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                      title="Remove Material"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
-
         {/* VIEW 6: TABLE MANAGEMENT */}
         {activeTab === 'tables' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -6293,17 +6504,17 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0">
-                {/* 1. EXCEL EXPORT BUTTON */}
+                {/* 1. EXCEL EXPORT BUTTON (EXPORTS FILTERED VIEW) */}
                 <button
                   type="button"
                   onClick={() => {
-                    const billsList = Array.isArray(vendorBills) ? vendorBills : [];
-                    if (billsList.length === 0) {
-                      alert('No vendor bills available to export.');
+                    const list = Array.isArray(filteredVendorBills) ? filteredVendorBills : [];
+                    if (list.length === 0) {
+                      alert('No vendor bills available for the selected filters.');
                       return;
                     }
 
-                    const exportRows = billsList.map(bill => ({
+                    const exportRows = list.map(bill => ({
                       'Invoice #': bill.invoiceNumber || bill.id,
                       'Bill Date': bill.billDate || 'N/A',
                       'Due Date': bill.dueDate || 'N/A',
@@ -6316,10 +6527,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       'Notes': bill.notes || ''
                     }));
 
-                    exportReportToExcel('Vendor_Bills_Accounts_Payable', exportRows, 'Vendor_Invoices');
+                    exportReportToExcel(`Vendor_Invoices_${vendorBillCategoryFilter}`, exportRows, 'Vendor_Invoices');
                   }}
                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all active:scale-95"
-                  title="Export Vendor Invoices to Excel (.xlsx)"
+                  title="Export filtered invoices to Excel (.xlsx)"
                 >
                   <Download className="h-3.5 w-3.5" />
                   <span>Export Excel</span>
@@ -6328,9 +6539,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 {/* 2. PDF / PRINT BUTTON */}
                 <button
                   type="button"
-                  onClick={() => {
-                    window.print();
-                  }}
+                  onClick={() => window.print()}
                   className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all active:scale-95"
                   title="Print or Save Vendor Bills as PDF"
                 >
@@ -6362,103 +6571,267 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </button>
               </div>
             </div>
-            
-            {/* KPI Cards */}
+
+            {/* FILTER TOOLBAR: DATE RANGE (BETWEEN DATES) & CATEGORY & STATUS */}
             {(() => {
-              const totalBills = vendorBills.reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
-              const paidBills = vendorBills.filter(b => b.paymentStatus === 'PAID').reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
-              const unpaidBills = vendorBills.filter(b => b.paymentStatus !== 'PAID').reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
+              const availableCategories = Array.from(
+                new Set(['All', ...(Array.isArray(vendorBills) ? vendorBills.map(b => b.category || 'General Supply') : [])])
+              );
 
               return (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
-                    <span className="text-[10px] font-black uppercase text-slate-400">Total Invoiced</span>
-                    <p className="text-2xl font-black font-mono text-slate-900 mt-1">{settings.currency} {totalBills.toFixed(2)}</p>
-                    <span className="text-[11px] text-slate-500">{vendorBills.length} recorded invoices</span>
+                <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {/* Date Range: Between Start and End */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
+                      <Calendar className="h-3.5 w-3.5 text-[#ff5500]" />
+                      <span className="text-[11px] font-bold text-slate-500 uppercase">From:</span>
+                      <input
+                        type="date"
+                        value={vendorBillStartDate}
+                        onChange={e => setVendorBillStartDate(e.target.value)}
+                        className="bg-transparent text-xs font-mono font-bold text-slate-800 focus:outline-none cursor-pointer"
+                      />
+                      <span className="text-[11px] font-bold text-slate-500 uppercase ml-1">To:</span>
+                      <input
+                        type="date"
+                        value={vendorBillEndDate}
+                        onChange={e => setVendorBillEndDate(e.target.value)}
+                        className="bg-transparent text-xs font-mono font-bold text-slate-800 focus:outline-none cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Quick Date Presets */}
+                    <div className="flex items-center gap-1">
+                      {[
+                        { label: 'Today', start: getLocalDateStr(), end: getLocalDateStr() },
+                        { label: 'This Month', start: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`, end: getLocalDateStr() },
+                        { label: 'All Dates', start: '', end: '' }
+                      ].map(p => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={() => {
+                            setVendorBillStartDate(p.start);
+                            setVendorBillEndDate(p.end);
+                          }}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg cursor-pointer transition-colors"
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Category Dropdown Filter */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase">Category:</span>
+                      <select
+                        value={vendorBillCategoryFilter}
+                        onChange={e => setVendorBillCategoryFilter(e.target.value)}
+                        className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer py-0.5"
+                      >
+                        {availableCategories.map(cat => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Status Filter (All / Paid / Unpaid) */}
+                    <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-0.5 rounded-xl">
+                      {[
+                        { id: 'ALL', label: 'All Status' },
+                        { id: 'PAID', label: 'Paid Only' },
+                        { id: 'UNPAID', label: 'Unpaid Only' }
+                      ].map(btn => (
+                        <button
+                          key={btn.id}
+                          type="button"
+                          onClick={() => setVendorBillStatusFilter(btn.id)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            vendorBillStatusFilter === btn.id
+                              ? btn.id === 'PAID'
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : btn.id === 'UNPAID'
+                                ? 'bg-rose-600 text-white shadow-xs'
+                                : 'bg-slate-900 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                          }`}
+                        >
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
-                    <span className="text-[10px] font-black uppercase text-slate-400">Paid Invoices (OPEX)</span>
-                    <p className="text-2xl font-black font-mono text-emerald-600 mt-1">{settings.currency} {paidBills.toFixed(2)}</p>
-                    <span className="text-[11px] text-slate-500">Linked to P&amp;L expenses</span>
-                  </div>
-
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
-                    <span className="text-[10px] font-black uppercase text-slate-400">Outstanding Accounts Payable</span>
-                    <p className="text-2xl font-black font-mono text-rose-600 mt-1">{settings.currency} {unpaidBills.toFixed(2)}</p>
-                    <span className="text-[11px] text-slate-500">Unsettled credit terms</span>
-                  </div>
+                  {/* Reset Filters Shortcut */}
+                  {(vendorBillStartDate || vendorBillEndDate || vendorBillCategoryFilter !== 'All' || vendorBillStatusFilter !== 'ALL') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVendorBillStartDate('');
+                        setVendorBillEndDate('');
+                        setVendorBillCategoryFilter('All');
+                        setVendorBillStatusFilter('ALL');
+                      }}
+                      className="self-end xl:self-auto text-xs text-[#ff5500] hover:underline font-bold cursor-pointer"
+                    >
+                      Clear Filters
+                    </button>
+                  )}
                 </div>
               );
             })()}
 
-            {/* Invoices Table */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                  <tr>
-                    <th className="py-2.5 px-3">Invoice #</th>
-                    <th className="py-2.5 px-3">Date</th>
-                    <th className="py-2.5 px-3">Vendor / Payee</th>
-                    <th className="py-2.5 px-3">Category</th>
-                    <th className="py-2.5 px-3">Payment Method</th>
-                    <th className="py-2.5 px-3 text-right">Amount</th>
-                    <th className="py-2.5 px-3 text-center">Status</th>
-                    <th className="py-2.5 px-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {vendorBills.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-400 italic">
-                        No external invoices recorded yet. Click &ldquo;Record Vendor Bill&rdquo; to add distributor or utility bills.
-                      </td>
-                    </tr>
-                  ) : (
-                    vendorBills.map(bill => (
-                      <tr key={bill.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-3 px-3 font-mono font-bold text-slate-800">{bill.invoiceNumber || bill.id}</td>
-                        <td className="py-3 px-3 text-slate-500">{bill.billDate}</td>
-                        <td className="py-3 px-3 font-bold text-slate-900">{bill.vendorName}</td>
-                        <td className="py-3 px-3">
-                          <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-semibold text-slate-700">
-                            {bill.category}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 font-mono text-slate-600">{bill.paymentMethod}</td>
-                        <td className="py-3 px-3 text-right font-mono font-black text-slate-900">
-                          {settings.currency} {Number(bill.amount).toFixed(2)}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            bill.paymentStatus === 'PAID'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}>
-                            {bill.paymentStatus}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (window.confirm(`Delete invoice ${bill.invoiceNumber || bill.id} from ${bill.vendorName}?`)) {
-                                setVendorBills(prev => prev.filter(b => b.id !== bill.id));
-                                recordAuditLog('VENDOR_BILL_DELETED', bill.id, `Deleted invoice ${bill.invoiceNumber} for ${settings.currency} ${bill.amount}`);
-                              }
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
-                            title="Delete Invoice"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            {/* DYNAMIC COMPUTATION: FILTERED BILLS & DYNAMIC KPIS */}
+            {(() => {
+              const allBills = Array.isArray(vendorBills) ? vendorBills : [];
+
+              const filteredVendorBills = allBills.filter(bill => {
+                if (!bill) return false;
+
+                // 1. Category Filter
+                const matchCategory = vendorBillCategoryFilter === 'All' || bill.category === vendorBillCategoryFilter;
+
+                // 2. Status Filter
+                const matchStatus =
+                  vendorBillStatusFilter === 'ALL' ? true :
+                  vendorBillStatusFilter === 'PAID' ? bill.paymentStatus === 'PAID' :
+                  bill.paymentStatus !== 'PAID';
+
+                // 3. Between Dates Filter
+                const bDate = extractDateStr(bill.billDate || bill.date) || String(bill.billDate || '');
+                if (vendorBillStartDate && bDate && bDate < vendorBillStartDate) return false;
+                if (vendorBillEndDate && bDate && bDate > vendorBillEndDate) return false;
+
+                return matchCategory && matchStatus;
+              });
+
+              // Dynamic KPI Calculations based on active filtered dataset
+              const totalInvoiced = filteredVendorBills.reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
+              const paidInvoiced = filteredVendorBills.filter(b => b.paymentStatus === 'PAID').reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
+              const unpaidInvoiced = filteredVendorBills.filter(b => b.paymentStatus !== 'PAID').reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
+
+              return (
+                <>
+                  {/* Dynamic KPI Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                      <span className="text-[10px] font-black uppercase text-slate-400">Total Invoiced</span>
+                      <p className="text-2xl font-black font-mono text-slate-900 mt-1">
+                        {settings.currency} {totalInvoiced.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <span className="text-[11px] text-slate-500">{filteredVendorBills.length} filtered invoices</span>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                      <span className="text-[10px] font-black uppercase text-slate-400">Paid Invoices (OPEX)</span>
+                      <p className="text-2xl font-black font-mono text-emerald-600 mt-1">
+                        {settings.currency} {paidInvoiced.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <span className="text-[11px] text-slate-500">Booked into operating expenses</span>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+                      <span className="text-[10px] font-black uppercase text-slate-400">Outstanding Accounts Payable</span>
+                      <p className="text-2xl font-black font-mono text-rose-600 mt-1">
+                        {settings.currency} {unpaidInvoiced.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <span className="text-[11px] text-slate-500">Unsettled vendor credit terms</span>
+                    </div>
+                  </div>
+
+                  {/* Filtered Invoices Table */}
+                  <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-3">Invoice #</th>
+                          <th className="py-2.5 px-3">Date</th>
+                          <th className="py-2.5 px-3">Vendor / Payee</th>
+                          <th className="py-2.5 px-3">Category</th>
+                          <th className="py-2.5 px-3">Payment Method</th>
+                          <th className="py-2.5 px-3 text-right">Amount</th>
+                          <th className="py-2.5 px-3 text-center">Status</th>
+                          <th className="py-2.5 px-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredVendorBills.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-12 text-center text-slate-400 italic">
+                              No vendor invoices match the selected date range or category filters.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredVendorBills.map(bill => (
+                            <tr key={bill.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="py-3 px-3 font-mono font-bold text-slate-800">{bill.invoiceNumber || bill.id}</td>
+                              <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{bill.billDate}</td>
+                              <td className="py-3 px-3 font-bold text-slate-900">{bill.vendorName}</td>
+                              <td className="py-3 px-3">
+                                <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-semibold text-slate-700">
+                                  {bill.category}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 font-mono text-slate-600">{bill.paymentMethod}</td>
+                              <td className="py-3 px-3 text-right font-mono font-black text-slate-900">
+                                {settings.currency} {Number(bill.amount).toFixed(2)}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  bill.paymentStatus === 'PAID'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {bill.paymentStatus}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {/* Toggle Paid / Unpaid Status */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nextStatus = bill.paymentStatus === 'PAID' ? 'UNPAID' : 'PAID';
+                                      setVendorBills(prev => prev.map(b => b.id === bill.id ? { ...b, paymentStatus: nextStatus } : b));
+                                      recordAuditLog(
+                                        'VENDOR_BILL_STATUS_TOGGLED',
+                                        bill.id,
+                                        `Changed invoice ${bill.invoiceNumber} status to ${nextStatus}`
+                                      );
+                                    }}
+                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                                    title="Toggle Paid/Unpaid Status"
+                                  >
+                                    Mark {bill.paymentStatus === 'PAID' ? 'Unpaid' : 'Paid'}
+                                  </button>
+
+                                  {/* Delete Invoice */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`Delete invoice ${bill.invoiceNumber || bill.id} from ${bill.vendorName}?`)) {
+                                        setVendorBills(prev => prev.filter(b => b.id !== bill.id));
+                                        recordAuditLog('VENDOR_BILL_DELETED', bill.id, `Deleted invoice ${bill.invoiceNumber} for ${settings.currency} ${bill.amount}`);
+                                      }
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                                    title="Delete Invoice"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -6466,7 +6839,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
         {activeTab === 'accounting' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
             {/* Header & Date Range Filter */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
                   <PieChart className="h-5 w-5 text-[#ff5500]" />
@@ -6477,9 +6850,35 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 </p>
               </div>
 
-              {/* Filter Buttons & Cloud Archive Action */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 bg-white border border-slate-200 p-1 rounded-xl shadow-xs text-xs font-bold">
+              {/* Filter Controls & Cloud Archive Action */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* 1. Between-Dates Selector */}
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs text-xs font-bold">
+                  <Calendar className="h-3.5 w-3.5 text-[#ff5500]" />
+                  <span className="text-[11px] font-bold text-slate-500 uppercase">From:</span>
+                  <input
+                    type="date"
+                    value={accountingStartDate}
+                    onChange={e => {
+                      setAccountingStartDate(e.target.value);
+                      setAccountingPeriod('CUSTOM');
+                    }}
+                    className="bg-transparent text-xs font-mono font-bold text-slate-800 focus:outline-none cursor-pointer"
+                  />
+                  <span className="text-[11px] font-bold text-slate-500 uppercase ml-1">To:</span>
+                  <input
+                    type="date"
+                    value={accountingEndDate}
+                    onChange={e => {
+                      setAccountingEndDate(e.target.value);
+                      setAccountingPeriod('CUSTOM');
+                    }}
+                    className="bg-transparent text-xs font-mono font-bold text-slate-800 focus:outline-none cursor-pointer"
+                  />
+                </div>
+
+                {/* 2. Preset Filter Buttons */}
+                <div className="flex items-center gap-1 bg-white border border-slate-200 p-1 rounded-xl shadow-xs text-xs font-bold">
                   {[
                     { id: 'ALL', label: 'All Time' },
                     { id: 'TODAY', label: 'Today' },
@@ -6488,7 +6887,21 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     <button
                       key={f.id}
                       type="button"
-                      onClick={() => setAccountingPeriod(f.id)}
+                      onClick={() => {
+                        setAccountingPeriod(f.id);
+                        if (f.id === 'TODAY') {
+                          setAccountingStartDate(getLocalDateStr());
+                          setAccountingEndDate(getLocalDateStr());
+                        } else if (f.id === 'THIS_MONTH') {
+                          const now = new Date();
+                          const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+                          setAccountingStartDate(startOfMonth);
+                          setAccountingEndDate(getLocalDateStr());
+                        } else {
+                          setAccountingStartDate('');
+                          setAccountingEndDate('');
+                        }
+                      }}
                       className={`px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
                         accountingPeriod === f.id
                           ? 'bg-[#ff5500] text-white shadow-xs'
@@ -6500,7 +6913,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   ))}
                 </div>
 
-                {/* Lock & Push Financial Snapshot to Firebase */}
+                {/* 3. Sync to Cloud Button */}
                 <button
                   type="button"
                   onClick={async () => {
@@ -6510,6 +6923,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     const snapshotRecord = {
                       id: `ACC-SNAP-${Date.now().toString().slice(-6)}`,
                       period: accountingPeriod,
+                      dateRange: { start: accountingStartDate, end: accountingEndDate },
                       timestamp: new Date().toLocaleString(),
                       savedBy: currentUser.name,
                       financials: {
@@ -6526,15 +6940,13 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                         totalEmployerEpfEtf,
                         totalOperatingExpenses,
                         netProfit,
-                        profitMargin: `${netProfitMargin}%`,
+                        profitMargin: `${profitMargin}%`,
                         expenseCategories
                       }
                     };
 
-                    // 1. Sync live state to Firebase
                     await syncToCloud('latest_accounting_summary', snapshotRecord);
 
-                    // 2. Write permanent historical copy to Firebase pos_archives
                     if (typeof appendCloudArchive === 'function') {
                       await appendCloudArchive('accounting_periods', snapshotRecord);
                     }
@@ -6542,12 +6954,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     recordAuditLog(
                       'ACCOUNTING_SNAPSHOT_SAVED',
                       snapshotRecord.id,
-                      `Saved financial snapshot for ${accountingPeriod}. Net Revenue: ${settings.currency} ${netSalesRevenue.toFixed(2)}, Net Profit: ${settings.currency} ${netProfit.toFixed(2)}`
+                      `Saved snapshot for ${accountingPeriod} (${accountingStartDate || 'start'} to ${accountingEndDate || 'end'}). Net Profit: ${settings.currency} ${netProfit.toFixed(2)}`
                     );
 
                     setSettingsNotice({
                       title: 'Accounting Snapshot Synced',
-                      detail: `P&L statement for ${accountingPeriod} uploaded and permanently archived to Firebase.`
+                      detail: `P&L statement uploaded to Firebase.`
                     });
                     setTimeout(() => setSettingsNotice(null), 3500);
                   }}
@@ -6560,36 +6972,40 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               </div>
             </div>
 
-           {/* Calculations Engine (Mapped to transactions, BOM COGS, expenses, vendorBills & payroll) */}
+            {/* Calculations Engine (Connected to Custom Range, Invoices, COGS, Outflows, Bills & Payroll) */}
             {(() => {
               const todayStr = getLocalDateStr();
-              const currentMonthStr = todayStr.slice(0, 7); // 'YYYY-MM'
+              const currentMonthStr = todayStr.slice(0, 7);
 
-              // 1. Data Sources
               const salesData = Array.isArray(transactions) ? transactions : [];
               const expenseData = Array.isArray(expenses) ? expenses : (currentShift?.payouts || []);
               const externalBillsData = Array.isArray(vendorBills) ? vendorBills : [];
               const payrollData = Array.isArray(payrollRecords) ? payrollRecords : [];
 
-              // 2. Filter Sales / Revenue
-              const filteredSales = salesData.filter(inv => {
-                if (!inv) return false;
-                const dStr = extractDateStr(inv.date) || String(inv.date || '');
-                if (accountingPeriod === 'TODAY') return dStr.startsWith(todayStr);
-                if (accountingPeriod === 'THIS_MONTH') return dStr.startsWith(currentMonthStr);
-                return true;
-              });
+              // Helper for Date Range checking
+              const matchesDateRange = (dateValue) => {
+                const dStr = extractDateStr(dateValue) || String(dateValue || '');
+                if (!dStr) return true;
 
-              // 3. Filter All Drawer Cash-Out Disbursements
+                if (accountingStartDate && dStr < accountingStartDate) return false;
+                if (accountingEndDate && dStr > accountingEndDate) return false;
+
+                if (!accountingStartDate && !accountingEndDate) {
+                  if (accountingPeriod === 'TODAY') return dStr.startsWith(todayStr);
+                  if (accountingPeriod === 'THIS_MONTH') return dStr.startsWith(currentMonthStr);
+                }
+                return true;
+              };
+
+              // 1. Filter Sales / Revenue
+              const filteredSales = salesData.filter(inv => inv && matchesDateRange(inv.date));
+
+              // 2. Filter Drawer Cash-Out Disbursements
               const filteredDisbursements = expenseData.filter(v => {
                 if (!v || v.status === 'REJECTED') return false;
-                const dStr = extractDateStr(v.date || v.createdAt) || String(v.date || '');
-                if (accountingPeriod === 'TODAY') return dStr.startsWith(todayStr);
-                if (accountingPeriod === 'THIS_MONTH') return dStr.startsWith(currentMonthStr);
-                return true;
+                return matchesDateRange(v.date || v.createdAt);
               });
 
-              // Helper: Distinguish internal banking transfers from actual operating expenses
               const isBankingTransfer = (item) => {
                 const category = String(item.category || '').toLowerCase();
                 const reason = String(item.reason || '').toLowerCase();
@@ -6602,24 +7018,24 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 );
               };
 
-              // True drawer operational expenditures (vendor cash payouts, petty cash, supplies)
               const operationalExpenses = filteredDisbursements.filter(v => !isBankingTransfer(v));
-
-              // Internal drawer-to-safe / banking transfers (Non-OPEX asset movements)
               const bankingTransfers = filteredDisbursements.filter(v => isBankingTransfer(v));
 
-              // 4. Filter External Vendor Bills (Non-Drawer Invoices: Bank transfer, Cheque, Card)
+              // 3. Filter External Vendor Bills
               const filteredVendorBills = externalBillsData.filter(b => {
                 if (!b || b.paymentStatus !== 'PAID') return false;
-                const bDate = extractDateStr(b.billDate || b.date) || String(b.billDate || '');
-                if (accountingPeriod === 'TODAY') return bDate.startsWith(todayStr);
-                if (accountingPeriod === 'THIS_MONTH') return bDate.startsWith(currentMonthStr);
-                return true;
+                return matchesDateRange(b.billDate || b.date);
               });
 
-              // 5. Filter Payroll Disbursed
+              // 4. Filter Payroll Disbursed
               const filteredPayroll = payrollData.filter(p => {
                 if (!p) return false;
+                if (accountingStartDate || accountingEndDate) {
+                  const pDate = p.period ? `${p.period}-01` : (extractDateStr(p.processedAt) || '');
+                  if (accountingStartDate && pDate < accountingStartDate) return false;
+                  if (accountingEndDate && pDate > accountingEndDate) return false;
+                  return true;
+                }
                 if (accountingPeriod === 'THIS_MONTH') return p.period === currentMonthStr;
                 if (accountingPeriod === 'TODAY') return p.processedAt && String(p.processedAt).startsWith(todayStr);
                 return true;
@@ -6633,14 +7049,12 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               const calculatedNet = grossSalesRevenue - totalDiscountsGiven;
               const netSalesRevenue = calculatedNet > 0 ? calculatedNet : filteredSales.reduce((acc, inv) => acc + (Number(inv.total) || 0), 0);
 
-              // --- COST OF GOODS SOLD (BOM INGREDIENT COST TRACKING) ---
+              // --- COST OF GOODS SOLD (BOM INGREDIENTS) ---
               let totalBOMCostOfGoodsSold = 0;
               filteredSales.forEach(inv => {
-                // If invoice already has cogs computed at settlement time, use it
                 if (Number(inv.cogs) > 0) {
                   totalBOMCostOfGoodsSold += Number(inv.cogs);
                 } else if (Array.isArray(inv.items)) {
-                  // Fallback: Recompute line-by-line from recipes (counts 0 if not configured)
                   inv.items.forEach(item => {
                     const dish = menuItems.find(m => m.id === item.id || m.name === item.name);
                     const qty = Number(item.qty) || 1;
@@ -6658,7 +7072,6 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 }
               });
 
-              // Gross Profit after raw food/beverage ingredient cost
               const grossProfit = netSalesRevenue - totalBOMCostOfGoodsSold;
               const grossMarginPercent = netSalesRevenue > 0 ? ((grossProfit / netSalesRevenue) * 100).toFixed(1) : 0;
 
@@ -6682,14 +7095,11 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
               const totalDrawerCashOutflow = totalOperationalCashOut + totalSafeDropBanking;
               const totalVendorBillsPaid = filteredVendorBills.reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
 
-              // --- PAYROLL TOTALS ---
               const totalPayrollDisbursed = filteredPayroll.reduce((acc, p) => acc + (Number(p.breakdown?.netSalary) || Number(p.netPay) || 0), 0);
               const totalEmployerEpfEtf = filteredPayroll.reduce((acc, p) => acc + (Number(p.breakdown?.epfEmployer) || 0) + (Number(p.breakdown?.etfEmployer) || 0), 0);
 
-              // --- TOTAL OPEX (Operating Expenses) ---
+              // --- TOTAL OPEX & NET PROFIT ---
               const totalOperatingExpenses = totalOperationalCashOut + totalVendorBillsPaid + totalPayrollDisbursed + totalEmployerEpfEtf;
-
-              // --- NET OPERATING PROFIT (Net Revenue - BOM COGS - OPEX) ---
               const netProfit = grossProfit - totalOperatingExpenses;
               const profitMargin = netSalesRevenue > 0 ? ((netProfit / netSalesRevenue) * 100).toFixed(1) : 0;
 
@@ -7291,78 +7701,140 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   })}
                 </div>
 
-                {/* Attendance History Table */}
+                {/* ATTENDANCE HISTORY & WORK HOURS SHEET */}
                 <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-                  <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                        <Clock className="h-4 w-4 text-[#ff5500]" />
                         Attendance History &amp; Work Hours Sheet
                       </h3>
-                      <p className="text-[10px] text-slate-400">Permanently saved time clock punches</p>
+                      <p className="text-[10px] text-slate-400">
+                        Permanently saved time clock punches and supervisor manual adjustments
+                      </p>
                     </div>
-                    <span className="text-xs font-mono text-slate-600 font-bold">{attendanceLogs.length} Records</span>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold text-slate-500 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
+                        {attendanceLogs.length} Records
+                      </span>
+
+                      {/* MANUAL PUNCH BUTTON - RESTRICTED TO ADMIN & MANAGER */}
+                      {['Administrator', 'Manager'].includes(currentUser?.role) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const firstStaff = staffList[0];
+                            setManualAttendanceForm({
+                              staffId: firstStaff ? firstStaff.id : '',
+                              date: getLocalDateStr(),
+                              clockInTime: '09:00',
+                              clockOutTime: '17:30',
+                              notes: 'Missed punch added by supervisor'
+                            });
+                            setManualAttendanceModalOpen(true);
+                          }}
+                          className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all active:scale-95"
+                          title="Record a missed clock-in/out for an employee"
+                        >
+                          <Plus className="h-3.5 w-3.5 text-amber-400" />
+                          <span>Manual Punch</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
                         <tr>
-                          <th className="py-2.5 px-4">Date</th>
-                          <th className="py-2.5 px-4">Employee</th>
-                          <th className="py-2.5 px-4">Role</th>
-                          <th className="py-2.5 px-4">Clock In</th>
-                          <th className="py-2.5 px-4">Clock Out</th>
-                          <th className="py-2.5 px-4 text-center">Total Hours</th>
-                          <th className="py-2.5 px-4 text-center">Overtime (&gt;8h)</th>
-                          <th className="py-2.5 px-4 text-right">Action</th>
+                          <th className="py-2.5 px-3">Date</th>
+                          <th className="py-2.5 px-3">Employee</th>
+                          <th className="py-2.5 px-3">Role</th>
+                          <th className="py-2.5 px-3">Clock In</th>
+                          <th className="py-2.5 px-3">Clock Out</th>
+                          <th className="py-2.5 px-3 text-right">Total Hours</th>
+                          <th className="py-2.5 px-3 text-right">Overtime (&gt;8h)</th>
+                          <th className="py-2.5 px-3 text-center">Status</th>
+                          {['Administrator', 'Manager'].includes(currentUser?.role) && (
+                            <th className="py-2.5 px-3 text-right">Action</th>
+                          )}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {attendanceLogs.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className="py-8 text-center text-slate-400 italic">
+                            <td
+                              colSpan={['Administrator', 'Manager'].includes(currentUser?.role) ? 9 : 8}
+                              className="py-12 text-center text-slate-400 italic"
+                            >
                               No attendance punches recorded yet.
                             </td>
                           </tr>
                         ) : (
-                          attendanceLogs.map(att => (
-                            <tr key={att.id} className="hover:bg-slate-50">
-                              <td className="py-3 px-4 font-mono font-bold text-slate-700">{att.date}</td>
-                              <td className="py-3 px-4 font-bold text-slate-900">{att.staffName}</td>
-                              <td className="py-3 px-4 text-slate-500">{att.role}</td>
-                              <td className="py-3 px-4 font-mono text-emerald-700 font-bold">{att.clockInTime}</td>
-                              <td className="py-3 px-4 font-mono text-slate-700 font-bold">{att.clockOutTime || '--:--'}</td>
-                              <td className="py-3 px-4 text-center font-mono font-bold">{att.totalHours ? `${att.totalHours} hrs` : '--'}</td>
-                              <td className="py-3 px-4 text-center">
-                                {att.isOvertime ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800">
-                                    Overtime
+                          attendanceLogs.map(log => (
+                            <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="py-3 px-3 font-mono font-bold text-slate-800 whitespace-nowrap">
+                                {log.date}
+                              </td>
+                              <td className="py-3 px-3">
+                                <span className="font-bold text-slate-900 block">{log.staffName}</span>
+                                <span className="text-[10px] text-slate-400 font-mono">{log.staffId}</span>
+                              </td>
+                              <td className="py-3 px-3">
+                                <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-semibold text-slate-700">
+                                  {log.role}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 font-mono text-slate-700">
+                                {log.clockIn || log.clockInTime || '--:--'}
+                                {log.isManualOverride && (
+                                  <span className="ml-1.5 px-1.5 py-0.5 bg-amber-100 text-amber-800 font-sans font-bold text-[9px] rounded">
+                                    Manual
                                   </span>
-                                ) : (
-                                  <span className="text-slate-400 font-mono text-[11px]">Normal</span>
                                 )}
                               </td>
-                              <td className="py-3 px-4 text-right">
-                                {currentUser.role === 'Administrator' && (
+                              <td className="py-3 px-3 font-mono text-slate-700">
+                                {log.clockOut || log.clockOutTime || '--:--'}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                                {log.totalHours ? `${log.totalHours} hrs` : '--'}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono font-bold text-amber-700">
+                                {Number(log.overtimeHours) > 0 ? `+${log.overtimeHours} hrs` : '0.0 hrs'}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  log.status === 'COMPLETED'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-amber-100 text-amber-800 animate-pulse'
+                                }`}>
+                                  {log.status === 'COMPLETED' ? 'Completed' : 'On Duty'}
+                                </span>
+                              </td>
+
+                              {/* Manager / Admin Delete Punch */}
+                              {['Administrator', 'Manager'].includes(currentUser?.role) && (
+                                <td className="py-3 px-3 text-right">
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      if (window.confirm('Delete attendance punch record? Note: This will only remove it locally; permanent archives remain on cloud.')) {
-                                        setAttendanceLogs(prev => prev.filter(a => a.id !== att.id));
+                                      if (window.confirm(`Delete attendance record for ${log.staffName} on ${log.date}?`)) {
+                                        setAttendanceLogs(prev => prev.filter(a => a.id !== log.id));
                                         recordAuditLog(
-                                          'ADMIN_DELETE_ATTENDANCE_LOG',
-                                          att.id,
-                                          `Admin ${currentUser.name} removed attendance record ${att.id} for ${att.staffName}`
+                                          'ATTENDANCE_LOG_DELETED',
+                                          log.id,
+                                          `Supervisor ${currentUser.name} deleted attendance record for ${log.staffName} (${log.date})`
                                         );
                                       }
                                     }}
-                                    className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
-                                    title="Delete Record"
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                                    title="Delete punch entry"
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <Trash2 className="h-4 w-4" />
                                   </button>
-                                )}
-                              </td>
+                                </td>
+                              )}
                             </tr>
                           ))
                         )}
@@ -7374,342 +7846,481 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
             )}
 
             {/* SUB-TAB 2: PAYROLL RECORDS & PAY SLIPS */}
-            {payrollSubTab === 'payslips' && (
-              <div className="space-y-6">
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-                  <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
-                        Processed Salary &amp; Wage Slips
-                      </h3>
-                      <p className="text-[10px] text-slate-400">Includes Basic, Allowances, EPF 8% &amp; Service Gratuity pool</p>
+            {payrollSubTab === 'payslips' && (() => {
+              // 1. Date Range matching helper
+              const matchesDateRange = (rec) => {
+                if (!payrollStartDate && !payrollEndDate) return true;
+                let dStr = extractDateStr(rec.date || rec.processedAt) || '';
+                if (!dStr && rec.period) {
+                  dStr = `${rec.period}-01`;
+                }
+                if (payrollStartDate && dStr && dStr < payrollStartDate) return false;
+                if (payrollEndDate && dStr && dStr > payrollEndDate) return false;
+                return true;
+              };
+
+              // 2. Staff Dropdown & Search matching helper
+              const matchesStaff = (staffId, staffName) => {
+                const sName = (staffName || '').toLowerCase();
+                const query = (payrollSearchName || '').trim().toLowerCase();
+                const matchesDropdown = !payrollStaffFilter || payrollStaffFilter === 'ALL' || staffId === payrollStaffFilter;
+                const matchesSearch = !query || sName.includes(query);
+                return matchesDropdown && matchesSearch;
+              };
+
+              // Filtered Datasets
+              const filteredPayrollRecords = (payrollRecords || []).filter(rec =>
+                rec && matchesDateRange(rec) && matchesStaff(rec.staffId, rec.staffName)
+              );
+
+              const filteredSalaryAdvances = (salaryAdvances || []).filter(adv =>
+                adv && matchesDateRange(adv) && matchesStaff(adv.staffId, adv.staffName)
+              );
+
+              const totalFilteredAdvances = filteredSalaryAdvances.reduce((acc, a) => acc + (Number(a.amount) || 0), 0);
+
+              return (
+                <div className="space-y-6">
+                  {/* FILTER TOOLBAR: IN-BETWEEN DATES & BY NAME */}
+                  <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      {/* In-Between Dates Filter */}
+                      <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
+                        <Calendar className="h-3.5 w-3.5 text-[#ff5500]" />
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">From:</span>
+                        <input
+                          type="date"
+                          value={payrollStartDate}
+                          onChange={e => setPayrollStartDate(e.target.value)}
+                          className="bg-transparent text-xs font-mono font-bold text-slate-800 focus:outline-none cursor-pointer"
+                        />
+                        <span className="text-[11px] font-bold text-slate-500 uppercase ml-1">To:</span>
+                        <input
+                          type="date"
+                          value={payrollEndDate}
+                          onChange={e => setPayrollEndDate(e.target.value)}
+                          className="bg-transparent text-xs font-mono font-bold text-slate-800 focus:outline-none cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Quick Presets */}
+                      <div className="flex items-center gap-1">
+                        {[
+                          { label: 'This Month', start: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`, end: getLocalDateStr() },
+                          { label: 'All Dates', start: '', end: '' }
+                        ].map(p => (
+                          <button
+                            key={p.label}
+                            type="button"
+                            onClick={() => {
+                              setPayrollStartDate(p.start);
+                              setPayrollEndDate(p.end);
+                            }}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg cursor-pointer transition-colors"
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Employee Dropdown Filter */}
+                      <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">Employee:</span>
+                        <select
+                          value={payrollStaffFilter}
+                          onChange={e => setPayrollStaffFilter(e.target.value)}
+                          className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer py-0.5"
+                        >
+                          <option value="ALL">All Employees</option>
+                          {staffList.map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
-                    <span className="text-xs font-mono text-slate-600 font-bold">{payrollRecords.length} Slips</span>
+
+                    {/* Employee Name Instant Search */}
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-full xl:w-56">
+                        <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={payrollSearchName}
+                          onChange={e => setPayrollSearchName(e.target.value)}
+                          placeholder="Search staff name..."
+                          className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                        />
+                        {payrollSearchName && (
+                          <button
+                            type="button"
+                            onClick={() => setPayrollSearchName('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Clear Filters */}
+                      {(payrollStartDate || payrollEndDate || (payrollStaffFilter && payrollStaffFilter !== 'ALL') || payrollSearchName) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPayrollStartDate('');
+                            setPayrollEndDate('');
+                            setPayrollStaffFilter('ALL');
+                            setPayrollSearchName('');
+                          }}
+                          className="text-xs text-[#ff5500] hover:underline font-bold cursor-pointer whitespace-nowrap"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                        <tr>
-                          <th className="py-2.5 px-3">Slip ID</th>
-                          <th className="py-2.5 px-3">Employee</th>
-                          <th className="py-2.5 px-3">Period</th>
-                          <th className="py-2.5 px-3 text-right">Basic + Allowances</th>
-                          <th className="py-2.5 px-3 text-right">EPF Base</th>
-                          <th className="py-2.5 px-3 text-right text-rose-600">EPF 8%</th>
-                          <th className="py-2.5 px-3 text-right text-amber-700">Advance</th>
-                          <th className="py-2.5 px-3 text-right text-emerald-600">Service Pool</th>
-                          <th className="py-2.5 px-3 text-right font-black">Net Take-Home</th>
-                          <th className="py-2.5 px-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {payrollRecords.length === 0 ? (
-                          <tr>
-                            <td colSpan={9} className="py-8 text-center text-slate-400 italic">
-                              No payroll records processed yet. Click &ldquo;Process Pay Slip&rdquo; above.
-                            </td>
-                          </tr>
-                        ) : (
-                          payrollRecords.map(rec => {
-                            const canManage = currentUser.role === 'Administrator' || currentUser.role === 'Manager';
+                  {/* 1. PROCESSED SALARY & WAGE SLIPS */}
+                  <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                          Processed Salary &amp; Wage Slips
+                        </h3>
+                        <p className="text-[10px] text-slate-400">Includes Basic, Allowances, EPF 8% &amp; Service Gratuity pool</p>
+                      </div>
+                      <span className="text-xs font-mono text-slate-600 font-bold">{filteredPayrollRecords.length} Slips</span>
+                    </div>
 
-                            return (
-                              <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
-                                <td className="py-3 px-3 font-mono font-bold text-slate-800">{rec.id}</td>
-                                <td className="py-3 px-3">
-                                  <span className="font-bold text-slate-900 block">{rec.staffName}</span>
-                                  <span className="text-[10px] text-slate-400">{rec.role}</span>
-                                </td>
-                                <td className="py-3 px-3 font-mono font-bold text-slate-700">{rec.period}</td>
-                                <td className="py-3 px-3 text-right font-mono">
-                                  {settings.currency} {((rec.breakdown?.basic || 0) + (rec.breakdown?.bra || 0) + (rec.breakdown?.allowances || 0)).toFixed(2)}
-                                </td>
-                                <td className="py-3 px-3 text-right font-mono font-semibold text-slate-800">
-                                  {rec.breakdown?.epfEtfEnabled !== false 
-                                    ? `${settings.currency} ${(rec.breakdown?.epfLiableEarnings || 0).toFixed(2)}`
-                                    : <span className="text-slate-400 italic text-[10px]">Exempt</span>}
-                                </td>
-                                <td className="py-3 px-3 text-right font-mono text-rose-600 font-bold">
-                                  {rec.breakdown?.epfEtfEnabled !== false 
-                                    ? `-${settings.currency} ${(rec.breakdown?.epfEmployee || 0).toFixed(2)}`
-                                    : '0.00'}
-                                </td>
-                                <td className="py-3 px-3 text-right font-mono text-amber-700 font-bold">
-                                  {(rec.breakdown?.salaryAdvance || 0) > 0 
-                                    ? `-${settings.currency} ${(rec.breakdown?.salaryAdvance || 0).toFixed(2)}` 
-                                    : '0.00'}
-                                </td>
-                                <td className="py-3 px-3 text-right font-mono text-emerald-600 font-bold">
-                                  +{(rec.breakdown?.serviceChargeBonus || 0) > 0 ? `${settings.currency} ${(rec.breakdown?.serviceChargeBonus || 0).toFixed(2)}` : '0.00'}
-                                </td>
-                                <td className="py-3 px-3 text-right font-mono font-black text-slate-950 text-sm">
-                                  {settings.currency} {(rec.breakdown?.netSalary || rec.netPay || 0).toFixed(2)}
-                                </td>
-                                <td className="py-3 px-3 text-right">
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    {/* Print Advance Slip if advance was given */}
-                                    {Number(rec.breakdown?.salaryAdvance) > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-3">Slip ID</th>
+                            <th className="py-2.5 px-3">Employee</th>
+                            <th className="py-2.5 px-3">Period</th>
+                            <th className="py-2.5 px-3 text-right">Basic + Allowances</th>
+                            <th className="py-2.5 px-3 text-right">EPF Base</th>
+                            <th className="py-2.5 px-3 text-right text-rose-600">EPF 8%</th>
+                            <th className="py-2.5 px-3 text-right text-amber-700">Advance</th>
+                            <th className="py-2.5 px-3 text-right text-emerald-600">Service Pool</th>
+                            <th className="py-2.5 px-3 text-right font-black">Net Take-Home</th>
+                            <th className="py-2.5 px-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredPayrollRecords.length === 0 ? (
+                            <tr>
+                              <td colSpan={10} className="py-8 text-center text-slate-400 italic">
+                                No payroll records match the selected date or name filters. Click &ldquo;Process Pay Slip&rdquo; above.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredPayrollRecords.map(rec => {
+                              const canManage = currentUser.role === 'Administrator' || currentUser.role === 'Manager';
+
+                              return (
+                                <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
+                                  <td className="py-3 px-3 font-mono font-bold text-slate-800">{rec.id}</td>
+                                  <td className="py-3 px-3">
+                                    <span className="font-bold text-slate-900 block">{rec.staffName}</span>
+                                    <span className="text-[10px] text-slate-400">{rec.role}</span>
+                                  </td>
+                                  <td className="py-3 px-3 font-mono font-bold text-slate-700">{rec.period}</td>
+                                  <td className="py-3 px-3 text-right font-mono">
+                                    {settings.currency} {((rec.breakdown?.basic || 0) + (rec.breakdown?.bra || 0) + (rec.breakdown?.allowances || 0)).toFixed(2)}
+                                  </td>
+                                  <td className="py-3 px-3 text-right font-mono font-semibold text-slate-800">
+                                    {rec.breakdown?.epfEtfEnabled !== false 
+                                      ? `${settings.currency} ${(rec.breakdown?.epfLiableEarnings || 0).toFixed(2)}`
+                                      : <span className="text-slate-400 italic text-[10px]">Exempt</span>}
+                                  </td>
+                                  <td className="py-3 px-3 text-right font-mono text-rose-600 font-bold">
+                                    {rec.breakdown?.epfEtfEnabled !== false 
+                                      ? `-${settings.currency} ${(rec.breakdown?.epfEmployee || 0).toFixed(2)}`
+                                      : '0.00'}
+                                  </td>
+                                  <td className="py-3 px-3 text-right font-mono text-amber-700 font-bold">
+                                    {(rec.breakdown?.salaryAdvance || 0) > 0 
+                                      ? `-${settings.currency} ${(rec.breakdown?.salaryAdvance || 0).toFixed(2)}` 
+                                      : '0.00'}
+                                  </td>
+                                  <td className="py-3 px-3 text-right font-mono text-emerald-600 font-bold">
+                                    +{(rec.breakdown?.serviceChargeBonus || 0) > 0 ? `${settings.currency} ${(rec.breakdown?.serviceChargeBonus || 0).toFixed(2)}` : '0.00'}
+                                  </td>
+                                  <td className="py-3 px-3 text-right font-mono font-black text-slate-950 text-sm">
+                                    {settings.currency} {(rec.breakdown?.netSalary || rec.netPay || 0).toFixed(2)}
+                                  </td>
+                                  <td className="py-3 px-3 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {/* Print Advance Slip if advance was given */}
+                                      {Number(rec.breakdown?.salaryAdvance) > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            triggerAutoPrint({
+                                              type: 'SALARY_ADVANCE_VOUCHER',
+                                              data: {
+                                                id: `ADV-${rec.id.slice(-6)}`,
+                                                staffName: rec.staffName,
+                                                role: rec.role,
+                                                period: rec.period,
+                                                amount: rec.breakdown.salaryAdvance,
+                                                notes: rec.notes
+                                              }
+                                            }, `Reprint Advance: ${rec.staffName}`);
+                                          }}
+                                          className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg cursor-pointer transition-colors"
+                                          title="Reprint Advance Voucher"
+                                        >
+                                          <Banknote className="h-4 w-4" />
+                                        </button>
+                                      )}
+
+                                      {/* Print Full Payslip */}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          triggerAutoPrint({
+                                            type: 'PAYSLIP_PRINT',
+                                            data: rec
+                                          }, `Payslip ${rec.id} - ${rec.staffName}`);
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
+                                        title="Print Payslip"
+                                      >
+                                        <Printer className="h-4 w-4" />
+                                      </button>
+
+                                      {/* Edit */}
+                                      {canManage && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setPayrollInputForm({
+                                              staffId: rec.staffId,
+                                              period: rec.period,
+                                              epfEtfEnabled: rec.breakdown?.epfEtfEnabled !== false,
+                                              basicSalary: rec.breakdown?.basic || 35000,
+                                              budgetaryAllowance: rec.breakdown?.bra || 2500,
+                                              otherAllowances: rec.breakdown?.allowances || 0,
+                                              serviceChargeBonus: rec.breakdown?.serviceChargeBonus || 0,
+                                              incentiveBonus: rec.breakdown?.incentiveBonus || 0,
+                                              overtimeHours: (rec.breakdown?.overtimePay && rec.breakdown?.overtimeRate) 
+                                                ? (rec.breakdown.overtimePay / rec.breakdown.overtimeRate) 
+                                                : 0,
+                                              overtimeRate: 250,
+                                              salaryAdvance: rec.breakdown?.salaryAdvance || 0,
+                                              otherDeductions: rec.breakdown?.otherDeductions || 0,
+                                              standardWorkingDays: rec.breakdown?.standardWorkingDays || 26,
+                                              workedDays: rec.breakdown?.workedDays || 26,
+                                              paidLeaves: rec.breakdown?.paidLeaves || 0,
+                                              unpaidLeaves: rec.breakdown?.unpaidLeaves || 0,
+                                              holidaysCount: rec.breakdown?.holidaysCount || 4,
+                                              shortShiftsCount: rec.breakdown?.shortShiftsCount || 0,
+                                              notes: rec.notes || ''
+                                            });
+                                            setEditingPayrollId(rec.id);
+                                            setProcessPayModalOpen(true);
+                                          }}
+                                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors"
+                                          title="Edit Payslip"
+                                        >
+                                          <Edit3 className="h-4 w-4" />
+                                        </button>
+                                      )}
+
+                                      {/* Delete */}
+                                      {currentUser.role === 'Administrator' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (window.confirm(`Delete pay slip ${rec.id} for ${rec.staffName}? This action will be recorded in the audit log.`)) {
+                                              setPayrollRecords(prev => prev.filter(r => r.id !== rec.id));
+                                              recordAuditLog(
+                                                'ADMIN_DELETE_PAYSLIP',
+                                                rec.id,
+                                                `Admin ${currentUser.name} deleted pay slip ${rec.id} for ${rec.staffName} (${rec.period})`
+                                              );
+                                            }
+                                          }}
+                                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                                          title="Delete Payslip"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  
+                  {/* 2. SALARY ADVANCES DISBURSED LEDGER */}
+                  <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs mt-6">
+                    <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                          <Banknote className="h-4 w-4 text-amber-600" />
+                          Salary Advance Disbursements &amp; Recovery Ledger
+                        </h3>
+                        <p className="text-[10px] text-slate-400">
+                          Tracks advances issued to workers and the scheduled monthly payroll recovery
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
+                          Total Advances: {settings.currency} {totalFilteredAdvances.toFixed(2)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const firstStaff = staffList[0];
+                            setAdvanceForm({
+                              staffId: firstStaff ? firstStaff.id : '',
+                              period: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+                              amount: '',
+                              paymentMethod: 'CASH',
+                              reason: 'Emergency advance on salary',
+                              notes: ''
+                            });
+                            setIssueAdvanceModalOpen(true);
+                          }}
+                          className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          <span>Issue Advance</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-3">Voucher Ref</th>
+                            <th className="py-2.5 px-3">Date &amp; Time</th>
+                            <th className="py-2.5 px-3">Employee</th>
+                            <th className="py-2.5 px-3">Recovery Month</th>
+                            <th className="py-2.5 px-3">Method</th>
+                            <th className="py-2.5 px-3">Reason / Notes</th>
+                            <th className="py-2.5 px-3 text-right">Amount</th>
+                            <th className="py-2.5 px-3 text-center">Status</th>
+                            <th className="py-2.5 px-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredSalaryAdvances.length === 0 ? (
+                            <tr>
+                              <td colSpan={9} className="py-8 text-center text-slate-400 italic">
+                                No salary advance disbursements match the active filters. Click &ldquo;Issue Advance&rdquo; to disburse funds.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredSalaryAdvances.map(adv => {
+                              const isRecovered = (payrollRecords || []).some(
+                                rec => rec.staffId === adv.staffId && rec.period === adv.period
+                              );
+
+                              return (
+                                <tr key={adv.id} className="hover:bg-slate-50 transition-colors">
+                                  <td className="py-3 px-3 font-mono font-bold text-slate-800">{adv.id}</td>
+                                  <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
+                                    {adv.date} {adv.disbursedAt}
+                                  </td>
+                                  <td className="py-3 px-3">
+                                    <span className="font-bold text-slate-900 block">{adv.staffName}</span>
+                                    <span className="text-[10px] text-slate-400">{adv.role}</span>
+                                  </td>
+                                  <td className="py-3 px-3 font-mono font-bold text-amber-800 bg-amber-50/50">
+                                    {adv.period}
+                                  </td>
+                                  <td className="py-3 px-3">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                                      adv.paymentMethod === 'CASH'
+                                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                        : 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                                    }`}>
+                                      {adv.paymentMethod}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-3 text-slate-600 max-w-xs truncate" title={adv.notes || adv.reason}>
+                                    {adv.reason || adv.notes || 'Advance on wages'}
+                                  </td>
+                                  <td className="py-3 px-3 text-right font-mono font-black text-amber-900 text-sm">
+                                    {settings.currency} {Number(adv.amount).toFixed(2)}
+                                  </td>
+                                  <td className="py-3 px-3 text-center">
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                      isRecovered
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-amber-100 text-amber-800'
+                                    }`}>
+                                      {isRecovered ? 'Deducted (Recovered)' : 'Pending Deduction'}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-3 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
                                       <button
                                         type="button"
                                         onClick={() => {
                                           triggerAutoPrint({
                                             type: 'SALARY_ADVANCE_VOUCHER',
                                             data: {
-                                              id: `ADV-${rec.id.slice(-6)}`,
-                                              staffName: rec.staffName,
-                                              role: rec.role,
-                                              period: rec.period,
-                                              amount: rec.breakdown.salaryAdvance,
-                                              notes: rec.notes
+                                              id: adv.id,
+                                              staffName: adv.staffName,
+                                              role: adv.role,
+                                              period: adv.period,
+                                              amount: adv.amount,
+                                              notes: adv.notes || adv.reason
                                             }
-                                          }, `Reprint Advance: ${rec.staffName}`);
+                                          }, `Reprint Advance Voucher: ${adv.staffName}`);
                                         }}
-                                        className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg cursor-pointer transition-colors"
+                                        className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
                                         title="Reprint Advance Voucher"
                                       >
-                                        <Banknote className="h-4 w-4" />
+                                        <Printer className="h-4 w-4" />
                                       </button>
-                                    )}
 
-                                    {/* Print Full Payslip */}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        triggerAutoPrint({
-                                          type: 'PAYSLIP_PRINT',
-                                          data: rec
-                                        }, `Payslip ${rec.id} - ${rec.staffName}`);
-                                      }}
-                                      className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
-                                      title="Print Payslip"
-                                    >
-                                      <Printer className="h-4 w-4" />
-                                    </button>
-
-                                    {/* Edit */}
-                                    {canManage && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setPayrollInputForm({
-                                            staffId: rec.staffId,
-                                            period: rec.period,
-                                            epfEtfEnabled: rec.breakdown?.epfEtfEnabled !== false,
-                                            basicSalary: rec.breakdown?.basic || 35000,
-                                            budgetaryAllowance: rec.breakdown?.bra || 2500,
-                                            otherAllowances: rec.breakdown?.allowances || 0,
-                                            serviceChargeBonus: rec.breakdown?.serviceChargeBonus || 0,
-                                            incentiveBonus: rec.breakdown?.incentiveBonus || 0,
-                                            overtimeHours: (rec.breakdown?.overtimePay && rec.breakdown?.overtimeRate) 
-                                              ? (rec.breakdown.overtimePay / rec.breakdown.overtimeRate) 
-                                              : 0,
-                                            overtimeRate: 250,
-                                            otherDeductions: rec.breakdown?.otherDeductions || 0,
-                                            notes: rec.notes || ''
-                                          });
-                                          setEditingPayrollId(rec.id);
-                                          setProcessPayModalOpen(true);
-                                        }}
-                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors"
-                                        title="Edit Payslip"
-                                      >
-                                        <Edit3 className="h-4 w-4" />
-                                      </button>
-                                    )}
-
-                                    {/* Delete */}
-                                    {currentUser.role === 'Administrator' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (window.confirm(`Delete pay slip ${rec.id} for ${rec.staffName}? This action will be recorded in the audit log.`)) {
-                                            setPayrollRecords(prev => prev.filter(r => r.id !== rec.id));
-                                            recordAuditLog(
-                                              'ADMIN_DELETE_PAYSLIP',
-                                              rec.id,
-                                              `Admin ${currentUser.name} deleted pay slip ${rec.id} for ${rec.staffName} (${rec.period})`
-                                            );
-                                          }
-                                        }}
-                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
-                                        title="Delete Payslip"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                
-                {/* 2. SALARY ADVANCES DISBURSED LEDGER */}
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs mt-6">
-                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
-                        <Banknote className="h-4 w-4 text-amber-600" />
-                        Salary Advance Disbursements &amp; Recovery Ledger
-                      </h3>
-                      <p className="text-[10px] text-slate-400">
-                        Tracks advances issued to workers and the scheduled monthly payroll recovery
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
-                        Total Advances: {settings.currency} {(salaryAdvances || []).reduce((acc, a) => acc + (Number(a.amount) || 0), 0).toFixed(2)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const firstStaff = staffList[0];
-                          setAdvanceForm({
-                            staffId: firstStaff ? firstStaff.id : '',
-                            period: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
-                            amount: '',
-                            paymentMethod: 'CASH',
-                            reason: 'Emergency advance on salary',
-                            notes: ''
-                          });
-                          setIssueAdvanceModalOpen(true);
-                        }}
-                        className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        <span>Issue Advance</span>
-                      </button>
+                                      {currentUser.role === 'Administrator' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (window.confirm(`Delete advance voucher ${adv.id} (${settings.currency} ${adv.amount}) for ${adv.staffName}?`)) {
+                                              setSalaryAdvances(prev => prev.filter(a => a.id !== adv.id));
+                                              recordAuditLog(
+                                                'ADMIN_DELETE_SALARY_ADVANCE',
+                                                adv.id,
+                                                `Deleted advance of ${settings.currency} ${adv.amount} for ${adv.staffName} (${adv.period})`
+                                              );
+                                            }
+                                          }}
+                                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                                          title="Delete Advance Record"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                        <tr>
-                          <th className="py-2.5 px-3">Voucher Ref</th>
-                          <th className="py-2.5 px-3">Date &amp; Time</th>
-                          <th className="py-2.5 px-3">Employee</th>
-                          <th className="py-2.5 px-3">Recovery Month</th>
-                          <th className="py-2.5 px-3">Method</th>
-                          <th className="py-2.5 px-3">Reason / Notes</th>
-                          <th className="py-2.5 px-3 text-right">Amount</th>
-                          <th className="py-2.5 px-3 text-center">Status</th>
-                          <th className="py-2.5 px-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {(!salaryAdvances || salaryAdvances.length === 0) ? (
-                          <tr>
-                            <td colSpan={9} className="py-8 text-center text-slate-400 italic">
-                              No salary advance disbursements recorded yet. Click &ldquo;Issue Advance&rdquo; to disburse funds.
-                            </td>
-                          </tr>
-                        ) : (
-                          salaryAdvances.map(adv => {
-                            // Check if this advance was already recovered on a settled payslip
-                            const isRecovered = payrollRecords.some(
-                              rec => rec.staffId === adv.staffId && rec.period === adv.period
-                            );
-
-                            return (
-                              <tr key={adv.id} className="hover:bg-slate-50 transition-colors">
-                                <td className="py-3 px-3 font-mono font-bold text-slate-800">{adv.id}</td>
-                                <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
-                                  {adv.date} {adv.disbursedAt}
-                                </td>
-                                <td className="py-3 px-3">
-                                  <span className="font-bold text-slate-900 block">{adv.staffName}</span>
-                                  <span className="text-[10px] text-slate-400">{adv.role}</span>
-                                </td>
-                                <td className="py-3 px-3 font-mono font-bold text-amber-800 bg-amber-50/50">
-                                  {adv.period}
-                                </td>
-                                <td className="py-3 px-3">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                                    adv.paymentMethod === 'CASH'
-                                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                      : 'bg-indigo-50 text-indigo-800 border border-indigo-200'
-                                  }`}>
-                                    {adv.paymentMethod}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3 text-slate-600 max-w-xs truncate" title={adv.notes || adv.reason}>
-                                  {adv.reason || adv.notes || 'Advance on wages'}
-                                </td>
-                                <td className="py-3 px-3 text-right font-mono font-black text-amber-900 text-sm">
-                                  {settings.currency} {Number(adv.amount).toFixed(2)}
-                                </td>
-                                <td className="py-3 px-3 text-center">
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                    isRecovered
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : 'bg-amber-100 text-amber-800'
-                                  }`}>
-                                    {isRecovered ? 'Deducted (Recovered)' : 'Pending Deduction'}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3 text-right">
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    {/* Reprint Advance Voucher */}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        triggerAutoPrint({
-                                          type: 'SALARY_ADVANCE_VOUCHER',
-                                          data: {
-                                            id: adv.id,
-                                            staffName: adv.staffName,
-                                            role: adv.role,
-                                            period: adv.period,
-                                            amount: adv.amount,
-                                            notes: adv.notes || adv.reason
-                                          }
-                                        }, `Reprint Advance Voucher: ${adv.staffName}`);
-                                      }}
-                                      className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
-                                      title="Reprint Advance Voucher"
-                                    >
-                                      <Printer className="h-4 w-4" />
-                                    </button>
-
-                                    {/* Delete Advance (Admin only) */}
-                                    {currentUser.role === 'Administrator' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (window.confirm(`Delete advance voucher ${adv.id} (${settings.currency} ${adv.amount}) for ${adv.staffName}?`)) {
-                                            setSalaryAdvances(prev => prev.filter(a => a.id !== adv.id));
-                                            recordAuditLog(
-                                              'ADMIN_DELETE_SALARY_ADVANCE',
-                                              adv.id,
-                                              `Deleted advance of ${settings.currency} ${adv.amount} for ${adv.staffName} (${adv.period})`
-                                            );
-                                          }
-                                        }}
-                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
-                                        title="Delete Advance Record"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* SUB-TAB 3: SRI LANKA EPF / ETF RETURN (FORM C EQUIVALENT) */}
             {payrollSubTab === 'epf_etf' && (
@@ -7844,10 +8455,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {staffList.map(member => {
-                        // Calculate total unrecovered salary advances for this employee
+                        // Calculate unrecovered advances for this member
                         const unrecoveredAdvance = (salaryAdvances || [])
-                          .filter(adv => 
-                            adv.staffId === member.id && 
+                          .filter(adv =>
+                            adv.staffId === member.id &&
                             adv.status !== 'REJECTED' &&
                             !payrollRecords.some(r => r.staffId === member.id && r.period === adv.period)
                           )
@@ -7855,18 +8466,25 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                         return (
                           <tr key={member.id} className="hover:bg-slate-50 transition-colors">
+                            {/* Employee Name & ID */}
                             <td className="py-3 px-4">
                               <span className="font-extrabold text-slate-900 block">{member.name}</span>
                               <span className="text-[10px] text-slate-400 font-mono">{member.id}</span>
                             </td>
+
+                            {/* Role Badge */}
                             <td className="py-3 px-4">
                               <span className="px-2 py-0.5 bg-orange-100 text-[#ff5500] rounded font-bold text-[10px]">
                                 {member.role}
                               </span>
                             </td>
+
+                            {/* Base Salary */}
                             <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
                               {settings.currency} {(member.basicSalary ?? 35000).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </td>
+
+                            {/* Pending Advances */}
                             <td className="py-3 px-4 text-right font-mono font-bold">
                               {unrecoveredAdvance > 0 ? (
                                 <span className="text-amber-800 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 inline-block text-xs">
@@ -7876,16 +8494,33 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                 <span className="text-slate-400 text-[11px] font-normal">None</span>
                               )}
                             </td>
+
+                            {/* Contact */}
                             <td className="py-3 px-4 text-slate-600">{member.email}</td>
-                            <td className="py-3 px-4 font-mono text-slate-700">1992{member.pin}402V</td>
+
+                            {/* NIC / National ID & Issue Date */}
+                            <td className="py-3 px-4">
+                              <span className="font-mono font-bold text-slate-800 block">
+                                {member.nicNumber || `1992${member.pin}402V`}
+                              </span>
+                              {member.nicDate && (
+                                <span className="text-[10px] text-slate-400 font-mono block">
+                                  Issued: {member.nicDate}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Status */}
                             <td className="py-3 px-4 text-center">
                               <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800">
                                 Active
                               </span>
                             </td>
+
+                            {/* Quick Actions */}
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
-                                {/* Direct Advance Disbursement Button */}
+                                {/* Issue Advance */}
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -7906,7 +8541,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                                   <span>Advance</span>
                                 </button>
 
-                                {/* Direct Issue Pay Button */}
+                                {/* Issue Pay */}
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -11067,42 +11702,77 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
 
                 <div className="grid grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1">
                   {floorTables.map(tbl => {
-                    const isSelected = selectedTable.id === tbl.id;
-                    const isOccupied = tbl.status === 'OCCUPIED';
-                    return (
-                      <button
-                        key={tbl.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedTable(tbl);
-                          setAllocationModalOpen(false);
-                        }}
-                        className={`p-3 rounded-2xl border text-left flex items-start justify-between transition-all cursor-pointer ${
-                          isSelected
-                            ? 'border-[#ff5500] bg-orange-50/80 ring-2 ring-orange-500/20 shadow-xs'
-                            : 'border-slate-200 bg-white hover:bg-slate-50'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-black text-xs text-slate-900">{tbl.name}</span>
-                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
-                              isOccupied ? 'bg-orange-100 text-[#ff5500]' : 'bg-emerald-100 text-emerald-700'
-                            }`}>
-                              {tbl.status}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-500 mt-0.5">{tbl.zone}</p>
-                          <span className="text-[10px] text-slate-400 font-mono mt-1 block">Capacity: {tbl.capacity} Seats</span>
-                        </div>
-                        <div className={`h-5 w-5 rounded-full flex items-center justify-center border shrink-0 transition-all ${
-                          isSelected ? 'bg-[#ff5500] border-[#ff5500] text-white' : 'border-slate-300 bg-white'
-                        }`}>
-                          {isSelected && <Check className="h-3 w-3 stroke-[3]" />}
-                        </div>
-                      </button>
-                    );
-                  })}
+  const isSelected = selectedTable?.id === tbl.id;
+
+  // Verify occupied status against both table status and active open bills in the queue
+  const activeBill = (settlementQueue || []).find(
+    b => b.table === tbl.name || b.tableName === tbl.name || b.tableId === tbl.id
+  );
+  const isOccupied = tbl.status === 'OCCUPIED' || Boolean(activeBill);
+
+  return (
+    <button
+      key={tbl.id}
+      type="button"
+      onClick={() => {
+        if (isOccupied) {
+          alert(
+            `🚫 ${tbl.name} is OCCUPIED with an active bill (${settings.currency} ${(activeBill?.total || 0).toFixed(2)}).\n\nDirect new order dispatch is locked. To modify or add items to this table, go to "Billing & Settlement Queue" and click "Edit in POS".`
+          );
+          return;
+        }
+        setSelectedTable(tbl);
+        setAllocationModalOpen(false);
+      }}
+      className={`p-3 rounded-2xl border text-left flex items-start justify-between transition-all ${
+        isOccupied
+          ? 'border-rose-400 bg-rose-50/70 hover:bg-rose-100/80 cursor-not-allowed shadow-xs'
+          : isSelected
+          ? 'border-[#ff5500] bg-orange-50/80 ring-2 ring-orange-500/20 shadow-xs cursor-pointer'
+          : 'border-slate-200 bg-white hover:bg-slate-50 cursor-pointer'
+      }`}
+    >
+      <div>
+        <div className="flex items-center gap-1.5">
+          <span className={`font-black text-xs ${isOccupied ? 'text-rose-950' : 'text-slate-900'}`}>
+            {tbl.name}
+          </span>
+          <span
+            className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+              isOccupied
+                ? 'bg-rose-600 text-white animate-pulse'
+                : 'bg-emerald-100 text-emerald-800'
+            }`}
+          >
+            {isOccupied ? 'Occupied (Locked)' : 'Available'}
+          </span>
+        </div>
+        <p className="text-[10px] text-slate-500 mt-0.5">{tbl.zone}</p>
+        <span className="text-[10px] text-slate-400 font-mono mt-1 block">
+          Capacity: {tbl.capacity} Seats
+        </span>
+        {isOccupied && activeBill && (
+          <span className="text-[10px] font-mono font-black text-rose-700 mt-1 block">
+            Active: {settings.currency} {Number(activeBill.total || 0).toFixed(2)}
+          </span>
+        )}
+      </div>
+
+      <div
+        className={`h-5 w-5 rounded-full flex items-center justify-center border shrink-0 transition-all ${
+          isOccupied
+            ? 'border-rose-300 bg-rose-200 text-rose-800'
+            : isSelected
+            ? 'bg-[#ff5500] border-[#ff5500] text-white'
+            : 'border-slate-300 bg-white'
+        }`}
+      >
+        {isSelected && !isOccupied && <Check className="h-3 w-3 stroke-[3]" />}
+        {isOccupied && <Lock className="h-3 w-3 text-rose-700 stroke-[2.5]" />}
+      </div>
+    </button>
+  );
+})}
                 </div>
               </div>
             ) : (
@@ -11235,6 +11905,34 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                 />
               </div>
+              {/* NIC / National ID & Issue Date */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  NIC / National ID Number *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStaffForm.nicNumber}
+                  onChange={e => setNewStaffForm(prev => ({ ...prev, nicNumber: e.target.value.toUpperCase() }))}
+                  placeholder="e.g. 199245102450 or 924510245V"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  NIC Issue / Input Date
+                </label>
+                <input
+                  type="date"
+                  value={newStaffForm.nicDate}
+                  onChange={e => setNewStaffForm(prev => ({ ...prev, nicDate: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-[#ff5500] cursor-pointer"
+                />
+              </div>
+            </div>
 
               {/* SALARY & COMPENSATION SECTION */}
               <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
@@ -12997,6 +13695,162 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                 >
                   <Printer className="h-3.5 w-3.5" />
                   <span>Disburse &amp; Print Slip</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      
+      {/* MODAL: MANUAL ATTENDANCE PUNCH (ADMIN & MANAGER ACCESS) */}
+      {manualAttendanceModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[9999] flex items-center justify-center p-4 text-slate-900"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setManualAttendanceModalOpen(false);
+          }}
+        >
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200 relative max-h-[90vh] overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-amber-600" />
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Manual Attendance Entry</h3>
+                  <p className="text-[10px] text-slate-500">Retroactively record missed clock-in/out punches</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualAttendanceModalOpen(false)}
+                className="text-slate-400 hover:text-slate-900 cursor-pointer p-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const selectedMember = staffList.find(s => s.id === manualAttendanceForm.staffId) || staffList[0];
+                if (!selectedMember) {
+                  alert('Please select an employee.');
+                  return;
+                }
+
+                const [inH, inM] = manualAttendanceForm.clockInTime.split(':').map(Number);
+                const [outH, outM] = manualAttendanceForm.clockOutTime.split(':').map(Number);
+                let totalMin = (outH * 60 + outM) - (inH * 60 + inM);
+                if (totalMin < 0) totalMin += 24 * 60; // Handle shifts spanning midnight
+
+                const totalHrs = Number((totalMin / 60).toFixed(2));
+                const otHrs = totalHrs > 8 ? Number((totalHrs - 8).toFixed(2)) : 0;
+
+                const manualRecord = {
+                  id: `ATT-MAN-${Date.now().toString().slice(-6)}`,
+                  staffId: selectedMember.id,
+                  staffName: selectedMember.name,
+                  role: selectedMember.role,
+                  date: manualAttendanceForm.date,
+                  clockInTime: manualAttendanceForm.clockInTime,
+                  clockOutTime: manualAttendanceForm.clockOutTime,
+                  totalHours: totalHrs,
+                  overtimeHours: otHrs,
+                  status: 'COMPLETED',
+                  isManualOverride: true,
+                  enteredBy: currentUser.name,
+                  timestamp: new Date().toISOString(),
+                  notes: manualAttendanceForm.notes || 'Manual punch added by supervisor'
+                };
+
+                setAttendanceLogs(prev => [manualRecord, ...(Array.isArray(prev) ? prev : [])]);
+
+                recordAuditLog(
+                  'MANUAL_ATTENDANCE_RECORDED',
+                  manualRecord.id,
+                  `Manual punch recorded for ${selectedMember.name} on ${manualAttendanceForm.date} (${manualAttendanceForm.clockInTime} to ${manualAttendanceForm.clockOutTime}, ${totalHrs}h) by ${currentUser.name}`
+                );
+
+                setManualAttendanceModalOpen(false);
+              }}
+              className="space-y-3.5"
+            >
+              {/* Select Employee */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Employee *</label>
+                <select
+                  value={manualAttendanceForm.staffId}
+                  onChange={e => setManualAttendanceForm(prev => ({ ...prev, staffId: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                >
+                  {staffList.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Shift Date *</label>
+                <input
+                  type="date"
+                  required
+                  value={manualAttendanceForm.date}
+                  onChange={e => setManualAttendanceForm(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              {/* In and Out Times */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Clock In Time *</label>
+                  <input
+                    type="time"
+                    required
+                    value={manualAttendanceForm.clockInTime}
+                    onChange={e => setManualAttendanceForm(prev => ({ ...prev, clockInTime: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Clock Out Time *</label>
+                  <input
+                    type="time"
+                    required
+                    value={manualAttendanceForm.clockOutTime}
+                    onChange={e => setManualAttendanceForm(prev => ({ ...prev, clockOutTime: e.target.value }))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                  />
+                </div>
+              </div>
+
+              {/* Reason / Notes */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Reason / Notes</label>
+                <input
+                  type="text"
+                  value={manualAttendanceForm.notes}
+                  onChange={e => setManualAttendanceForm(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="e.g. Card not scanned / power outage"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setManualAttendanceModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-[#ff5500] hover:bg-orange-600 text-white font-bold rounded-xl text-xs shadow-xs cursor-pointer transition-colors"
+                >
+                  Save Time Record
                 </button>
               </div>
             </form>
