@@ -76,7 +76,7 @@ const ROLE_PERMISSIONS = {
 };
 
 const INITIAL_STAFF = [
-  { id: 'usr_admin', name: 'System Administrator', role: 'Administrator', pin: '2022', avatar: 'SA', email: 'admin@linolicove.com' }
+  { id: 'usr_admin', name: 'System Administrator', role: 'Administrator', pin: '2022', avatar: 'SA', email: 'admin@lcposdemo.com' }
 ];
 
 const INITIAL_RAW_INVENTORY = [
@@ -701,15 +701,15 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
   const [stockLogs, setStockLogs] = usePersistentState('linoli_stock_logs', []);
   // System Settings
   const [settings, setSettings] = usePersistentState('linoli_system_settings', {
-    restaurantName: 'Linoli Cove Midigama',
+    restaurantName: 'LC POS SYSTEM DEMO',
     tagline: 'RESTAURANT & BAR',
     legalName: 'Linoli Cove Leisure (Pvt) Ltd',
     businessRegNo: 'PV-00289144',
     taxId: 'TIN-109284719',
     terminalId: 'LINOLI-MAIN-01',
     phone: '+94 74 036 6741',
-    email: 'info@linolicove.me',
-    website: 'www.linolicove.me',
+    email: 'info@lcposdemo.com',
+    website: 'lcposdemo.com',
     address: '380 A Matara Road, Midigama, 81700',
     currency: 'Rs.',
     serviceChargeRate: 10,
@@ -785,7 +785,7 @@ const exportReportToExcel = (reportTitle, dataRows, filenamePrefix = 'Report') =
 
   const [emailSettings, setEmailSettings] = usePersistentState('linoli_email_settings', {
     enabled: true,
-    recipient: 'linolicove@gmail.com',
+    recipient: 'lcposdemo@gmail.com',
     scheduledTime: '23:30',
     webhookUrl: '',
     emailjsServiceId: '',
@@ -1333,7 +1333,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
       role: newStaffForm.role,
       pin: cleanPin,
       avatar: initials || 'ST',
-      email: newStaffForm.email.trim() || `${newStaffForm.name.trim().toLowerCase().replace(/\s+/g, '')}@linolicove.me`,
+      email: newStaffForm.email.trim() || `${newStaffForm.name.trim().toLowerCase().replace(/\s+/g, '')}@lcposdemo.com`,
       nicNumber: (newStaffForm.nicNumber || '').trim().toUpperCase(),
       nicDate: newStaffForm.nicDate || '',
       basicSalary: Number(newStaffForm.basicSalary) || 0,
@@ -1804,7 +1804,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
     setIsSendingEmail(true);
 
     const report = generateEodReportData(todayStr);
-    const recipient = emailSettings.recipient || 'linolicove@gmail.com';
+    const recipient = emailSettings.recipient || 'lcposdemo@gmail.com';
 
     try {
       let sentSuccessfully = false;
@@ -8737,7 +8737,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     type="email"
                     value={settings.email || ''}
                     onChange={e => setSettings(prev => ({ ...prev, email: e.target.value }))}
-                    placeholder="e.g. info@linolicove.me"
+                    placeholder="e.g. info@lcposdemo.me"
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                   />
                 </div>
@@ -8748,7 +8748,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     type="text"
                     value={settings.website || ''}
                     onChange={e => setSettings(prev => ({ ...prev, website: e.target.value }))}
-                    placeholder="e.g. www.linolicove.me / @linolicove"
+                    placeholder="e.g. www.lcposdemo.me / @lcposdemo"
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                   />
                 </div>
@@ -8806,7 +8806,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                     type="email"
                     value={emailSettings.recipient}
                     onChange={e => setEmailSettings(prev => ({ ...prev, recipient: e.target.value }))}
-                    placeholder="linolicove@gmail.com"
+                    placeholder="lcposdemo@gmail.com"
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                   />
                   <span className="text-[10px] text-slate-400 mt-1 block">Receives complete daily business data</span>
@@ -11901,7 +11901,7 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                   type="email"
                   value={newStaffForm.email}
                   onChange={e => setNewStaffForm(prev => ({ ...prev, email: e.target.value }))}
-                  placeholder="e.g. kasun@linolicove.me"
+                  placeholder="e.g. kasun@lcposdemo.me"
                   className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-[#ff5500]"
                 />
               </div>
