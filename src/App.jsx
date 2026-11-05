@@ -7341,9 +7341,10 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                             Object.entries(expenseCategories)
                               .sort((a, b) => b[1] - a[1])
                               .map(([category, amount]) => {
-                                const percentage = totalOperationalCashOut > 0 
-                                  ? ((amount / totalOperationalCashOut) * 100).toFixed(1) 
-                                  : 0;
+                                const totalCategorySpend = Object.values(expenseCategories).reduce((a, b) => a + b, 0);
+const percentage = totalCategorySpend > 0 
+  ? ((amount / totalCategorySpend) * 100).toFixed(1) 
+  : 0;
 
                                 return (
                                   <div key={category} className="space-y-1">
@@ -7367,26 +7368,26 @@ const unsubShift = subscribeToCloud('current_shift', (remoteShift) => {
                       </div>
 
                       {/* Outflow Breakdown Footer */}
-                      <div className="pt-3 border-t border-slate-100 space-y-1.5 text-xs">
-                        <div className="flex justify-between items-center text-slate-600">
-                          <span>Operational Expenses (OPEX):</span>
-                          <span className="font-mono font-bold text-rose-600">
-                            {settings.currency} {totalOperationalCashOut.toFixed(2)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center text-slate-600">
-                          <span>Bank &amp; Safe Transfers:</span>
-                          <span className="font-mono font-bold text-indigo-600">
-                            {settings.currency} {totalSafeDropBanking.toFixed(2)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center pt-1.5 border-t border-slate-100 font-bold text-slate-800">
-                          <span>Total Drawer Outflow:</span>
-                          <span className="font-mono font-black text-slate-900 text-sm">
-                            {settings.currency} {totalDrawerCashOutflow.toFixed(2)}
-                          </span>
-                        </div>
-                      </div>
+<div className="pt-3 border-t border-slate-100 space-y-1.5 text-xs">
+  <div className="flex justify-between items-center text-slate-600">
+    <span>Drawer Petty Cash / Expenses:</span>
+    <span className="font-mono font-bold text-rose-600">
+      {settings.currency} {totalOperationalCashOut.toFixed(2)}
+    </span>
+  </div>
+  <div className="flex justify-between items-center text-slate-600">
+    <span>Bank & Safe Transfers (Non-Expense):</span>
+    <span className="font-mono font-bold text-indigo-600">
+      {settings.currency} {totalSafeDropBanking.toFixed(2)}
+    </span>
+  </div>
+  <div className="flex justify-between items-center pt-1.5 border-t border-slate-100 font-bold text-slate-800">
+    <span>Total Physical Drawer Outflow:</span>
+    <span className="font-mono font-black text-slate-900 text-sm">
+      {settings.currency} {totalDrawerCashOutflow.toFixed(2)}
+    </span>
+  </div>
+</div>
                     </div>
                   </div>
 
